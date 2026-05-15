@@ -1,0 +1,366 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { AnimationsController } from '../../src/controllers/Animations.controller';
+import { asSpineMap, createFakeSpine, type FakeSpine } from '../helpers/fakeSpine';
+
+function makeHero(extra: Parameters<typeof createFakeSpine>[0] = {}): FakeSpine {
+    return createFakeSpine({
+        animations: [
+            { name: 'state_idle/breathe', duration: 1 },
+            { name: 'state_idle/blink_loop', duration: 0.5 },
+            { name: 'event_click/jump', duration: 0.4 },
+            { name: 'misc/wave', duration: 0.2 },
+        ],
+        ...extra,
+    });
+}
+
+describe('AnimationsController – registration & getters', () => {
+    let warn: ReturnType<typeof vi.spyOn>;
+
+    beforeEach(() => {
+        warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    });
+
+    it('indexes animations by name (stripping _loop/_next modifiers) and exposes via getAall', () => {
+        const hero = makeHero();
+        const ctl = new AnimationsController(asSpineMap({ hero }));
+        ctl.registerSpine('hero', hero as never);
+
+        expect(ctl.getAall().sort()).toEqual(
+            ['event_click/jump', 'misc/wave', 'state_idle/blink', 'state_idle/breathe'].sort(),
+        );
+    });
+
+    it('buckets animations under state_<name>/ into getStates', () => {
+        const hero = makeHero();
+        const ctl = new AnimationsController(asSpineMap({ hero }));
+        ctl.registerSpine('hero', hero as never);
+
+        expect(ctl.getStates()).toEqual(['idle']);
+    });
+
+    it('buckets animations under event_<name>/ into getEvents', () => {
+        const hero = makeHero();
+        const ctl = new AnimationsController(asSpineMap({ hero }));
+        ctl.registerSpine('hero', hero as never);
+
+        expect(ctl.getEvents()).toEqual(['click']);
+    });
+
+    it('warns when state_/event_ animation has no name segment after the slash prefix', () => {
+        const hero = createFakeSpine({ animations: [{ name: 'state_' }] });
+        const ctl = new AnimationsController(asSpineMap({ hero }));
+        ctl.registerSpine('hero', hero as never);
+
+        expect(warn).toHaveBeenCalledWith('Animation state_ does not have a state name.');
+    });
+
+    it('returns empty arrays for active/looping until something is played', () => {
+        const ctl = new AnimationsController(new Map());
+        expect(ctl.getActive()).toEqual([]);
+        expect(ctl.getLooping()).toEqual([]);
+    });
+
+    it('attaches an event listener to the spine state during registration', () => {
+        const hero = makeHero();
+        const ctl = new AnimationsController(asSpineMap({ hero }));
+        ctl.registerSpine('hero', hero as never);
+
+        expect(hero.__listeners.length).toBe(1);
+    });
+});
+
+describe('AnimationsController – playback', () => {
+    beforeEach(() => {
+        vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+        vi.useRealTimers();
+    });
+
+    it('playAnimationByName triggers setAnimation on every spine that has it', async () => {
+        const hero = makeHero();
+        const enemy = makeHero();
+        const ctl = new AnimationsController(asSpineMap({ hero, enemy }));
+        ctl.registerSpine('hero', hero as never);
+        ctl.registerSpine('enemy', enemy as never);
+
+        const promise = ctl.playAnimationByName('misc/wave');
+        await vi.runAllTimersAsync();
+        await promise;
+
+        expect(hero.__setAnimationCalls).toEqual([{ track: 0, name: 'misc/wave', loop: false }]);
+        expect(enemy.__setAnimationCalls).toEqual([{ track: 0, name: 'misc/wave', loop: false }]);
+    });
+
+    it('playInstanceAnimation increments track IDs per spine across calls', async () => {
+        const hero = createFakeSpine({
+            animations: [
+                { name: 'a', duration: 0.1 },
+                { name: 'b', duration: 0.1 },
+            ],
+        });
+        const ctl = new AnimationsController(asSpineMap({ hero }));
+        ctl.registerSpine('hero', hero as never);
+
+        const p1 = ctl.playInstanceAnimation('hero', 'a');
+        const p2 = ctl.playInstanceAnimation('hero', 'b');
+        await vi.runAllTimersAsync();
+        await Promise.all([p1, p2]);
+
+        expect(hero.__setAnimationCalls.map((c) => c.track)).toEqual([0, 1]);
+    });
+
+    it('playInstanceAnimation treats _loop suffix as a looping animation tracked in getLooping', async () => {
+        const hero = createFakeSpine({
+            animations: [{ name: 'idle_loop', duration: 1 }],
+        });
+        const ctl = new AnimationsController(asSpineMap({ hero }));
+        ctl.registerSpine('hero', hero as never);
+
+        const promise = ctl.playInstanceAnimation('hero', 'idle_loop');
+        expect(hero.__setAnimationCalls[0]).toMatchObject({ name: 'idle_loop', loop: true });
+        expect(ctl.getLooping()).toEqual(['hero']);
+        expect(ctl.getActive()).toEqual([]);
+
+        await vi.runAllTimersAsync();
+        await promise;
+    });
+
+    it('playInstanceAnimation with playSolo clears existing tracks before starting', async () => {
+        const hero = createFakeSpine({
+            animations: [
+                { name: 'a', duration: 1 },
+                { name: 'b', duration: 1 },
+            ],
+        });
+        const ctl = new AnimationsController(asSpineMap({ hero }));
+        ctl.registerSpine('hero', hero as never);
+
+        // Start "a" non-solo so an active animation is recorded.
+        void ctl.playInstanceAnimation('hero', 'a');
+        // Now run "b" solo, which should stop "a" first.
+        const promise = ctl.playInstanceAnimation('hero', 'b', true);
+
+        expect(hero.__clearTracksCalls).toBeGreaterThan(0);
+        await vi.runAllTimersAsync();
+        await promise;
+    });
+
+    it('playInstanceAnimation logs error and resolves when spine is unknown', async () => {
+        const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+        const ctl = new AnimationsController(new Map());
+        await ctl.playInstanceAnimation('missing', 'anim');
+        expect(err).toHaveBeenCalledWith('Spine missing not found');
+    });
+
+    it('playInstanceAnimation deduplicates a re-played animation once it has a non-zero track', async () => {
+        const hero = createFakeSpine({
+            animations: [
+                { name: 'a', duration: 1 },
+                { name: 'b', duration: 1 },
+            ],
+        });
+        const ctl = new AnimationsController(asSpineMap({ hero }));
+        ctl.registerSpine('hero', hero as never);
+
+        // First play uses track 0, second uses track 1. Re-playing "b" while it is on track 1 dedups.
+        void ctl.playInstanceAnimation('hero', 'a');
+        void ctl.playInstanceAnimation('hero', 'b');
+        void ctl.playInstanceAnimation('hero', 'b');
+
+        expect(hero.__setAnimationCalls.length).toBe(2);
+
+        await vi.runAllTimersAsync();
+    });
+
+    it('playState dispatches to all spines that have an animation in that state', async () => {
+        const hero = makeHero();
+        const enemy = makeHero();
+        const ctl = new AnimationsController(asSpineMap({ hero, enemy }));
+        ctl.registerSpine('hero', hero as never);
+        ctl.registerSpine('enemy', enemy as never);
+
+        const promise = ctl.playState('idle');
+        await vi.runAllTimersAsync();
+        await promise;
+
+        const heroNames = hero.__setAnimationCalls.map((c) => c.name).sort();
+        const enemyNames = enemy.__setAnimationCalls.map((c) => c.name).sort();
+        expect(heroNames).toEqual(['state_idle/blink_loop', 'state_idle/breathe']);
+        expect(enemyNames).toEqual(['state_idle/blink_loop', 'state_idle/breathe']);
+    });
+
+    it('playEvent invokes registered listeners and plays event animations', async () => {
+        const hero = makeHero();
+        const ctl = new AnimationsController(asSpineMap({ hero }));
+        ctl.registerSpine('hero', hero as never);
+
+        const listener = vi.fn();
+        ctl.addEventListener('click', listener);
+
+        const promise = ctl.playEvent('click', 'hero');
+        await vi.runAllTimersAsync();
+        await promise;
+
+        expect(listener).toHaveBeenCalledWith('hero', hero, { eventName: 'click' });
+        expect(hero.__setAnimationCalls.some((c) => c.name === 'event_click/jump')).toBe(true);
+    });
+
+    it('routes skeleton events through playEvent (registered via registerSpine)', async () => {
+        const hero = makeHero();
+        const ctl = new AnimationsController(asSpineMap({ hero }));
+        ctl.registerSpine('hero', hero as never);
+
+        const listener = vi.fn();
+        ctl.addEventListener('click', listener);
+
+        hero.triggerEvent('click');
+        await vi.runAllTimersAsync();
+
+        expect(listener).toHaveBeenCalled();
+    });
+
+    it('vibration_<ms> skeleton events invoke navigator.vibrate', async () => {
+        const vibrate = vi.fn();
+        // navigator may already exist (with no vibrate). Replace minimally for the test.
+        const original = (globalThis as { navigator?: unknown }).navigator;
+        Object.defineProperty(globalThis, 'navigator', {
+            value: { vibrate },
+            configurable: true,
+        });
+
+        try {
+            const hero = makeHero();
+            const ctl = new AnimationsController(asSpineMap({ hero }));
+            ctl.registerSpine('hero', hero as never);
+
+            hero.triggerEvent('vibration_50');
+            await vi.runAllTimersAsync();
+
+            expect(vibrate).toHaveBeenCalledWith(50);
+        } finally {
+            Object.defineProperty(globalThis, 'navigator', {
+                value: original,
+                configurable: true,
+            });
+        }
+    });
+
+    it('playSolo stops all tracks then plays the named animation', async () => {
+        const hero = createFakeSpine({ animations: [{ name: 'a', duration: 0.1 }] });
+        const ctl = new AnimationsController(asSpineMap({ hero }));
+        ctl.registerSpine('hero', hero as never);
+
+        await ctl.playSolo('a');
+        await vi.runAllTimersAsync();
+
+        expect(hero.__clearTracksCalls).toBeGreaterThan(0);
+        expect(hero.__setAnimationCalls[0].name).toBe('a');
+    });
+
+    it('speed setter propagates to all spines', () => {
+        const hero = createFakeSpine();
+        const ctl = new AnimationsController(asSpineMap({ hero }));
+        ctl.speed = 2;
+
+        expect(hero.state.timeScale).toBe(2);
+        expect(ctl.speed).toBe(2);
+    });
+
+    it('pauseSpineByID sets timeScale to 0 on the target spine', () => {
+        const hero = createFakeSpine();
+        const ctl = new AnimationsController(asSpineMap({ hero }));
+        hero.state.timeScale = 1;
+        ctl.pauseSpineByID('hero');
+        expect(hero.state.timeScale).toBe(0);
+    });
+
+    it('stopAll clears tracks, resets pose, and empties registries on every spine', async () => {
+        const hero = createFakeSpine({ animations: [{ name: 'a', duration: 0.1 }] });
+        const ctl = new AnimationsController(asSpineMap({ hero }));
+        ctl.registerSpine('hero', hero as never);
+
+        void ctl.playInstanceAnimation('hero', 'a');
+        expect(ctl.getActive()).toEqual(['hero']);
+
+        ctl.stopAll();
+
+        expect(hero.__clearTracksCalls).toBeGreaterThan(0);
+        expect(hero.__setupPoseCount).toBeGreaterThan(0);
+        expect(ctl.getActive()).toEqual([]);
+
+        await vi.runAllTimersAsync();
+    });
+
+    it('stopAnimation clears the right track for the named animation', async () => {
+        const hero = createFakeSpine({
+            animations: [
+                { name: 'a', duration: 1 },
+                { name: 'b_loop', duration: 1 },
+            ],
+        });
+        const ctl = new AnimationsController(asSpineMap({ hero }));
+        ctl.registerSpine('hero', hero as never);
+
+        void ctl.playInstanceAnimation('hero', 'a');
+        void ctl.playInstanceAnimation('hero', 'b_loop');
+
+        ctl.stopAnimation('hero', 'a');
+        ctl.stopAnimation('hero', 'b_loop');
+
+        // tracks were 0 and 1
+        expect(hero.__clearTrackCalls.sort()).toEqual([0, 1]);
+        await vi.runAllTimersAsync();
+    });
+
+    it('stopState stops every animation under the state and optionally resets pose', async () => {
+        const hero = makeHero();
+        const ctl = new AnimationsController(asSpineMap({ hero }));
+        ctl.registerSpine('hero', hero as never);
+
+        const promise = ctl.playState('idle');
+        await vi.runAllTimersAsync();
+        await promise;
+
+        await ctl.stopState('idle');
+        expect(hero.__setupPoseCount).toBeGreaterThan(0);
+    });
+
+    it('clear empties all internal maps', async () => {
+        const hero = makeHero();
+        const ctl = new AnimationsController(asSpineMap({ hero }));
+        ctl.registerSpine('hero', hero as never);
+        ctl.addEventListener('click', () => {});
+
+        ctl.clear();
+
+        expect(ctl.getAall()).toEqual([]);
+        expect(ctl.getStates()).toEqual([]);
+        expect(ctl.getEvents()).toEqual([]);
+        expect(ctl.getActive()).toEqual([]);
+        expect(ctl.getLooping()).toEqual([]);
+        expect(ctl.speed).toBe(1);
+    });
+});
+
+describe('AnimationsController – playInstanceAnimationLastFrame', () => {
+    it('warns when spine is unknown', async () => {
+        const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+        const ctl = new AnimationsController(new Map());
+        await ctl.playInstanceAnimationLastFrame('missing', 'anim');
+        expect(err).toHaveBeenCalledWith('Track spine not found');
+    });
+
+    it('seeks to the end of the animation via trackEntry.trackTime', async () => {
+        const trackEntry = { trackTime: 0, animationEnd: 5 };
+        const hero = createFakeSpine({ animations: [{ name: 'a', duration: 5 }] });
+        hero.state.getCurrent = () => trackEntry;
+
+        const ctl = new AnimationsController(asSpineMap({ hero }));
+        await ctl.playInstanceAnimationLastFrame('hero', 'a');
+
+        expect(trackEntry.trackTime).toBe(5);
+    });
+});
