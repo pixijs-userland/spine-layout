@@ -1,0 +1,44 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@600&family=Roboto+Mono:ital,wght@0,400;0,700;1,400&family=Roboto:ital,wght@0,400;0,500;0,700;1,400&display=swap');
+
+:root {
+    --ifm-color-primary: #e91e63;
+    --ifm-color-primary-dark: #d81557;
+    --ifm-color-primary-darker: #cc1352;
+    --ifm-color-primary-darkest: #a81044;
+    --ifm-color-primary-light: #eb3572;
+    --ifm-color-primary-lighter: #ec4179;
+    --ifm-color-primary-lightest: #f06d97;
+
+    --ifm-code-font-size: 95%;
+    --ifm-font-family-base: 'Roboto', sans-serif;
+    --ifm-font-family-monospace: 'Roboto Mono', monospace;
+    --ifm-heading-font-family: 'Outfit', sans-serif;
+
+    --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.1);
+}
+
+[data-theme='dark'] {
+    --ifm-color-primary: #e91e63;
+    --ifm-color-primary-dark: #d81557;
+    --ifm-color-primary-darker: #cc1352;
+    --ifm-color-primary-darkest: #a81044;
+    --ifm-color-primary-light: #eb3572;
+    --ifm-color-primary-lighter: #ec4179;
+    --ifm-color-primary-lightest: #f06d97;
+
+    --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.3);
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+    font-family: var(--ifm-heading-font-family);
+}
+
+.navbar__title {
+    font-family: var(--ifm-heading-font-family);
+    font-weight: 600;
+}
