@@ -3,7 +3,7 @@ import { Container, Sprite, Texture } from 'pixi.js';
 import type { SpineID, SpineLayoutOptions } from '../config/types';
 import { parcePointers } from '../config/parcePointers';
 import { LOG } from '../config/logs';
-import { log } from '@magic/utils';
+import { log } from '../utils/Log';
 import type { TextsController } from './Texts.controller';
 import type { AnimationsController } from './Animations.controller';
 import type { SpineController } from './Spine.controller';

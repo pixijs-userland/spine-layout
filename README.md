@@ -2,6 +2,8 @@
 
 A spine composition framework built on Pixi.js. It lets you assemble flexible scenes with Spine skeletons, and provides a powerful animation system with minimal code.
 
+Full documentation: [userland.pixijs.io/spine-layout](https://userland.pixijs.io/spine-layout/)
+
 ---
 
 ## Architecture

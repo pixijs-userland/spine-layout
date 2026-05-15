@@ -16,7 +16,7 @@ import type {
 } from './config/types';
 import { type AssetsManifest, BitmapText, Container, Text, Texture, type Point } from 'pixi.js';
 import { LOG } from './config/logs';
-import { log } from '@magic/utils';
+import { log } from './utils/Log';
 import { parcePointers } from './config/parcePointers';
 import { ManifestParser } from './utils/ManifestParser';
 import { AnimationsController } from './controllers/Animations.controller';

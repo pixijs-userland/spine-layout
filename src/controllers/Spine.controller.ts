@@ -11,7 +11,7 @@ import {
 import { Point, Rectangle, Texture } from 'pixi.js';
 import type { SpineID } from '../config/types';
 import { LOG } from '../config/logs';
-import { log } from '@magic/utils';
+import { log } from '../utils/Log';
 import type { AnimationsController } from './Animations.controller';
 
 export class SpineController {

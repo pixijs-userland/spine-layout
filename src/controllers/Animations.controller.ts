@@ -6,7 +6,7 @@ import type {
     SpineID,
 } from '../config/types';
 import { LOG } from '../config/logs';
-import { log } from '@magic/utils';
+import { log } from '../utils/Log';
 import { parcePointers } from '../config/parcePointers';
 
 export class AnimationsController {
