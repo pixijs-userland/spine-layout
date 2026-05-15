@@ -1,0 +1,31 @@
+{
+    "name": "@pixi/spine-layout",
+    "version": "0.0.1",
+    "type": "module",
+    "exports": {
+        ".": {
+            "import": "./dist/index.js",
+            "types": "./dist/index.d.ts"
+        }
+    },
+    "scripts": {
+        "build": "tsc",
+        "lint": "eslint src",
+        "format": "prettier --write .",
+        "check-types": "tsc --noEmit",
+        "clean": "rm -rf dist"
+    },
+    "peerDependencies": {
+        "@esotericsoftware/spine-pixi-v8": "^4.2.77",
+        "pixi.js": "^8.14.0"
+    },
+    "dependencies": {
+        "@magic/utils": "workspace:*",
+        "@esotericsoftware/spine-pixi-v8": "^4.2.77",
+        "pixi.js": "^8.14.0"
+    },
+    "devDependencies": {
+        "eslint": "^9.25.0",
+        "typescript": "^5.8.3"
+    }
+}
