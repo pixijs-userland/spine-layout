@@ -155,22 +155,19 @@ describe('AnimationsController – playback', () => {
         expect(err).toHaveBeenCalledWith('Spine missing not found');
     });
 
-    it('playInstanceAnimation deduplicates a re-played animation once it has a non-zero track', async () => {
+    it('playInstanceAnimation deduplicates re-plays of an already-active animation', async () => {
         const hero = createFakeSpine({
-            animations: [
-                { name: 'a', duration: 1 },
-                { name: 'b', duration: 1 },
-            ],
+            animations: [{ name: 'a', duration: 1 }],
         });
         const ctl = new AnimationsController(asSpineMap({ hero }));
         ctl.registerSpine('hero', hero as never);
 
-        // First play uses track 0, second uses track 1. Re-playing "b" while it is on track 1 dedups.
+        // The first call uses track 0; the second should be deduped even though
+        // the recorded track ID is the falsy value 0.
         void ctl.playInstanceAnimation('hero', 'a');
-        void ctl.playInstanceAnimation('hero', 'b');
-        void ctl.playInstanceAnimation('hero', 'b');
+        void ctl.playInstanceAnimation('hero', 'a');
 
-        expect(hero.__setAnimationCalls.length).toBe(2);
+        expect(hero.__setAnimationCalls.length).toBe(1);
 
         await vi.runAllTimersAsync();
     });

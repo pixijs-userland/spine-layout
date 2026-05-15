@@ -238,7 +238,7 @@ export class AnimationsController {
             console.error(`Spine ${spineID} not found`);
             return;
         }
-        if (this.activeAnimations.get(spineID)?.get(animation)) return;
+        if (this.activeAnimations.get(spineID)?.get(animation) !== undefined) return;
 
         const loop = mod.includes(parcePointers.mod.loop);
 
