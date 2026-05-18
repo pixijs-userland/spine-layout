@@ -371,6 +371,14 @@ export class SpineLayout extends Container {
     pauseSpineByID(spineID: string) {
         this.#animations.pauseSpineByID(spineID);
     }
+    /** @deprecated Use `animations.pauseAnimation()` instead. */
+    pauseAnimation(spineID: string, animation: string) {
+        this.#animations.pauseAnimation(spineID, animation);
+    }
+    /** @deprecated Use `animations.resetAnimation()` instead. */
+    resetAnimation(spineID: string, animation: string) {
+        this.#animations.resetAnimation(spineID, animation);
+    }
     /** @deprecated Use `animations.addEventListener()` instead. */
     addEventListener(event: string, fn: (event: unknown) => void) {
         this.#animations.addEventListener(event, fn);

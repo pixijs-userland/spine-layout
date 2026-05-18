@@ -53,6 +53,7 @@ export type FakeSpine = Container & {
             | undefined;
         findBone: (name: string) => { worldX: number; worldY: number } | undefined;
         setSkin: (skin: FakeSkin) => void;
+        setBonesToSetupPose: () => void;
         setSlotsToSetupPose: () => void;
         setToSetupPose: () => void;
         updateWorldTransform: (_: unknown) => void;
@@ -63,8 +64,10 @@ export type FakeSpine = Container & {
     __slotChildren: Map<string, Container[]>;
     __activeSkin?: FakeSkin;
     __setupPoseCount: number;
+    __bonesSetupPoseCount: number;
     __clearTrackCalls: number[];
     __clearTracksCalls: number;
+    __worldTransformUpdates: number;
     __destroyed: boolean;
     triggerEvent: (eventName: string) => void;
 };
@@ -98,8 +101,10 @@ export function createFakeSpine(options: FakeSpineOptions = {}): FakeSpine {
     spine.__listeners = [];
     spine.__slotChildren = new Map();
     spine.__setupPoseCount = 0;
+    spine.__bonesSetupPoseCount = 0;
     spine.__clearTrackCalls = [];
     spine.__clearTracksCalls = 0;
+    spine.__worldTransformUpdates = 0;
     spine.__destroyed = false;
 
     spine.toGlobal = ((point: Point) => new Point(point.x + 100, point.y + 200)) as Container['toGlobal'];
@@ -140,13 +145,18 @@ export function createFakeSpine(options: FakeSpineOptions = {}): FakeSpine {
         setSkin: (skin) => {
             spine.__activeSkin = skin;
         },
+        setBonesToSetupPose: () => {
+            spine.__bonesSetupPoseCount++;
+        },
         setSlotsToSetupPose: () => {
             spine.__setupPoseCount++;
         },
         setToSetupPose: () => {
             spine.__setupPoseCount++;
         },
-        updateWorldTransform: () => {},
+        updateWorldTransform: () => {
+            spine.__worldTransformUpdates++;
+        },
     };
 
     spine.addSlotObject = (name, child) => {

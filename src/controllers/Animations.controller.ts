@@ -369,6 +369,68 @@ export class AnimationsController {
         spine.state.timeScale = 0;
     }
 
+    /**
+     * Pauses a single animation on a specific spine, freezing it at its current frame.
+     *
+     * Looks up the track that this animation is playing on (either active or looping),
+     * sets `timeScale` to `0`, and clamps `trackEnd` so the entry stops advancing.
+     * Other animations on the same spine are unaffected — only the named track is frozen.
+     * Has no effect if the spine or animation isn't currently tracked.
+     */
+    pauseAnimation(spineID: string, animation: string) {
+        const spine = this.spines.get(spineID);
+        if (!spine) {
+            console.error(`Spine ${spineID} not found`);
+            return;
+        }
+
+        const trackID =
+            this.activeAnimations.get(spineID)?.get(animation) ??
+            this.loopingAnimations.get(spineID)?.get(animation);
+        if (trackID === undefined) return;
+
+        const trackEntry = spine.state.getCurrent(trackID);
+        if (!trackEntry) return;
+
+        const frozenTime = trackEntry.trackTime;
+        trackEntry.timeScale = 0;
+        trackEntry.trackEnd = frozenTime;
+        spine.skeleton.updateWorldTransform(Physics.update);
+
+        log.log(`spine pause: ${spineID}(${animation}) @ ${frozenTime.toFixed(2)}s`);
+    }
+
+    /**
+     * Resets a single animation on a specific spine back to its setup pose.
+     *
+     * Clears every track currently playing this animation (both active and looping),
+     * resets the skeleton's bones and slots to their setup pose, and forces a world-transform
+     * update so the change is visible immediately. Use after a finishing/end-pose animation
+     * to return the spine to its neutral state without affecting other registered spines.
+     */
+    resetAnimation(spineID: string, animation: string) {
+        const spine = this.spines.get(spineID);
+        if (!spine) {
+            console.error(`Spine ${spineID} not found`);
+            return;
+        }
+
+        const activeTrack = this.activeAnimations.get(spineID)?.get(animation);
+        if (activeTrack !== undefined) spine.state.clearTrack(activeTrack);
+
+        const loopingTrack = this.loopingAnimations.get(spineID)?.get(animation);
+        if (loopingTrack !== undefined) spine.state.clearTrack(loopingTrack);
+
+        spine.skeleton.setBonesToSetupPose();
+        spine.skeleton.setSlotsToSetupPose();
+        spine.skeleton.updateWorldTransform(Physics.update);
+
+        this.removeActiveAnimation(spineID, animation);
+        this.removeLoopingAnimation(spineID, animation);
+
+        log.log(`spine reset: ${spineID}(${animation})`);
+    }
+
     // ─── Speed ───────────────────────────────────────────────────────────────────
 
     set speed(value: number) {

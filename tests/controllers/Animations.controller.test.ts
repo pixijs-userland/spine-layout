@@ -342,6 +342,142 @@ describe('AnimationsController – playback', () => {
     });
 });
 
+describe('AnimationsController – pauseAnimation', () => {
+    let err: ReturnType<typeof vi.spyOn>;
+
+    beforeEach(() => {
+        err = vi.spyOn(console, 'error').mockImplementation(() => {});
+        vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+        vi.useRealTimers();
+    });
+
+    it('logs an error when the spine is unknown', () => {
+        const ctl = new AnimationsController(new Map());
+        ctl.pauseAnimation('missing', 'a');
+        expect(err).toHaveBeenCalledWith('Spine missing not found');
+    });
+
+    it('is a no-op when the animation is not currently tracked on the spine', () => {
+        const hero = createFakeSpine({ animations: [{ name: 'a', duration: 1 }] });
+        const trackEntry = { trackTime: 0.3, timeScale: 1, trackEnd: Number.POSITIVE_INFINITY };
+        hero.state.getCurrent = () => trackEntry;
+
+        const ctl = new AnimationsController(asSpineMap({ hero }));
+        ctl.registerSpine('hero', hero as never);
+
+        ctl.pauseAnimation('hero', 'a');
+
+        expect(trackEntry.timeScale).toBe(1);
+    });
+
+    it('freezes the active track at its current trackTime', async () => {
+        const hero = createFakeSpine({ animations: [{ name: 'a', duration: 1 }] });
+        const trackEntry = { trackTime: 0.42, timeScale: 1, trackEnd: Number.POSITIVE_INFINITY };
+        hero.state.getCurrent = () => trackEntry;
+
+        const ctl = new AnimationsController(asSpineMap({ hero }));
+        ctl.registerSpine('hero', hero as never);
+
+        void ctl.playInstanceAnimation('hero', 'a');
+        ctl.pauseAnimation('hero', 'a');
+
+        expect(trackEntry.timeScale).toBe(0);
+        expect(trackEntry.trackEnd).toBe(0.42);
+        expect(hero.__worldTransformUpdates).toBeGreaterThan(0);
+
+        await vi.runAllTimersAsync();
+    });
+
+    it('freezes a looping track when the animation was started with _loop modifier', async () => {
+        const hero = createFakeSpine({ animations: [{ name: 'idle_loop', duration: 1 }] });
+        const trackEntry = { trackTime: 0.7, timeScale: 1, trackEnd: Number.POSITIVE_INFINITY };
+        hero.state.getCurrent = () => trackEntry;
+
+        const ctl = new AnimationsController(asSpineMap({ hero }));
+        ctl.registerSpine('hero', hero as never);
+
+        void ctl.playInstanceAnimation('hero', 'idle_loop');
+        ctl.pauseAnimation('hero', 'idle_loop');
+
+        expect(trackEntry.timeScale).toBe(0);
+        expect(trackEntry.trackEnd).toBe(0.7);
+
+        await vi.runAllTimersAsync();
+    });
+});
+
+describe('AnimationsController – resetAnimation', () => {
+    let err: ReturnType<typeof vi.spyOn>;
+
+    beforeEach(() => {
+        err = vi.spyOn(console, 'error').mockImplementation(() => {});
+        vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+        vi.useRealTimers();
+    });
+
+    it('logs an error when the spine is unknown', () => {
+        const ctl = new AnimationsController(new Map());
+        ctl.resetAnimation('missing', 'a');
+        expect(err).toHaveBeenCalledWith('Spine missing not found');
+    });
+
+    it('clears the active track and restores bones+slots to setup pose', async () => {
+        const hero = createFakeSpine({ animations: [{ name: 'a', duration: 1 }] });
+        const ctl = new AnimationsController(asSpineMap({ hero }));
+        ctl.registerSpine('hero', hero as never);
+
+        void ctl.playInstanceAnimation('hero', 'a');
+        expect(ctl.getActive()).toEqual(['hero']);
+
+        ctl.resetAnimation('hero', 'a');
+
+        expect(hero.__clearTrackCalls).toEqual([0]);
+        expect(hero.__bonesSetupPoseCount).toBe(1);
+        expect(hero.__setupPoseCount).toBe(1);
+        expect(hero.__worldTransformUpdates).toBeGreaterThan(0);
+
+        // Idempotent: a second reset should be a no-op clear (animation
+        // entry was already removed from the internal track map).
+        ctl.resetAnimation('hero', 'a');
+        expect(hero.__clearTrackCalls).toEqual([0]);
+
+        await vi.runAllTimersAsync();
+    });
+
+    it('clears the looping track when called on a _loop animation', async () => {
+        const hero = createFakeSpine({ animations: [{ name: 'idle_loop', duration: 1 }] });
+        const ctl = new AnimationsController(asSpineMap({ hero }));
+        ctl.registerSpine('hero', hero as never);
+
+        void ctl.playInstanceAnimation('hero', 'idle_loop');
+        expect(ctl.getLooping()).toEqual(['hero']);
+
+        ctl.resetAnimation('hero', 'idle_loop');
+
+        expect(hero.__clearTrackCalls).toEqual([0]);
+
+        await vi.runAllTimersAsync();
+    });
+
+    it('still resets the pose even when the animation is not tracked', () => {
+        const hero = createFakeSpine({ animations: [{ name: 'a', duration: 1 }] });
+        const ctl = new AnimationsController(asSpineMap({ hero }));
+        ctl.registerSpine('hero', hero as never);
+
+        ctl.resetAnimation('hero', 'a');
+
+        expect(hero.__clearTrackCalls).toEqual([]);
+        expect(hero.__bonesSetupPoseCount).toBe(1);
+        expect(hero.__setupPoseCount).toBe(1);
+    });
+});
+
 describe('AnimationsController – playInstanceAnimationLastFrame', () => {
     it('warns when spine is unknown', async () => {
         const err = vi.spyOn(console, 'error').mockImplementation(() => {});
