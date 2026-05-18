@@ -22,14 +22,24 @@ export type FakeSpineEventListener = {
     event?: (entry: unknown, event: { data: { name: string } }) => void;
 };
 
+export type FakeTrackEntry = {
+    animation: { name: string };
+    trackTime: number;
+    trackEnd: number;
+    animationEnd: number;
+    timeScale: number;
+    loop: boolean;
+};
+
 export type FakeSpine = Container & {
     __isFake: true;
     state: {
         addListener: (listener: FakeSpineEventListener) => void;
-        setAnimation: (track: number, name: string, loop: boolean) => void;
+        setAnimation: (track: number, name: string, loop: boolean) => FakeTrackEntry;
         clearTracks: () => void;
         clearTrack: (track: number) => void;
-        getCurrent: (track: number) => unknown;
+        getCurrent: (track: number) => FakeTrackEntry | undefined;
+        tracks: Array<FakeTrackEntry | null>;
         timeScale: number;
         data: {
             skeletonData: {
@@ -109,18 +119,34 @@ export function createFakeSpine(options: FakeSpineOptions = {}): FakeSpine {
 
     spine.toGlobal = ((point: Point) => new Point(point.x + 100, point.y + 200)) as Container['toGlobal'];
 
+    const tracks: Array<FakeTrackEntry | null> = [];
+
     spine.state = {
         addListener: (listener) => spine.__listeners.push(listener),
         setAnimation: (track, name, loop) => {
             spine.__setAnimationCalls.push({ track, name, loop });
+            const animData = findAnimation(name);
+            const entry: FakeTrackEntry = {
+                animation: { name },
+                trackTime: 0,
+                trackEnd: Number.POSITIVE_INFINITY,
+                animationEnd: animData?.duration ?? 0,
+                timeScale: 1,
+                loop,
+            };
+            tracks[track] = entry;
+            return entry;
         },
         clearTracks: () => {
             spine.__clearTracksCalls++;
+            for (let i = 0; i < tracks.length; i++) tracks[i] = null;
         },
         clearTrack: (track) => {
             spine.__clearTrackCalls.push(track);
+            tracks[track] = null;
         },
-        getCurrent: () => undefined,
+        getCurrent: (track) => tracks[track] ?? undefined,
+        tracks,
         timeScale: 1,
         data: {
             skeletonData: {

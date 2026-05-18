@@ -15,7 +15,6 @@ export class AnimationsController {
     private eventAnimations: Map<string, string[]> = new Map();
     private activeAnimations: Map<string, AnimationTrackRegistry> = new Map();
     private loopingAnimations: Map<string, AnimationTrackRegistry> = new Map();
-    private activeTracks: Map<SpineID, number> = new Map();
     #eventsListeners: Map<string, ((spineID: string, spine?: Spine, event?: unknown) => void)[]> =
         new Map();
     #speed = 1;
@@ -212,10 +211,23 @@ export class AnimationsController {
         this.playAnimationByName(animationName);
     }
 
+    /**
+     * Computes the next free track index for a spine.
+     *
+     * Tracks are allocated as `activeAnimations.size + loopingAnimations.size`.
+     * Because finished non-looping animations remove themselves from `activeAnimations`
+     * (via the completion timer), the index naturally recycles to the lowest free slot.
+     * The resulting `state.setAnimation(track, …)` then *replaces* the previous, finished
+     * entry on the Spine track rather than stacking a new track on top of stale end poses.
+     *
+     * If we used a monotonically-incrementing counter instead, each completed animation's
+     * end pose would keep being applied on its own track forever (until `clearTrack`),
+     * leading to visible artifacts like "the finish-line bones never disappear".
+     */
     private getTrackID(spineID: SpineID): number {
-        const next = (this.activeTracks.get(spineID) ?? -1) + 1;
-        this.activeTracks.set(spineID, next);
-        return next;
+        const active = this.activeAnimations.get(spineID)?.size ?? 0;
+        const looping = this.loopingAnimations.get(spineID)?.size ?? 0;
+        return active + looping;
     }
 
     /** Plays a specific animation on a single spine by ID. Resolves when the animation completes (looping animations resolve immediately). */
@@ -353,11 +365,19 @@ export class AnimationsController {
         this.removeActiveAnimation(spineID, animation);
     }
 
-    /** Pauses all spines involved in the given state by setting their `timeScale` to 0. */
+    /**
+     * Pauses every animation belonging to the given state, on every spine that holds it.
+     *
+     * Implemented per-animation (via `pauseAnimation`) — *not* by freezing the whole spine —
+     * so unrelated tracks on the same spine keep advancing and subsequent `setAnimation`
+     * calls (e.g. `showGame` after `hideGame`) animate normally.
+     */
     pauseState(stateName: string) {
-        this.stateAnimations.get(stateName)?.forEach((animation) => {
-            this.animations.get(animation)?.forEach((_, spineID) => {
-                this.pauseSpineByID(spineID);
+        this.stateAnimations.get(stateName)?.forEach((noModAnimation) => {
+            this.animations.get(noModAnimation)?.forEach((fullAnimations, spineID) => {
+                fullAnimations.forEach((fullAnimation) => {
+                    this.pauseAnimation(spineID, fullAnimation);
+                });
             });
         });
     }
@@ -372,10 +392,10 @@ export class AnimationsController {
     /**
      * Pauses a single animation on a specific spine, freezing it at its current frame.
      *
-     * Looks up the track that this animation is playing on (either active or looping),
-     * sets `timeScale` to `0`, and clamps `trackEnd` so the entry stops advancing.
-     * Other animations on the same spine are unaffected — only the named track is frozen.
-     * Has no effect if the spine or animation isn't currently tracked.
+     * Locates the track entry by scanning `spine.state.tracks` for one whose animation name
+     * matches, so this still works after the animation has completed and been removed from
+     * the internal registry. Sets `trackEntry.timeScale = 0` and clamps `trackEnd` so the
+     * entry stops advancing. Other tracks on the same spine are unaffected.
      */
     pauseAnimation(spineID: string, animation: string) {
         const spine = this.spines.get(spineID);
@@ -384,29 +404,28 @@ export class AnimationsController {
             return;
         }
 
-        const trackID =
-            this.activeAnimations.get(spineID)?.get(animation) ??
-            this.loopingAnimations.get(spineID)?.get(animation);
-        if (trackID === undefined) return;
+        for (let i = 0; i < spine.state.tracks.length; i++) {
+            const trackEntry = spine.state.tracks[i];
+            if (trackEntry?.animation?.name !== animation) continue;
 
-        const trackEntry = spine.state.getCurrent(trackID);
-        if (!trackEntry) return;
+            const frozenTime = trackEntry.trackTime;
+            trackEntry.timeScale = 0;
+            trackEntry.trackEnd = frozenTime;
+            spine.skeleton.updateWorldTransform(Physics.update);
 
-        const frozenTime = trackEntry.trackTime;
-        trackEntry.timeScale = 0;
-        trackEntry.trackEnd = frozenTime;
-        spine.skeleton.updateWorldTransform(Physics.update);
-
-        log.log(`spine pause: ${spineID}(${animation}) @ ${frozenTime.toFixed(2)}s`);
+            log.log(`spine pause: ${spineID}(${animation}) @ ${frozenTime.toFixed(2)}s`);
+            return;
+        }
     }
 
     /**
      * Resets a single animation on a specific spine back to its setup pose.
      *
-     * Clears every track currently playing this animation (both active and looping),
-     * resets the skeleton's bones and slots to their setup pose, and forces a world-transform
-     * update so the change is visible immediately. Use after a finishing/end-pose animation
-     * to return the spine to its neutral state without affecting other registered spines.
+     * Scans `spine.state.tracks` and clears every track holding the named animation —
+     * this is necessary because a non-looping animation that has finished is still applied
+     * on its track (at its end pose) until explicitly cleared, even though it's no longer
+     * in `activeAnimations`. Then resets bones+slots to setup pose and forces a transform
+     * update so the change shows immediately.
      */
     resetAnimation(spineID: string, animation: string) {
         const spine = this.spines.get(spineID);
@@ -415,11 +434,11 @@ export class AnimationsController {
             return;
         }
 
-        const activeTrack = this.activeAnimations.get(spineID)?.get(animation);
-        if (activeTrack !== undefined) spine.state.clearTrack(activeTrack);
-
-        const loopingTrack = this.loopingAnimations.get(spineID)?.get(animation);
-        if (loopingTrack !== undefined) spine.state.clearTrack(loopingTrack);
+        spine.state.tracks.forEach((trackEntry, index) => {
+            if (trackEntry?.animation?.name === animation) {
+                spine.state.clearTrack(index);
+            }
+        });
 
         spine.skeleton.setBonesToSetupPose();
         spine.skeleton.setSlotsToSetupPose();
@@ -493,7 +512,6 @@ export class AnimationsController {
         this.eventAnimations.clear();
         this.activeAnimations.clear();
         this.loopingAnimations.clear();
-        this.activeTracks.clear();
         this.#eventsListeners.clear();
         this.#speed = 1;
     }

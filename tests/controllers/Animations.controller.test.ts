@@ -362,30 +362,28 @@ describe('AnimationsController – pauseAnimation', () => {
 
     it('is a no-op when the animation is not currently tracked on the spine', () => {
         const hero = createFakeSpine({ animations: [{ name: 'a', duration: 1 }] });
-        const trackEntry = { trackTime: 0.3, timeScale: 1, trackEnd: Number.POSITIVE_INFINITY };
-        hero.state.getCurrent = () => trackEntry;
-
         const ctl = new AnimationsController(asSpineMap({ hero }));
         ctl.registerSpine('hero', hero as never);
 
         ctl.pauseAnimation('hero', 'a');
 
-        expect(trackEntry.timeScale).toBe(1);
+        expect(hero.state.tracks.length).toBe(0);
+        expect(hero.__worldTransformUpdates).toBe(0);
     });
 
     it('freezes the active track at its current trackTime', async () => {
         const hero = createFakeSpine({ animations: [{ name: 'a', duration: 1 }] });
-        const trackEntry = { trackTime: 0.42, timeScale: 1, trackEnd: Number.POSITIVE_INFINITY };
-        hero.state.getCurrent = () => trackEntry;
-
         const ctl = new AnimationsController(asSpineMap({ hero }));
         ctl.registerSpine('hero', hero as never);
 
         void ctl.playInstanceAnimation('hero', 'a');
+        const entry = hero.state.tracks[0]!;
+        entry.trackTime = 0.42;
+
         ctl.pauseAnimation('hero', 'a');
 
-        expect(trackEntry.timeScale).toBe(0);
-        expect(trackEntry.trackEnd).toBe(0.42);
+        expect(entry.timeScale).toBe(0);
+        expect(entry.trackEnd).toBe(0.42);
         expect(hero.__worldTransformUpdates).toBeGreaterThan(0);
 
         await vi.runAllTimersAsync();
@@ -393,17 +391,17 @@ describe('AnimationsController – pauseAnimation', () => {
 
     it('freezes a looping track when the animation was started with _loop modifier', async () => {
         const hero = createFakeSpine({ animations: [{ name: 'idle_loop', duration: 1 }] });
-        const trackEntry = { trackTime: 0.7, timeScale: 1, trackEnd: Number.POSITIVE_INFINITY };
-        hero.state.getCurrent = () => trackEntry;
-
         const ctl = new AnimationsController(asSpineMap({ hero }));
         ctl.registerSpine('hero', hero as never);
 
         void ctl.playInstanceAnimation('hero', 'idle_loop');
+        const entry = hero.state.tracks[0]!;
+        entry.trackTime = 0.7;
+
         ctl.pauseAnimation('hero', 'idle_loop');
 
-        expect(trackEntry.timeScale).toBe(0);
-        expect(trackEntry.trackEnd).toBe(0.7);
+        expect(entry.timeScale).toBe(0);
+        expect(entry.trackEnd).toBe(0.7);
 
         await vi.runAllTimersAsync();
     });
