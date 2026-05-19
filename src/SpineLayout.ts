@@ -484,4 +484,14 @@ export class SpineLayout extends Container {
     cloneSpine(spine: Spine, newSpineID: string): Spine {
         return this.#spine.clone(spine, newSpineID);
     }
+
+    /** Removes attached children from a spine slot (or all slots if a container is given). */
+    removeSlotAttachments(spineID: string, slotOrContainer: number | string | Slot | Container) {
+        const spine = this.#spines.get(spineID);
+        if (!spine) {
+            console.error(`Spine ${spineID} not found`);
+            return;
+        }
+        spine.removeSlotObject(slotOrContainer);
+    }
 }
