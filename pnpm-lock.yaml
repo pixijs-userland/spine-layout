@@ -7,13 +7,23 @@ settings:
 importers:
 
   .:
+    dependencies:
+      '@esotericsoftware/spine-pixi-v8':
+        specifier: ~4.2.77
+        version: 4.2.116(pixi.js@8.18.1)
+      howler:
+        specifier: ^2.2.4
+        version: 2.2.4
+      pixi.js:
+        specifier: ^8.14.0
+        version: 8.18.1
     devDependencies:
       '@changesets/cli':
         specifier: ^2.27.10
         version: 2.31.0(@types/node@25.8.0)
-      '@esotericsoftware/spine-pixi-v8':
-        specifier: ~4.2.77
-        version: 4.2.116(pixi.js@8.18.1)
+      '@types/howler':
+        specifier: ^2.2.12
+        version: 2.2.13
       '@vitest/coverage-v8':
         specifier: ^4.1.6
         version: 4.1.6(vitest@4.1.6)
@@ -23,9 +33,6 @@ importers:
       happy-dom:
         specifier: ^20.9.0
         version: 20.9.0
-      pixi.js:
-        specifier: ^8.14.0
-        version: 8.18.1
       typescript:
         specifier: ^5.8.3
         version: 5.9.3
@@ -351,6 +358,9 @@ packages:
 
   '@types/estree@1.0.9':
     resolution: {integrity: sha512-GhdPgy1el4/ImP05X05Uw4cw2/M93BCUmnEvWZNStlCzEKME4Fkk+YpoA5OiHNQmoS7Cafb8Xa3Pya8m1Qrzeg==}
+
+  '@types/howler@2.2.13':
+    resolution: {integrity: sha512-40+EBjqIHHrC4VShlz/7i0lBUsE3QkgzZinQQji74Hd8sBkJZUBaT7LWFLK6rcabsDOOQpoMbEJvtaFQwxOu/g==}
 
   '@types/json-schema@7.0.15':
     resolution: {integrity: sha512-5+fP8P8MFNC+AyZCDxrB2pkZFPGzqQWUzpSeuuVLvm8VMcorNYavBqoFcxK8bQz4Qsbn4oUEEem4wDLfcysGHA==}
@@ -692,6 +702,9 @@ packages:
   has-flag@4.0.0:
     resolution: {integrity: sha512-EykJT/Q1KjTWctppgIAgfSO0tKVuZUjhgMr17kqTumMl6Afv3EISleU7qZUzoXDFTAHTDC4NOoG/ZxU3EvlMPQ==}
     engines: {node: '>=8'}
+
+  howler@2.2.4:
+    resolution: {integrity: sha512-iARIBPgcQrwtEr+tALF+rapJ8qSc+Set2GJQl7xT1MQzWaVkFebdJhR3alVlSiUf5U7nAANKuj3aWpwerocD5w==}
 
   html-escaper@2.0.2:
     resolution: {integrity: sha512-H2iMtd0I4Mt5eYiapRdIDjp+XzelXQ0tFE4JS7YFwFevXXMmOp9myNrUvCg0D6ws8iqkRPBfKHgbwig1SmlLfg==}
@@ -1636,6 +1649,8 @@ snapshots:
 
   '@types/estree@1.0.9': {}
 
+  '@types/howler@2.2.13': {}
+
   '@types/json-schema@7.0.15': {}
 
   '@types/node@12.20.55': {}
@@ -1993,6 +2008,8 @@ snapshots:
       - utf-8-validate
 
   has-flag@4.0.0: {}
+
+  howler@2.2.4: {}
 
   html-escaper@2.0.2: {}
 
