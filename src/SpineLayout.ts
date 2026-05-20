@@ -248,7 +248,7 @@ export class SpineLayout extends Container {
     }
 
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    protected onSpineRegistered(_spineID: string, _spine: Spine) {}
+    protected onSpineRegistered(_spineID: string, _spine: Spine) { }
 
     private render() {
         this.#texts.loadSettings();
@@ -328,7 +328,7 @@ export class SpineLayout extends Container {
     }
     /** @deprecated Use `animations.playAnimationByName()` instead. */
     async playAnimationByName(animationName: string, playSolo = false, trackID?: number) {
-        return this.#animations.playAnimationByName(animationName, playSolo, trackID);
+        return this.#animations.playByName(animationName, playSolo, trackID);
     }
     /** @deprecated Use `animations.playInstanceAnimation()` instead. */
     async playInstanceAnimation(
@@ -337,7 +337,7 @@ export class SpineLayout extends Container {
         playSolo = false,
         trackID?: number,
     ) {
-        return this.#animations.playInstanceAnimation(spineID, animation, playSolo, trackID);
+        return this.#animations.play(spineID, animation, playSolo, trackID);
     }
     /** @deprecated Use `animations.playSolo()` instead. */
     async playSolo(animationName: string) {
@@ -345,11 +345,11 @@ export class SpineLayout extends Container {
     }
     /** @deprecated Use `animations.playInstanceAnimationLastFrame()` instead. */
     async playInstanceAnimationLastFrame(spineID: string, animation: string, playSolo = false) {
-        return this.#animations.playInstanceAnimationLastFrame(spineID, animation, playSolo);
+        return this.#animations.playLastFrame(spineID, animation, playSolo);
     }
     /** @deprecated Use `animations.stopAnimation()` instead. */
     stopAnimation(spineID: string, animation: string) {
-        this.#animations.stopAnimation(spineID, animation);
+        this.#animations.stop(spineID, animation);
     }
     /** @deprecated Use `animations.stopAll()` instead. */
     stopAll() {
@@ -357,7 +357,7 @@ export class SpineLayout extends Container {
     }
     /** @deprecated Use `animations.stopAllBySpineID()` instead. */
     stopAllBySpineID(spineID: string) {
-        this.#animations.stopAllBySpineID(spineID);
+        this.#animations.stopAllForSpine(spineID);
     }
     /** @deprecated Use `animations.pauseState()` instead. */
     pauseState(stateName: string) {
@@ -369,15 +369,15 @@ export class SpineLayout extends Container {
     }
     /** @deprecated Use `animations.pauseSpineByID()` instead. */
     pauseSpineByID(spineID: string) {
-        this.#animations.pauseSpineByID(spineID);
+        this.#animations.pauseBySpineID(spineID);
     }
     /** @deprecated Use `animations.pauseAnimation()` instead. */
     pauseAnimation(spineID: string, animation: string) {
-        this.#animations.pauseAnimation(spineID, animation);
+        this.#animations.pause(spineID, animation);
     }
     /** @deprecated Use `animations.resetAnimation()` instead. */
     resetAnimation(spineID: string, animation: string) {
-        this.#animations.resetAnimation(spineID, animation);
+        this.#animations.reset(spineID, animation);
     }
     /** @deprecated Use `animations.addEventListener()` instead. */
     addEventListener(event: string, fn: (event: unknown) => void) {

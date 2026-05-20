@@ -9,14 +9,15 @@ import { LOG } from '../config/logs';
 import { log } from '../utils/Log';
 import { parcePointers } from '../config/parcePointers';
 
+type EventsListeners = Map<string, ((spineID: string, spine?: Spine, event?: unknown) => void)[]>;
+
 export class AnimationsController {
     private animations: Map<SpineID, AnimationsRegistry> = new Map();
     private stateAnimations: Map<string, string[]> = new Map();
     private eventAnimations: Map<string, string[]> = new Map();
     private activeAnimations: Map<string, AnimationTrackRegistry> = new Map();
     private loopingAnimations: Map<string, AnimationTrackRegistry> = new Map();
-    #eventsListeners: Map<string, ((spineID: string, spine?: Spine, event?: unknown) => void)[]> =
-        new Map();
+    #eventsListeners: EventsListeners = new Map();
     #speed = 1;
 
     constructor(private spines: Map<SpineID, Spine>) { }
@@ -133,7 +134,7 @@ export class AnimationsController {
         this.stateAnimations.get(stateName)?.forEach((animation) => {
             this.animations.get(animation)?.forEach((animations, spineID) => {
                 animations.forEach(async (animation) => {
-                    promises.push(this.playInstanceAnimation(spineID, animation));
+                    promises.push(this.play(spineID, animation));
                     log.add(logName, spineID, `${stateName} -> ${animation}`);
                 });
             });
@@ -153,7 +154,7 @@ export class AnimationsController {
         this.stateAnimations.get(stateName)?.forEach((animation) => {
             this.animations.get(animation)?.forEach((animations, spineID) => {
                 animations.forEach((animation) => {
-                    this.stopAnimation(spineID, animation);
+                    this.stop(spineID, animation);
                     affectedSpineIDs.add(spineID);
                     log.add(logName, spineID, `${stateName} -> ${animation}`);
                 });
@@ -183,7 +184,7 @@ export class AnimationsController {
         this.eventAnimations.get(eventName)?.forEach((animation) => {
             this.animations.get(animation)?.forEach((animations, spineID) => {
                 animations.forEach(async (animation) => {
-                    promises.push(this.playInstanceAnimation(spineID, animation));
+                    promises.push(this.play(spineID, animation));
                     log.add(logName, spineID, `${eventName} -> ${animation}`);
                 });
             });
@@ -194,11 +195,11 @@ export class AnimationsController {
     }
 
     /** Plays the named animation on every spine that has it. Pass `playSolo=true` to stop all other animations first. */
-    async playAnimationByName(animationName: string, playSolo = false, trackID?: number) {
+    async playByName(animationName: string, playSolo = false, trackID?: number) {
         const promises: Promise<void>[] = [];
         this.animations.get(animationName)?.forEach((animations, spineID) => {
             animations.forEach(async (animation) => {
-                promises.push(this.playInstanceAnimation(spineID, animation, playSolo, trackID));
+                promises.push(this.play(spineID, animation, playSolo, trackID));
                 log.add(LOG.PLAY_ANIMATION, spineID, `${animationName} -> ${animation}`);
             });
         });
@@ -208,7 +209,7 @@ export class AnimationsController {
     /** Stops all running animations, then plays the named animation on all spines that have it. */
     async playSolo(animationName: string) {
         this.stopAll();
-        this.playAnimationByName(animationName);
+        this.playByName(animationName);
     }
 
     /**
@@ -231,7 +232,7 @@ export class AnimationsController {
     }
 
     /** Plays a specific animation on a single spine by ID. Resolves when the animation completes (looping animations resolve immediately). */
-    async playInstanceAnimation(
+    async play(
         spineID: string,
         animation: string,
         playSolo = false,
@@ -256,7 +257,7 @@ export class AnimationsController {
 
         if (playSolo) {
             if (this.activeAnimations.has(spineID) || this.loopingAnimations.has(spineID)) {
-                this.stopAllBySpineID(spineID);
+                this.stopAllForSpine(spineID);
             }
         }
 
@@ -281,6 +282,7 @@ export class AnimationsController {
         return new Promise<void>((resolve) => {
             if (animationData) {
                 const duration = animationData.duration / spine.state.timeScale;
+
                 setTimeout(() => {
                     this.removeActiveAnimation(spineID, animation);
                     resolve();
@@ -289,12 +291,12 @@ export class AnimationsController {
                 resolve();
             }
         }).then(() => {
-            if (nextAnimation) this.playAnimationByName(nextAnimation, playSolo, trackID);
+            if (nextAnimation) this.playByName(nextAnimation, playSolo, trackID);
         });
     }
 
     /** Plays an animation then immediately seeks to its last frame, effectively showing the end pose. */
-    async playInstanceAnimationLastFrame(spineID: string, animation: string, playSolo = false) {
+    async playLastFrame(spineID: string, animation: string, playSolo = false) {
         const spine = this.spines.get(spineID);
         if (!spine) {
             console.error('Track spine not found');
@@ -308,7 +310,7 @@ export class AnimationsController {
             playSolo &&
             (this.activeAnimations.has(spineID) || this.loopingAnimations.has(spineID))
         ) {
-            this.stopAllBySpineID(spineID);
+            this.stopAllForSpine(spineID);
         }
 
         const playTrack = this.getTrackID(spineID);
@@ -337,7 +339,7 @@ export class AnimationsController {
     }
 
     /** Stops all animations on a specific spine and resets it to the setup pose. */
-    stopAllBySpineID(spineID: string) {
+    stopAllForSpine(spineID: string) {
         const spine = this.spines.get(spineID);
         if (!spine) return;
         spine.state.clearTracks();
@@ -347,7 +349,7 @@ export class AnimationsController {
     }
 
     /** Stops a specific animation on a specific spine, clearing its track. */
-    stopAnimation(spineID: string, animation: string) {
+    stop(spineID: string, animation: string) {
         const spineState = this.spines.get(spineID)?.state;
         if (!spineState) {
             console.error(`Spine ${spineID} not found`);
@@ -376,14 +378,14 @@ export class AnimationsController {
         this.stateAnimations.get(stateName)?.forEach((noModAnimation) => {
             this.animations.get(noModAnimation)?.forEach((fullAnimations, spineID) => {
                 fullAnimations.forEach((fullAnimation) => {
-                    this.pauseAnimation(spineID, fullAnimation);
+                    this.pause(spineID, fullAnimation);
                 });
             });
         });
     }
 
     /** Pauses a specific spine by setting its `timeScale` to 0. Resume by setting `speed` or calling `setAnimation` again. */
-    pauseSpineByID(spineID: string) {
+    pauseBySpineID(spineID: string) {
         const spine = this.spines.get(spineID);
         if (!spine) return;
         spine.state.timeScale = 0;
@@ -397,7 +399,7 @@ export class AnimationsController {
      * the internal registry. Sets `trackEntry.timeScale = 0` and clamps `trackEnd` so the
      * entry stops advancing. Other tracks on the same spine are unaffected.
      */
-    pauseAnimation(spineID: string, animation: string) {
+    pause(spineID: string, animation: string) {
         const spine = this.spines.get(spineID);
         if (!spine) {
             console.error(`Spine ${spineID} not found`);
@@ -427,7 +429,7 @@ export class AnimationsController {
      * in `activeAnimations`. Then resets bones+slots to setup pose and forces a transform
      * update so the change shows immediately.
      */
-    resetAnimation(spineID: string, animation: string) {
+    reset(spineID: string, animation: string) {
         const spine = this.spines.get(spineID);
         if (!spine) {
             console.error(`Spine ${spineID} not found`);
