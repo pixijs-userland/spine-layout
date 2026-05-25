@@ -8,6 +8,7 @@ import type {
 import { LOG } from '../config/logs';
 import { log } from '../utils/Log';
 import { parcePointers } from '../config/parcePointers';
+import { sounds } from './Sounds.controller';
 
 type EventsListeners = Map<string, ((spineID: string, spine?: Spine, event?: unknown) => void)[]>;
 
@@ -37,6 +38,8 @@ export class AnimationsController {
                         log.add(LOG.EVENT, spineID, `Vibration for ${duration}ms`);
                     }
                 }
+
+                this.styToPlayEventSound(event.data.name);
 
                 this.playEvent(event.data.name, spineID);
 
@@ -197,12 +200,14 @@ export class AnimationsController {
     /** Plays the named animation on every spine that has it. Pass `playSolo=true` to stop all other animations first. */
     async playByName(animationName: string, playSolo = false, trackID?: number) {
         const promises: Promise<void>[] = [];
+
         this.animations.get(animationName)?.forEach((animations, spineID) => {
             animations.forEach(async (animation) => {
                 promises.push(this.play(spineID, animation, playSolo, trackID));
                 log.add(LOG.PLAY_ANIMATION, spineID, `${animationName} -> ${animation}`);
             });
         });
+
         await Promise.all(promises);
     }
 
@@ -516,5 +521,13 @@ export class AnimationsController {
         this.loopingAnimations.clear();
         this.#eventsListeners.clear();
         this.#speed = 1;
+    }
+
+    private styToPlayEventSound(eventName: string) {
+        try {
+            sounds.playFX(eventName);
+        } catch (error) {
+            // do nothing, just don't play a sound if it doesn't exist
+        }
     }
 }

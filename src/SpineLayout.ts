@@ -24,6 +24,7 @@ import { SkinsController } from './controllers/Skins.controller';
 import { TextsController } from './controllers/Texts.controller';
 import { SceneController } from './controllers/Scene.controller';
 import { SpineController } from './controllers/Spine.controller';
+import { sounds } from './controllers/Sounds.controller';
 
 export class SpineLayout extends Container {
     #spines: Map<SpineID, Spine> = new Map();
@@ -157,6 +158,8 @@ export class SpineLayout extends Container {
         });
 
         this.render();
+
+        sounds.init(manifest);
 
         log.close(LOG.SPINES);
         log.close(LOG.STATES);
