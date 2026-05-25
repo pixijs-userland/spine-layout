@@ -19,6 +19,8 @@ SpineLayout (Container)
 ├── SceneController       — hierarchical composition (spines, texts, buttons) ✓ stable
 ├── @pixi/layout          — responsive layout for Pixi.js containers          ⚠ WIP
 └── @pixi/ui              — interactive UI component library                  ⚠ WIP
+
+Sounds (singleton)        — FX + music playback via Howler.js                ✓ stable
 ```
 
 All Spine instances are stored in a central `Map<SpineID, Spine>` registry and each controller operates against that registry.

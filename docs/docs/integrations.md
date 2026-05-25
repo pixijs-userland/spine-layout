@@ -27,5 +27,6 @@ The planned integration mirrors the existing `texts` controller pattern: a dedic
 | --------------------------------- | ------------------------- |
 | Spine animation + SceneController | ✓ Stable                  |
 | TextsController                   | ✓ Stable                  |
+| Sounds (Howler.js)                | ✓ Stable                  |
 | @pixi/layout integration          | ⚠ WIP — not yet available |
 | @pixi/ui integration              | ⚠ WIP — not yet available |
