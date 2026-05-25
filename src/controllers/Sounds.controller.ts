@@ -119,6 +119,8 @@ export class Sounds {
       sound = fx;
     }
 
+    if (!this.isInManifest(sound)) return;
+
     const fxInstance = this.fxSounds.get(sound);
 
     if (fxInstance) {
@@ -159,6 +161,8 @@ export class Sounds {
     if (this.activeMusic === music) {
       return;
     }
+
+    if (!this.isInManifest(music)) return;
 
     this.stopAllMusic();
 
@@ -343,6 +347,11 @@ export class Sounds {
     } else if (!this.settings.muted) {
       this.unmute();
     }
+  }
+
+  private isInManifest(name: string): boolean {
+    const key = this.settings.prefix ? `${this.settings.prefix}/${name}` : name;
+    return this.soundNames.has(key);
   }
 
   private getSoundName(soundName: string): string[] {
