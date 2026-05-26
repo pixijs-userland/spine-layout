@@ -103,6 +103,16 @@ export class Sounds {
   }
 
   playFX(fx?: string | string[], loop = false) {
+    try {
+      this._playFX(fx, loop);
+    } catch (e) {
+      if (this.settings.debug) {
+        console.error('🎶 playFX error', e);
+      }
+    }
+  }
+
+  private _playFX(fx?: string | string[], loop = false) {
     if (
       !fx ||
       (Array.isArray(fx) && fx.length === 0) ||
@@ -151,6 +161,16 @@ export class Sounds {
   }
 
   playMusic(music: string) {
+    try {
+      this._playMusic(music);
+    } catch (e) {
+      if (this.settings.debug) {
+        console.error('🎶 playMusic error', e);
+      }
+    }
+  }
+
+  private _playMusic(music: string) {
     if (this.activeMusic === music) return;
 
     this.stopAllMusic();

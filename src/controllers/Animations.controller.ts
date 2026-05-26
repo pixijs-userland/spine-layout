@@ -39,7 +39,7 @@ export class AnimationsController {
                     }
                 }
 
-                this.styToPlayEventSound(event.data.name);
+                sounds.playFX(event.data.name, event.data.name.endsWith('_loop'));
 
                 this.playEvent(event.data.name, spineID);
 
@@ -533,13 +533,5 @@ export class AnimationsController {
         this.loopingAnimations.clear();
         this.#eventsListeners.clear();
         this.#speed = 1;
-    }
-
-    private styToPlayEventSound(eventName: string) {
-        try {
-            sounds.playFX(eventName);
-        } catch (e) {
-            // do nothing, just don't play a sound if it doesn't exist
-        }
     }
 }
