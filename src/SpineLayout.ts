@@ -298,9 +298,9 @@ export class SpineLayout extends Container {
 
     // ─── Animation queries ───────────────────────────────────────────────────────
 
-    /** @deprecated Use `animations.getAall()` instead. */
+    /** @deprecated Use `animations.getAll()` instead. */
     getAnimations(): string[] {
-        return this.#animations.getAall();
+        return this.#animations.getAll();
     }
     /** @deprecated Use `animations.getStates()` instead. */
     getAnimationsStates(): string[] {
@@ -329,11 +329,11 @@ export class SpineLayout extends Container {
     async playEvent(eventName: string, spineID: string) {
         return this.#animations.playEvent(eventName, spineID);
     }
-    /** @deprecated Use `animations.playAnimationByName()` instead. */
+    /** @deprecated Use `animations.playByName()` instead. */
     async playAnimationByName(animationName: string, playSolo = false, trackID?: number) {
         return this.#animations.playByName(animationName, playSolo, trackID);
     }
-    /** @deprecated Use `animations.playInstanceAnimation()` instead. */
+    /** @deprecated Use `animations.play()` instead. */
     async playInstanceAnimation(
         spineID: string,
         animation: string,

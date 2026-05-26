@@ -47,6 +47,10 @@ export class AnimationsController {
                     .get(event.data.name)
                     ?.forEach((cb) => cb(spineID, spine, event.data));
 
+                this.#eventsListeners
+                    .get('*')
+                    ?.forEach((cb) => cb(spineID, spine, event.data));
+
                 // TODO: this should be handled inside spineLayout
             },
         });
@@ -97,7 +101,7 @@ export class AnimationsController {
     // ─── Getters ─────────────────────────────────────────────────────────────────
 
     /** Returns all registered animation names (without modifiers). */
-    getAall(): string[] {
+    getAll(): string[] {
         return Array.from(this.animations.keys());
     }
     /** Returns all registered state names (from `state_<name>/` folders). */
@@ -119,10 +123,18 @@ export class AnimationsController {
 
     // ─── Event listeners ─────────────────────────────────────────────────────────
 
-    /** Subscribes a callback to a named Spine skeleton event. Multiple listeners per event are supported. */
+    /** Subscribes a callback to a named Spine skeleton event. Use `'*'` to listen to all events. Multiple listeners per event are supported. */
     addEventListener(event: string, fn: (event: unknown) => void) {
         if (!this.#eventsListeners.has(event)) this.#eventsListeners.set(event, []);
         this.#eventsListeners.get(event)!.push(fn);
+    }
+
+    /** Removes a previously registered event listener. */
+    removeEventListener(event: string, fn: (event: unknown) => void) {
+        const listeners = this.#eventsListeners.get(event);
+        if (!listeners) return;
+        const index = listeners.indexOf(fn as (spineID: string, spine?: Spine, event?: unknown) => void);
+        if (index !== -1) listeners.splice(index, 1);
     }
 
     // ─── Playback ────────────────────────────────────────────────────────────────
@@ -526,7 +538,7 @@ export class AnimationsController {
     private styToPlayEventSound(eventName: string) {
         try {
             sounds.playFX(eventName);
-        } catch (error) {
+        } catch (e) {
             // do nothing, just don't play a sound if it doesn't exist
         }
     }
