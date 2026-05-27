@@ -101,6 +101,10 @@ export class AnimationsController {
             spineAnims.push(animation);
             this.animations.get(noMod)?.set(spineID, spineAnims);
         });
+
+        spine.state.data.skeletonData.events.forEach((event) => {
+            log.add(LOG.SPINE_EVENTS, spineID, event.name);
+        });
     }
 
     // ─── Getters ─────────────────────────────────────────────────────────────────

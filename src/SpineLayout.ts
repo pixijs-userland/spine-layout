@@ -108,6 +108,7 @@ export class SpineLayout extends Container {
         log.open(LOG.SPINES);
         log.open(LOG.STATES);
         log.open(LOG.EVENTS);
+        log.open(LOG.SPINE_EVENTS);
 
         const singleAssets = [];
         const multipleAssets = [];
@@ -167,12 +168,14 @@ export class SpineLayout extends Container {
         log.close(LOG.SPINES);
         log.close(LOG.STATES);
         log.close(LOG.EVENTS);
+        log.close(LOG.SPINE_EVENTS);
     }
 
     createInstancesFromDataArray(data: SpineInstanceData[]) {
         log.open(LOG.SPINES);
         log.open(LOG.STATES);
         log.open(LOG.EVENTS);
+        log.open(LOG.SPINE_EVENTS);
 
         data.forEach((item) => this.createInstanceFromData(item, true, true));
         data.forEach((item) => this.createInstanceFromData(item, true, false));
@@ -182,6 +185,7 @@ export class SpineLayout extends Container {
         log.close(LOG.SPINES);
         log.close(LOG.STATES);
         log.close(LOG.EVENTS);
+        log.close(LOG.SPINE_EVENTS);
 
         this.#animations.playState('init');
         this.#animations.playByName('init');
