@@ -181,6 +181,7 @@ export class SpineLayout extends Container {
         log.close(LOG.EVENTS);
 
         this.#animations.playState('init');
+        this.#animations.playByName('init');
     }
 
     createInstanceFromData(
@@ -237,6 +238,7 @@ export class SpineLayout extends Container {
         if (!skipAttachBones) this.render();
 
         this.#animations.playState('init');
+        this.#animations.playByName('init');
     }
 
     private addSpineInstance(spineID: string, spine: Spine) {

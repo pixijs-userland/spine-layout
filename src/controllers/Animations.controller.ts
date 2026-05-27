@@ -39,7 +39,8 @@ export class AnimationsController {
                     }
                 }
 
-                sounds.playFX(event.data.name, event.data.name.endsWith('_loop'));
+                sounds.playFX(event.data.name);
+
 
                 this.playEvent(event.data.name, spineID);
 
@@ -84,6 +85,7 @@ export class AnimationsController {
                     console.warn(`Animation ${noMod} does not have an event name.`);
                     return;
                 }
+
                 const list = this.eventAnimations.get(eventName) ?? [];
                 if (!list.includes(noMod)) {
                     list.push(noMod);
