@@ -39,8 +39,11 @@ export class AnimationsController {
                     }
                 }
 
-                sounds.playFX(event.data.name);
-
+                if (event.data.name.endsWith('_loop')) {
+                    sounds.playMusic(event.data.name.slice(0, -5))
+                } else {
+                    sounds.playFX(event.data.name);
+                }
 
                 this.playEvent(event.data.name, spineID);
 

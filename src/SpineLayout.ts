@@ -161,6 +161,9 @@ export class SpineLayout extends Container {
 
         sounds.init(manifest);
 
+        this.#animations.playState('init');
+        this.#animations.playByName('init');
+
         log.close(LOG.SPINES);
         log.close(LOG.STATES);
         log.close(LOG.EVENTS);

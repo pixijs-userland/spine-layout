@@ -122,7 +122,8 @@ export class Sounds {
             !fx ||
             (Array.isArray(fx) && fx.length === 0) ||
             !this.userInteraction ||
-            !this.initialized
+            !this.initialized ||
+            !this.hasSounds(fx)
         ) {
             return;
         }
@@ -202,6 +203,7 @@ export class Sounds {
             if (this.settings.debug) {
                 console.warn(`Failed to play music: ${music} - sound not found`);
             }
+
             return;
         }
 
@@ -343,6 +345,11 @@ export class Sounds {
         } else if (!this.settings.muted) {
             this.unmute();
         }
+    }
+
+    private hasSounds(fx: string | string[]): boolean {
+        const names = Array.isArray(fx) ? fx : [fx];
+        return names.some((name) => this.soundNames.has(name));
     }
 
     private getSoundName(soundName: string): string[] {
