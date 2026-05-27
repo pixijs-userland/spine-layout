@@ -22,6 +22,7 @@ export class Sounds {
     private musicSounds: Map<string, Howl> = new Map();
     private activeMusic: string | null = null;
     private onActivationCallbacks: (() => void)[] = [];
+    private onReadyCallbacks: (() => void)[] = [];
     private settings: SoundSettings;
     activated = false;
 
@@ -42,12 +43,14 @@ export class Sounds {
         this.mute();
     }
 
-    init(pixiManifest: AssetsManifest, settings?: Partial<SoundSettings>) {
+    init(pixiManifest?: AssetsManifest, settings?: Partial<SoundSettings>) {
         if (settings) {
             this.settings = { ...this.settings, ...settings };
         }
 
-        this.extractSoundNames(pixiManifest);
+        if (pixiManifest) {
+            this.extractSoundNames(pixiManifest);
+        }
 
         this.initialized = true;
 
@@ -56,6 +59,7 @@ export class Sounds {
         }
 
         this.playSounds();
+        this.fireReadyCallbacks();
     }
 
     private extractSoundNames(pixiManifest: AssetsManifest) {
@@ -326,11 +330,21 @@ export class Sounds {
         });
 
         this.soundNames.set(name, [dataUrl]);
+        console.log(`🎶 Loaded sound file "${name}" from user input`);
+    }
 
-        if (!this.initialized) {
-            this.initialized = true;
-            this.playSounds();
+    /** Register a callback to run once sounds are initialized. Fires immediately if already ready. */
+    onReady(callback: () => void) {
+        if (this.initialized) {
+            callback();
+        } else {
+            this.onReadyCallbacks.push(callback);
         }
+    }
+
+    private fireReadyCallbacks() {
+        this.onReadyCallbacks.forEach((cb) => cb());
+        this.onReadyCallbacks = [];
     }
 
     private playSounds() {
