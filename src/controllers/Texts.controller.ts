@@ -173,11 +173,44 @@ export class TextsController {
     }
 
     loadSettings() {
-        const texts = Assets.get('settings/texts.json') as TextsJson | undefined;
+        // The pixi manifest registers the settings file under its shortcut alias
+        // (`texts.json`) and full relative path (`<skin>/settings/texts.json`),
+        // never `settings/texts.json`. Try the shortcut first, then fall back.
+        const texts = (Assets.get('texts.json') ?? Assets.get('settings/texts.json')) as
+            | TextsJson
+            | undefined;
+
         if (texts) this.#textSettings = texts;
     }
 
-    setBySpineID(spineID: string, slotName: string, text: Text) {
+    /**
+     * Updates the displayed string of an already-registered text object whose key matches
+     * `slotName`. The `spineID` is validated only to guard against unknown spines — the
+     * lookup itself is by text key, so any registered text with that key is updated
+     * regardless of which spine it belongs to. No-ops (with an error log) if the spine is
+     * missing, and silently does nothing if no registered text matches `slotName`.
+     */
+    setBySpineID(spineID: string, slotName: string, text: string) {
+        const spine = this.spines.get(spineID);
+        if (!spine) {
+            console.error(`Spine "${spineID}" not found`);
+            return;
+        }
+
+        this.texts.forEach((textObject, textKey) => {
+            if (textKey === slotName) {
+                textObject.text = text;
+            }
+        });
+    }
+
+    /**
+     * Attaches an externally-built `Text`/`BitmapText` node to a named slot of the given
+     * spine via `addSlotObject`, so the node follows that slot's transform. Use for text
+     * created outside the normal `texts.json` registration flow (e.g. nodes from
+     * {@link buildText}). Logs an error and no-ops if the spine or the slot is not found.
+     */
+    addTextToSlot(spineID: string, slotName: string, text: Text | BitmapText) {
         const spine = this.spines.get(spineID);
         if (!spine) {
             console.error(`Spine "${spineID}" not found`);
@@ -191,6 +224,40 @@ export class TextsController {
         }
 
         spine.addSlotObject(slot.name, text);
+    }
+
+    /**
+     * Builds a standalone, styled `Text`/`BitmapText` from the `texts.json` entry for `key`,
+     * without registering or attaching it to a slot. Use for nodes added manually to
+     * non-`text_` slots (e.g. per-instance reward texts on multiple-instance spines).
+     */
+    buildText(key: string): Text | BitmapText {
+        const entry = this.#textSettings?.[key];
+        const isBitmap = entry?.type === 'bitmapText';
+        const text = isBitmap ? new BitmapText() : new Text();
+        text.anchor.set(0.5, 0.5);
+
+        if (entry) {
+            const style: Record<string, unknown> = { ...entry };
+            delete style.type;
+            delete style.value;
+            delete style.uppercase;
+            delete style.animateNumber;
+            delete style.offset;
+            delete style.maxWidth;
+            if (isBitmap) style.fill = '#ffffff';
+            text.style = style as Partial<Text['style']>;
+        }
+
+        return text;
+    }
+
+    /** Returns the style data (the `texts.json` entry minus `type`/`value`) applied to a text node, for logging. */
+    getAppliedStyle(textKey: string): Record<string, unknown> {
+        const style: Record<string, unknown> = { ...(this.#textSettings?.[textKey] ?? {}) };
+        delete style.type;
+        delete style.value;
+        return style;
     }
 
     add(slot: SlotData, spine: Spine, textKey: string): string {

@@ -269,9 +269,26 @@ describe('TextsController – attach / settings / clear', () => {
         ).toBe(100);
     });
 
-    it('loadSettings picks up settings/texts.json from Assets when present', () => {
+    it('loadSettings picks up the texts.json shortcut alias from Assets when present', () => {
         const fakeSettings = { foo: { type: 'text', value: 'x' } };
         const spy = vi.spyOn(Assets, 'get').mockReturnValue(fakeSettings as never);
+
+        const ctl = new TextsController(new Map());
+        ctl.loadSettings();
+
+        expect(spy).toHaveBeenCalledWith('texts.json');
+        expect(ctl.settings).toBe(fakeSettings);
+
+        spy.mockRestore();
+    });
+
+    it('loadSettings falls back to settings/texts.json when the shortcut is absent', () => {
+        const fakeSettings = { foo: { type: 'text', value: 'x' } };
+        const spy = vi
+            .spyOn(Assets, 'get')
+            .mockImplementation((key: unknown) =>
+                key === 'settings/texts.json' ? (fakeSettings as never) : (undefined as never),
+            );
 
         const ctl = new TextsController(new Map());
         ctl.loadSettings();

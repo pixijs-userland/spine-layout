@@ -447,8 +447,8 @@ export class SpineLayout extends Container {
         this.#texts.setStyle(boneName, style);
     }
     /** @deprecated Use `texts.setBySpineID()` instead. */
-    setSlotTextBySpineID(spineID: string, slotName: string, text: Text) {
-        this.#texts.setBySpineID(spineID, slotName, text);
+    setSlotTextBySpineID(spineID: string, slotName: string, text: Text | BitmapText) {
+        this.#texts.addTextToSlot(spineID, slotName, text);
     }
 
     // ─── Spine management ─────────────────────────────────────────────────────────
