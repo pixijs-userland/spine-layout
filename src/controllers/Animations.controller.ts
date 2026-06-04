@@ -107,6 +107,13 @@ export class AnimationsController {
         });
     }
 
+    /** Removes a spine from the animation registries (the inverse of `registerSpine`). */
+    unregisterSpine(spineID: string) {
+        this.animations.forEach((registry) => registry.delete(spineID));
+        this.activeAnimations.delete(spineID);
+        this.loopingAnimations.delete(spineID);
+    }
+
     // ─── Getters ─────────────────────────────────────────────────────────────────
 
     /** Returns all registered animation names (without modifiers). */

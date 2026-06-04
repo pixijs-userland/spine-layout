@@ -10,7 +10,6 @@ export type SpineLayoutOptions = {
     debug?: boolean;
     manifest?: AssetsManifest;
     skipAttachingSpinesPatterns?: string[];
-    multipleInstancesPatterns?: string[];
 };
 
 export type SpineInstanceData = {
@@ -62,4 +61,14 @@ export type TextsJsonBitmapTextEntry = TextsJsonEntryBase & {
 };
 
 export type TextsJsonEntry = TextsJsonTextEntry | TextsJsonBitmapTextEntry;
-export type TextsJson = Record<string, TextsJsonEntry>;
+
+/**
+ * `texts.json` structure: a tree keyed by spine id, then by text key.
+ * Multiple-instance spines (e.g. `counter_1`, `counter_2`) each get their own section,
+ * so their texts are configured and applied independently.
+ *
+ * ```json
+ * { "main": { "balance": { … } }, "counter_1": { "reward": { … } } }
+ * ```
+ */
+export type TextsJson = Record<string, Record<string, TextsJsonEntry>>;

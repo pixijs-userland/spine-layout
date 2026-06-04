@@ -60,8 +60,10 @@ export class SceneController {
         this.spines.forEach((spine, spineID) => {
             spine?.state.data.skeletonData.slots.forEach((slot) => {
                 if (!slot.name.startsWith(parcePointers.slot.text)) return;
+
                 const textKey = slot.name.replace(parcePointers.slot.text, '');
-                const attached = this.texts.add(slot, spine, textKey);
+                const attached = this.texts.add(slot, spine, textKey, spineID);
+
                 log.add(LOG.TEXT, spineID, attached);
             });
         });

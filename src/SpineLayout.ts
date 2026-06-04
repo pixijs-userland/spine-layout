@@ -12,13 +12,13 @@ import type {
     SpineID,
     SpineLayoutOptions,
     SpineInstanceData,
-    TextsJsonEntry,
+    TextsJson,
 } from './config/types';
 import { type AssetsManifest, BitmapText, Container, Text, Texture, type Point } from 'pixi.js';
 import { LOG } from './config/logs';
 import { log } from './utils/Log';
 import { parcePointers } from './config/parcePointers';
-import { ManifestParser } from './utils/ManifestParser';
+import { ManifestParser, type SpineAssetData } from './utils/ManifestParser';
 import { AnimationsController } from './controllers/Animations.controller';
 import { SkinsController } from './controllers/Skins.controller';
 import { TextsController } from './controllers/Texts.controller';
@@ -28,6 +28,8 @@ import { sounds } from './controllers/Sounds.controller';
 
 export class SpineLayout extends Container {
     #spines: Map<SpineID, Spine> = new Map();
+    /** Ids of spines created as multiple instances (e.g. `counter_1`). */
+    #multipleInstanceIDs: Set<string> = new Set();
     #animations: AnimationsController;
     #skins: SkinsController;
     #texts: TextsController;
@@ -40,7 +42,7 @@ export class SpineLayout extends Container {
         log.enabled = !!options?.debug;
         this.#animations = new AnimationsController(this.#spines);
         this.#skins = new SkinsController(this.#spines);
-        this.#texts = new TextsController(this.#spines);
+        this.#texts = new TextsController(this.#spines, this.#multipleInstanceIDs);
         this.#spine = new SpineController(this.#spines, this.#animations);
         this.#scene = new SceneController(
             this.#spines,
@@ -60,6 +62,10 @@ export class SpineLayout extends Container {
     get spines(): Map<SpineID, Spine> {
         return this.#spines;
     }
+    /** Ids of spines created as multiple instances (e.g. `counter_1`, `counter_2`). */
+    get multipleInstanceIds(): string[] {
+        return [...this.#multipleInstanceIDs];
+    }
     get animations(): AnimationsController {
         return this.#animations;
     }
@@ -76,10 +82,10 @@ export class SpineLayout extends Container {
         return this.#spine;
     }
 
-    set textSettings(settings: Record<string, TextsJsonEntry>) {
+    set textSettings(settings: TextsJson) {
         this.#texts.settings = settings;
     }
-    get textSettings(): Record<string, TextsJsonEntry> | undefined {
+    get textSettings(): TextsJson | undefined {
         return this.#texts.settings;
     }
 
@@ -110,52 +116,26 @@ export class SpineLayout extends Container {
         log.open(LOG.EVENTS);
         log.open(LOG.SPINE_EVENTS);
 
-        const singleAssets = [];
-        const multipleAssets = [];
-
-        for (const asset of ManifestParser.getSpineAssets(manifest)) {
+        // Create a single instance for every asset first, so that parent spines exist
+        // and their slots can be scanned for multiple-instance pointers.
+        const assetByID = new Map<string, SpineAssetData>();
+        ManifestParser.getSpineAssets(manifest).forEach((asset) => {
             const spineID = asset.atlas.replace(/\.[^.]+$/, '');
-
-            if (this.options?.multipleInstancesPatterns?.includes(spineID)) {
-                multipleAssets.push(asset);
-            } else {
-                singleAssets.push(asset);
-            }
-        }
-
-        // create single instances first to ensure all skins are registered for multiple instance spines
-        singleAssets.forEach((asset) => {
-            const spineID = asset.atlas.replace(/\.[^.]+$/, '');
-
-            this.addSpineInstance(
-                spineID,
-                Spine.from({
-                    skeleton: `${folderName}/${asset.skel}`,
-                    atlas: `${folderName}/${asset.atlas}`,
-                }),
-            );
+            assetByID.set(spineID, asset);
+            this.addSpineInstance(spineID, this.spineFromAsset(asset, folderName));
         });
 
-        // create multiple instances after to ensure correct count and skin registration
-        multipleAssets.forEach((asset) => {
-            const spineID = asset.atlas.replace(/\.[^.]+$/, '');
+        // A slot named `spine_<id>_<n>` marks `<id>` as a multiple-instance spine: replace
+        // the base instance with one numbered instance (id `<id>_<n>`) per pointer.
+        this.collectMultipleInstancePointers().forEach((instanceIDs, baseID) => {
+            const asset = assetByID.get(baseID);
+            if (!asset) return;
 
-            const bones = this.#spine.getBonesByNamePattern(
-                `${parcePointers.slot.spine}${spineID}`,
-            );
-            const count = bones.length > 0 ? bones.length : 1;
-
-            for (let i = 0; i < count; i++) {
-                const id = `${spineID}${count > 1 ? i + 1 : ''}`;
-
-                this.addSpineInstance(
-                    id,
-                    Spine.from({
-                        skeleton: `${folderName}/${asset.skel}`,
-                        atlas: `${folderName}/${asset.atlas}`,
-                    }),
-                );
-            }
+            this.removeSpineInstance(baseID);
+            instanceIDs.forEach((instanceID) => {
+                this.#multipleInstanceIDs.add(instanceID);
+                this.addSpineInstance(instanceID, this.spineFromAsset(asset, folderName));
+            });
         });
 
         this.render();
@@ -177,8 +157,27 @@ export class SpineLayout extends Container {
         log.open(LOG.EVENTS);
         log.open(LOG.SPINE_EVENTS);
 
-        data.forEach((item) => this.createInstanceFromData(item, true, true));
-        data.forEach((item) => this.createInstanceFromData(item, true, false));
+        // Create a single instance per data item first, so that parent spines exist
+        // and their slots can be scanned for multiple-instance pointers.
+        const dataByID = new Map<string, SpineInstanceData>();
+        data.forEach((item) => {
+            const spineID = item.atlasText.split('.')[0];
+            dataByID.set(spineID, item);
+            this.addDataInstance(spineID, item);
+        });
+
+        // A slot named `spine_<id>_<n>` marks `<id>` as a multiple-instance spine: replace
+        // the base instance with one numbered instance (id `<id>_<n>`) per pointer.
+        this.collectMultipleInstancePointers().forEach((instanceIDs, baseID) => {
+            const item = dataByID.get(baseID);
+            if (!item) return;
+
+            this.removeSpineInstance(baseID);
+            instanceIDs.forEach((instanceID) => {
+                this.#multipleInstanceIDs.add(instanceID);
+                this.addDataInstance(instanceID, item);
+            });
+        });
 
         this.render();
 
@@ -191,16 +190,8 @@ export class SpineLayout extends Container {
         this.#animations.playByName('init');
     }
 
-    createInstanceFromData(
-        data: SpineInstanceData,
-        skipAttachBones = false,
-        skipMultipleInstances = true,
-    ) {
-        const spineID = data.atlasText.split('.')[0];
-
-        if (skipMultipleInstances && this.options?.multipleInstancesPatterns?.includes(spineID))
-            return;
-
+    /** Builds a Spine from raw data, registers it under `spineID`, and registers its skins. */
+    private addDataInstance(spineID: string, data: SpineInstanceData) {
         const spineAtlas = new TextureAtlas(data.atlasText);
 
         for (const page of spineAtlas.pages) {
@@ -212,37 +203,56 @@ export class SpineLayout extends Container {
         const skeletonData = new SkeletonJson(
             new AtlasAttachmentLoader(spineAtlas),
         ).readSkeletonData(data.skeleton);
-        const spineInstance = new Spine(skeletonData);
+        const spine = new Spine(skeletonData);
 
-        if (this.options?.multipleInstancesPatterns?.includes(spineID) && !skipMultipleInstances) {
-            const bones = this.#spine.getBonesByNamePattern(
-                `${parcePointers.slot.spine}${spineID}`,
-            );
-            const count = bones.length > 0 ? bones.length : 1;
+        this.addSpineInstance(spineID, spine);
 
-            for (let i = 0; i < count; i++) {
-                const id = `${spineID}${count > 1 ? i + 1 : ''}`;
-                this.addSpineInstance(id, spineInstance);
-                data.skeleton.skins.forEach((skin) => {
-                    const defaultSkin =
-                        spineInstance.skeleton.data.findSkin('default') ??
-                        spineInstance.skeleton.data.findSkin('basic');
-                    if (defaultSkin) this.#skins.applyBySpineID(id, defaultSkin.name);
-                    this.#skins.registerSkin(id, skin.name);
-                });
-            }
-        } else if (skipMultipleInstances) {
-            this.addSpineInstance(spineID, spineInstance);
-            data.skeleton.skins.forEach((skin) => {
-                const defaultSkin =
-                    spineInstance.skeleton.data.findSkin('default') ??
-                    spineInstance.skeleton.data.findSkin('basic');
-                if (defaultSkin) this.#skins.applyBySpineID(spineID, defaultSkin.name);
-                this.#skins.registerSkin(spineID, skin.name);
+        data.skeleton.skins.forEach((skin) => {
+            const defaultSkin =
+                spine.skeleton.data.findSkin('default') ?? spine.skeleton.data.findSkin('basic');
+            if (defaultSkin) this.#skins.applyBySpineID(spineID, defaultSkin.name);
+            this.#skins.registerSkin(spineID, skin.name);
+        });
+    }
+
+    /** Creates a Spine instance from a manifest asset entry. */
+    private spineFromAsset(asset: SpineAssetData, folderName?: string): Spine {
+        return Spine.from({
+            skeleton: `${folderName}/${asset.skel}`,
+            atlas: `${folderName}/${asset.atlas}`,
+        });
+    }
+
+    /**
+     * Scans every registered spine's slots for multiple-instance pointers of the form
+     * `spine_<id>_<n>` and groups them by their base spine id.
+     *
+     * Returns a map of `base id -> set of instance ids`, where each instance id is the
+     * full `<id>_<n>` pointer (e.g. `counter` -> `{ "counter_1", "counter_2" }`). Only
+     * pointers whose base id matches an already-registered spine are included.
+     */
+    private collectMultipleInstancePointers(): Map<string, Set<string>> {
+        const result = new Map<string, Set<string>>();
+        const prefix = parcePointers.slot.spine;
+
+        this.#spines.forEach((spine) => {
+            spine.state.data.skeletonData.slots.forEach((slot) => {
+                if (!slot.name.startsWith(prefix)) return;
+
+                const instanceID = slot.name.slice(prefix.length); // e.g. "counter_1"
+                const match = instanceID.match(/^(.+)_\d+$/);
+                if (!match) return;
+
+                const baseID = match[1]; // e.g. "counter"
+                if (!this.#spines.has(baseID)) return; // not a known spine export
+
+                const ids = result.get(baseID) ?? new Set<string>();
+                ids.add(instanceID);
+                result.set(baseID, ids);
             });
-        }
+        });
 
-        if (!skipAttachBones) this.render();
+        return result;
     }
 
     private addSpineInstance(spineID: string, spine: Spine) {
@@ -254,6 +264,15 @@ export class SpineLayout extends Container {
         this.#spines.set(spineID, spine);
         this.#animations.registerSpine(spineID, spine);
         this.onSpineRegistered(spineID, spine);
+    }
+
+    private removeSpineInstance(spineID: string) {
+        const spine = this.#spines.get(spineID);
+        if (!spine) return;
+
+        spine.destroy();
+        this.#spines.delete(spineID);
+        this.#animations.unregisterSpine(spineID);
     }
 
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -276,6 +295,7 @@ export class SpineLayout extends Container {
 
         this.#spines.forEach((spine) => spine.destroy());
         this.#spines.clear();
+        this.#multipleInstanceIDs.clear();
 
         this.removeChildren();
     }

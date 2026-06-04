@@ -25,15 +25,14 @@ describe('TextsController – queries', () => {
         const ctl = new TextsController(new Map());
         const slot = { name: 'text_a' } as FakeSlot;
         const spine = createFakeSpine({ slots: [slot] });
-        ctl.settings = { a: { type: 'text', value: 'hi' } };
-        ctl.add(slot as never, spine as never, 'a');
+        ctl.settings = { hero: { a: { type: 'text', value: 'hi' }, b: { type: 'bitmapText', value: 'hey' } } };
+        ctl.add(slot as never, spine as never, 'a', 'hero');
 
         expect(ctl.getInstances().get('a')).toBeInstanceOf(Text);
         expect(ctl.getBitmapInstances().size).toBe(0);
 
         const slotB = { name: 'text_b' } as FakeSlot;
-        ctl.settings = { ...ctl.settings, b: { type: 'bitmapText', value: 'hey' } };
-        ctl.add(slotB as never, spine as never, 'b');
+        ctl.add(slotB as never, spine as never, 'b', 'hero');
         expect(ctl.getBitmapInstances().get('b')).toBeInstanceOf(BitmapText);
     });
 
@@ -41,11 +40,58 @@ describe('TextsController – queries', () => {
         const ctl = new TextsController(new Map());
         const slot = { name: 'text_a' } as FakeSlot;
         const spine = createFakeSpine({ slots: [slot] });
-        ctl.settings = { a: { type: 'text', value: 'hello' } };
-        ctl.add(slot as never, spine as never, 'a');
+        ctl.settings = { hero: { a: { type: 'text', value: 'hello' } } };
+        ctl.add(slot as never, spine as never, 'a', 'hero');
 
         expect(ctl.getVal('a')).toBe('hello');
         expect(ctl.getVal('missing')).toBeUndefined();
+    });
+});
+
+describe('TextsController – multiple instances', () => {
+    function setup() {
+        const c1 = createFakeSpine({ slots: [{ name: 'text_reward' }] });
+        const c2 = createFakeSpine({ slots: [{ name: 'text_reward' }] });
+        const ctl = new TextsController(
+            asSpineMap({ counter_1: c1, counter_2: c2 }),
+            new Set(['counter_1', 'counter_2']),
+        );
+        ctl.settings = {
+            // base-spine section provides shared defaults for every counter_N instance
+            counter: { reward: { type: 'text', value: 'X', fontSize: 40 } },
+            // per-instance override
+            counter_1: { reward: { type: 'text', value: '100' } },
+        };
+        ctl.add({ name: 'text_reward' } as never, c1 as never, 'reward', 'counter_1');
+        ctl.add({ name: 'text_reward' } as never, c2 as never, 'reward', 'counter_2');
+        return ctl;
+    }
+
+    it('registers each instance under a per-instance config key', () => {
+        const ctl = setup();
+        expect(ctl.getInstances().has('counter_1_reward')).toBe(true);
+        expect(ctl.getInstances().has('counter_2_reward')).toBe(true);
+        expect(ctl.getInstances().has('reward')).toBe(false);
+    });
+
+    it('merges the per-instance entry over the shared one, leaving siblings on the shared value', () => {
+        const ctl = setup();
+        expect(ctl.getVal('counter_1_reward')).toBe('100'); // per-instance override
+        expect(ctl.getVal('counter_2_reward')).toBe('X'); // shared fallback
+    });
+
+    it('set by exact config key targets a single instance', async () => {
+        const ctl = setup();
+        await ctl.set('counter_1_reward', 'Z');
+        expect(ctl.getVal('counter_1_reward')).toBe('Z');
+        expect(ctl.getVal('counter_2_reward')).toBe('X');
+    });
+
+    it('set by bare text key updates every instance that has it', async () => {
+        const ctl = setup();
+        await ctl.set('reward', 'Y');
+        expect(ctl.getVal('counter_1_reward')).toBe('Y');
+        expect(ctl.getVal('counter_2_reward')).toBe('Y');
     });
 });
 
@@ -58,8 +104,8 @@ describe('TextsController – mutation', () => {
         slot = { name: 'text_a' };
         spine = createFakeSpine({ slots: [slot] });
         ctl = new TextsController(asSpineMap({ hero: spine }));
-        ctl.settings = { a: { type: 'text', value: '' } };
-        ctl.add(slot as never, spine as never, 'a');
+        ctl.settings = { hero: { a: { type: 'text', value: '' } } };
+        ctl.add(slot as never, spine as never, 'a', 'hero');
     });
 
     it('set updates the text value', async () => {
@@ -68,7 +114,7 @@ describe('TextsController – mutation', () => {
     });
 
     it('set uppercases when the entry has uppercase=true', async () => {
-        ctl.settings = { a: { type: 'text', uppercase: true } };
+        ctl.settings = { hero: { a: { type: 'text', uppercase: true } } };
         await ctl.set('a', 'world');
         expect(ctl.getVal('a')).toBe('WORLD');
     });
@@ -143,8 +189,8 @@ describe('TextsController – animated numbers', () => {
         const slot = { name: 'text_score' } as FakeSlot;
         const spine = createFakeSpine({ slots: [slot] });
         const ctl = new TextsController(asSpineMap({ hero: spine }));
-        ctl.settings = { score: { type: 'text', value: 'Score: 0' } };
-        ctl.add(slot as never, spine as never, 'score');
+        ctl.settings = { hero: { score: { type: 'text', value: 'Score: 0' } } };
+        ctl.add(slot as never, spine as never, 'score', 'hero');
 
         const promise = ctl.set('score', 'Score: 100', true, 320);
         await vi.runAllTimersAsync();
@@ -157,8 +203,8 @@ describe('TextsController – animated numbers', () => {
         const slot = { name: 'text_score' } as FakeSlot;
         const spine = createFakeSpine({ slots: [slot] });
         const ctl = new TextsController(asSpineMap({ hero: spine }));
-        ctl.settings = { score: { type: 'text', value: '0', animateNumber: true } };
-        ctl.add(slot as never, spine as never, 'score');
+        ctl.settings = { hero: { score: { type: 'text', value: '0', animateNumber: true } } };
+        ctl.add(slot as never, spine as never, 'score', 'hero');
 
         const promise = ctl.set('score', '10');
         await vi.runAllTimersAsync();
@@ -171,8 +217,8 @@ describe('TextsController – animated numbers', () => {
         const slot = { name: 'text_score' } as FakeSlot;
         const spine = createFakeSpine({ slots: [slot] });
         const ctl = new TextsController(asSpineMap({ hero: spine }));
-        ctl.settings = { score: { type: 'text', value: '42' } };
-        ctl.add(slot as never, spine as never, 'score');
+        ctl.settings = { hero: { score: { type: 'text', value: '42' } } };
+        ctl.add(slot as never, spine as never, 'score', 'hero');
 
         await ctl.set('score', '42', true);
         expect(ctl.getVal('score')).toBe('42');
@@ -182,8 +228,8 @@ describe('TextsController – animated numbers', () => {
         const slot = { name: 'text_score' } as FakeSlot;
         const spine = createFakeSpine({ slots: [slot] });
         const ctl = new TextsController(asSpineMap({ hero: spine }));
-        ctl.settings = { score: { type: 'text', value: '0' } };
-        ctl.add(slot as never, spine as never, 'score');
+        ctl.settings = { hero: { score: { type: 'text', value: '0' } } };
+        ctl.add(slot as never, spine as never, 'score', 'hero');
 
         const first = ctl.set('score', '100', true, 800);
         const second = ctl.set('score', '5', true, 80);
@@ -199,9 +245,9 @@ describe('TextsController – attach / settings / clear', () => {
         const slot = { name: 'text_a' } as FakeSlot;
         const spine = createFakeSpine({ slots: [slot] });
         const ctl = new TextsController(asSpineMap({ hero: spine }));
-        ctl.settings = { a: { type: 'text', value: 'hi', uppercase: true } };
+        ctl.settings = { hero: { a: { type: 'text', value: 'hi', uppercase: true } } };
 
-        const summary = ctl.add(slot as never, spine as never, 'a');
+        const summary = ctl.add(slot as never, spine as never, 'a', 'hero');
 
         expect(summary).toBe('a -> text_a');
         const attached = spine.__slotChildren.get('text_a');
@@ -216,14 +262,16 @@ describe('TextsController – attach / settings / clear', () => {
         // maxWidth is omitted on purpose: maxWidth > 0 triggers BitmapText layout
         // measurement, which needs a canvas. The recording behavior is covered separately.
         ctl.settings = {
-            a: {
-                type: 'bitmapText',
-                value: 'hi',
-                offset: { x: 3, y: 4 },
+            hero: {
+                a: {
+                    type: 'bitmapText',
+                    value: 'hi',
+                    offset: { x: 3, y: 4 },
+                },
             },
         };
 
-        ctl.add(slot as never, spine as never, 'a');
+        ctl.add(slot as never, spine as never, 'a', 'hero');
         const node = ctl.getInstances().get('a') as BitmapText;
         expect(node.x).toBe(3);
         expect(node.y).toBe(4);
@@ -258,14 +306,18 @@ describe('TextsController – attach / settings / clear', () => {
     });
 
     it('setMaxWidth records the value on the settings entry for bitmap text', () => {
-        // Call setMaxWidth before the instance is added, so applyMaxWidth is skipped
-        // (it would otherwise trigger BitmapText canvas measurement).
-        const ctl = new TextsController(new Map());
-        ctl.settings = { a: { type: 'bitmapText', value: '' } };
+        const slot = { name: 'text_a' } as FakeSlot;
+        const spine = createFakeSpine({ slots: [slot] });
+        const ctl = new TextsController(asSpineMap({ hero: spine }));
+        ctl.settings = { hero: { a: { type: 'bitmapText', value: '' } } };
+        ctl.add(slot as never, spine as never, 'a', 'hero');
+
+        // Stub the node width so applyMaxWidth doesn't trigger BitmapText canvas measurement.
+        Object.defineProperty(ctl.getInstances().get('a'), 'width', { get: () => 0 });
 
         ctl.setMaxWidth('a', 100);
         expect(
-            (ctl.settings?.a as { type: string; maxWidth?: number }).maxWidth,
+            (ctl.settings?.hero?.a as { type: string; maxWidth?: number }).maxWidth,
         ).toBe(100);
     });
 
@@ -303,8 +355,8 @@ describe('TextsController – attach / settings / clear', () => {
         const slot = { name: 'text_a' } as FakeSlot;
         const spine = createFakeSpine({ slots: [slot] });
         const ctl = new TextsController(asSpineMap({ hero: spine }));
-        ctl.settings = { a: { type: 'text', value: 'hi' } };
-        ctl.add(slot as never, spine as never, 'a');
+        ctl.settings = { hero: { a: { type: 'text', value: 'hi' } } };
+        ctl.add(slot as never, spine as never, 'a', 'hero');
 
         ctl.clear();
         expect(ctl.getInstances().size).toBe(0);

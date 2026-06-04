@@ -4,14 +4,26 @@ import type { SpineID, TextsJson, TextsJsonBitmapTextEntry, TextsJsonEntry } fro
 import { parcePointers } from '../config/parcePointers';
 
 export class TextsController {
+    /** Text nodes keyed by their registration key (see {@link configKey}). */
     private texts: Map<SpineID, Text | BitmapText> = new Map();
+    /** Maps each registration key back to the spine + slot text key it was created from. */
+    #meta: Map<string, { spineID?: string; textKey: string }> = new Map();
     #textSettings: TextsJson | undefined;
     #textRunners: Map<
         string,
         { interval: ReturnType<typeof setInterval>; resolve: () => void }
     > = new Map();
 
-    constructor(private spines: Map<SpineID, Spine>) { }
+    /**
+     * @param spines Live spine registry.
+     * @param multipleInstanceIDs Ids of spines created as multiple instances (e.g.
+     *   `counter_1`). Text slots on these get per-instance config keys so each instance
+     *   can be styled separately (see {@link configKey}).
+     */
+    constructor(
+        private spines: Map<SpineID, Spine>,
+        private multipleInstanceIDs: Set<string> = new Set(),
+    ) { }
 
     /** Returns all active text instances (both `Text` and `BitmapText`) keyed by bone name. */
     getInstances(): Map<SpineID, Text | BitmapText> {
@@ -43,27 +55,101 @@ export class TextsController {
         return result;
     }
 
-    /** Returns the current string value of a text node by its bone name. */
+    /** Returns the current string value of a text node by its bone name (or registration key). */
     getVal(textID: string): string | undefined {
-        return this.texts.get(textID)?.text;
+        const key = this.resolveKeys(textID)[0];
+        return key ? this.texts.get(key)?.text : undefined;
     }
 
-    /** Sets the text value. When `animate=true` (or `animateNumber` is set in config), numeric values count up/down over 500ms. */
+    // ─── Registration key resolution (private) ─────────────────────────────────────
+
+    /**
+     * Computes the registration key a text node is stored under.
+     *
+     * For text slots on multiple-instance spines (e.g. `counter_1`) the key is
+     * `{spineID}_{textKey}` (e.g. `counter_1_reward`), so each instance is addressed and
+     * styled independently. For everything else it is just the bare `textKey`, preserving
+     * the existing config keys and the `texts.set('balance', …)` style API.
+     */
+    private configKey(spineID: string | undefined, textKey: string): string {
+        return spineID && this.multipleInstanceIDs.has(spineID) ? `${spineID}_${textKey}` : textKey;
+    }
+
+    /**
+     * Resolves the effective settings for a `spineID`'s text slot from the nested config.
+     *
+     * For a multiple-instance spine (`counter_1`) an optional base-spine section
+     * (`counter`) is used as a default and the instance section is merged on top, so a
+     * common style can be authored once on the base and overridden per instance.
+     */
+    private mergedEntry(spineID: string | undefined, textKey: string): TextsJsonEntry | undefined {
+        if (!spineID) return undefined;
+
+        const entries: TextsJsonEntry[] = [];
+
+        if (this.multipleInstanceIDs.has(spineID)) {
+            const baseEntry = this.#textSettings?.[spineID.replace(/_\d+$/, '')]?.[textKey];
+            if (baseEntry) entries.push(baseEntry);
+        }
+
+        const ownEntry = this.#textSettings?.[spineID]?.[textKey];
+        if (ownEntry) entries.push(ownEntry);
+
+        if (entries.length === 0) return undefined;
+        return Object.assign({}, ...entries) as TextsJsonEntry;
+    }
+
+    /** Effective settings for an already-registered node, by its registration key. */
+    private settingsFor(key: string): TextsJsonEntry | undefined {
+        const meta = this.#meta.get(key);
+        return meta ? this.mergedEntry(meta.spineID, meta.textKey) : undefined;
+    }
+
+    /**
+     * Maps a public name to the registration keys it targets. An exact registration key
+     * matches just itself; otherwise the name is treated as a bare slot text key and
+     * matches every instance that has it (so `set('reward')` updates all instances).
+     */
+    private resolveKeys(name: string): string[] {
+        if (this.texts.has(name)) return [name];
+        const keys: string[] = [];
+        this.#meta.forEach((meta, key) => {
+            if (meta.textKey === name) keys.push(key);
+        });
+        return keys;
+    }
+
+    /**
+     * Sets the text value. When `animate=true` (or `animateNumber` is set in config),
+     * numeric values count up/down over 500ms.
+     *
+     * `boneName` may be an exact registration key (e.g. `counter_1_reward` to target a
+     * single instance) or a bare slot text key (e.g. `reward` to update every instance
+     * that has it).
+     */
     async set(boneName: string, text: string, animate = false, duration = 0) {
-        const target = this.texts.get(boneName);
-        if (!target) {
+        const keys = this.resolveKeys(boneName);
+        if (keys.length === 0) {
             console.error(`Text ${boneName} not found`);
             return;
         }
+        await Promise.all(keys.map((key) => this.setOne(key, text, animate, duration)));
+    }
 
-        const existing = this.#textRunners.get(boneName);
+    private async setOne(key: string, text: string, animate = false, duration = 0) {
+        const target = this.texts.get(key);
+        if (!target) return;
+
+        const settings = this.settingsFor(key);
+
+        const existing = this.#textRunners.get(key);
         if (existing !== undefined) {
             clearInterval(existing.interval);
             existing.resolve();
-            this.#textRunners.delete(boneName);
+            this.#textRunners.delete(key);
         }
 
-        if (animate || (this.#textSettings?.[boneName]?.animateNumber ?? false)) {
+        if (animate || (settings?.animateNumber ?? false)) {
             const nextMatch = text.match(/^([\s\S]*?)(\d+)([\s\S]*)$/);
 
             if (nextMatch) {
@@ -92,47 +178,60 @@ export class TextsController {
                         if (direction < 0 && value <= end) value = end;
 
                         target.text = `${prefix}${value}${suffix}`;
-                        this.applyMaxWidth(boneName, target);
+                        this.applyMaxWidth(key, target);
 
                         if (value === end) {
                             clearInterval(runner);
-                            this.#textRunners.delete(boneName);
+                            this.#textRunners.delete(key);
                             resolve();
                         }
                     }, INTERVAL_MS);
 
-                    this.#textRunners.set(boneName, { interval: runner, resolve });
+                    this.#textRunners.set(key, { interval: runner, resolve });
                 });
                 return;
             }
         }
 
-        target.text = this.#textSettings?.[boneName]?.uppercase ? text.toUpperCase() : text;
-        this.applyMaxWidth(boneName, target);
+        target.text = settings?.uppercase ? text.toUpperCase() : text;
+        this.applyMaxWidth(key, target);
     }
 
     /** Moves a text node by the given pixel offset relative to its bone position. */
     setOffset(boneName: string, offset: { x: number; y: number }) {
-        const text = this.texts.get(boneName);
-        if (text) {
+        const keys = this.resolveKeys(boneName);
+        if (keys.length === 0) {
+            console.error(`Text ${boneName} not found, to set offset`);
+            return;
+        }
+        keys.forEach((key) => {
+            const text = this.texts.get(key)!;
             text.x = offset.x;
             text.y = offset.y;
-        } else {
-            console.error(`Text ${boneName} not found, to set offset`);
-        }
+        });
     }
 
     /** Constrains a text node to a max pixel width by scaling it down uniformly when it overflows. */
     setMaxWidth(boneName: string, maxWidth: number) {
-        const entry = this.#textSettings?.[boneName];
-        const text = this.texts.get(boneName);
-        if (entry?.type === 'bitmapText') (entry as TextsJsonBitmapTextEntry).maxWidth = maxWidth;
-        if (text) this.applyMaxWidth(boneName, text);
+        this.resolveKeys(boneName).forEach((key) => {
+            const meta = this.#meta.get(key);
+            const entry = meta?.spineID
+                ? this.#textSettings?.[meta.spineID]?.[meta.textKey]
+                : undefined;
+            if (entry?.type === 'bitmapText') (entry as TextsJsonBitmapTextEntry).maxWidth = maxWidth;
+
+            const text = this.texts.get(key);
+            if (text) this.applyMaxWidth(key, text);
+        });
     }
 
     /** Swaps a text node between `Text` and `BitmapText` at runtime, preserving its current value. */
     setTextType(boneName: string, newType: 'text' | 'bitmapText') {
-        const existing = this.texts.get(boneName);
+        this.resolveKeys(boneName).forEach((key) => this.setTextTypeOne(key, newType));
+    }
+
+    private setTextTypeOne(key: string, newType: 'text' | 'bitmapText') {
+        const existing = this.texts.get(key);
         if (!existing) return;
 
         const isCurrentBitmap = existing instanceof BitmapText;
@@ -150,25 +249,28 @@ export class TextsController {
         existing.destroy();
         parent.addChild(newText);
 
-        this.texts.set(boneName, newText);
+        this.texts.set(key, newText);
     }
 
     /** Applies a partial Pixi.js `TextStyle` to the named text node. */
     setStyle(boneName: string, style: Partial<Text['style']>) {
-        const textObject = this.texts.get(boneName);
-        if (!textObject) {
+        const keys = this.resolveKeys(boneName);
+        if (keys.length === 0) {
             console.error(`Text ${boneName} not found, to set style`);
             return;
         }
-        if (textObject instanceof BitmapText) style.fill = '#ffffff';
-        textObject.style = style;
+        keys.forEach((key) => {
+            const textObject = this.texts.get(key)!;
+            if (textObject instanceof BitmapText) style.fill = '#ffffff';
+            textObject.style = style;
+        });
     }
 
-    set settings(settings: Record<string, TextsJsonEntry>) {
+    set settings(settings: TextsJson) {
         this.#textSettings = settings;
     }
 
-    get settings(): Record<string, TextsJsonEntry> | undefined {
+    get settings(): TextsJson | undefined {
         return this.#textSettings;
     }
 
@@ -227,12 +329,12 @@ export class TextsController {
     }
 
     /**
-     * Builds a standalone, styled `Text`/`BitmapText` from the `texts.json` entry for `key`,
-     * without registering or attaching it to a slot. Use for nodes added manually to
-     * non-`text_` slots (e.g. per-instance reward texts on multiple-instance spines).
+     * Builds a standalone, styled `Text`/`BitmapText` from the (merged) `texts.json` entry
+     * for a spine's text slot, without registering or attaching it. Use for nodes added
+     * manually to non-`text_` slots (e.g. per-instance reward texts).
      */
-    buildText(key: string): Text | BitmapText {
-        const entry = this.#textSettings?.[key];
+    buildText(spineID: string, textKey: string): Text | BitmapText {
+        const entry = this.mergedEntry(spineID, textKey);
         const isBitmap = entry?.type === 'bitmapText';
         const text = isBitmap ? new BitmapText() : new Text();
         text.anchor.set(0.5, 0.5);
@@ -252,16 +354,22 @@ export class TextsController {
         return text;
     }
 
-    /** Returns the style data (the `texts.json` entry minus `type`/`value`) applied to a text node, for logging. */
-    getAppliedStyle(textKey: string): Record<string, unknown> {
-        const style: Record<string, unknown> = { ...(this.#textSettings?.[textKey] ?? {}) };
+    /** Returns the style data (the merged `texts.json` entry minus `type`/`value`) applied to a node, for logging. */
+    getAppliedStyle(spineID: string, textKey: string): Record<string, unknown> {
+        const style: Record<string, unknown> = { ...(this.mergedEntry(spineID, textKey) ?? {}) };
         delete style.type;
         delete style.value;
         return style;
     }
 
-    add(slot: SlotData, spine: Spine, textKey: string): string {
-        const { type, value, ...rest } = this.#textSettings?.[textKey] ?? {};
+    /**
+     * Registers and attaches a text node for a `text_<key>` slot. On multiple-instance
+     * spines the node is keyed `{spineID}_{textKey}` and styled from the per-instance
+     * config entry merged over the shared one (see {@link configKey}, {@link mergedEntry}).
+     */
+    add(slot: SlotData, spine: Spine, textKey: string, spineID?: string): string {
+        const key = this.configKey(spineID, textKey);
+        const { type, value, ...rest } = this.mergedEntry(spineID, textKey) ?? {};
         const { offset, maxWidth } = rest as Omit<
             TextsJsonBitmapTextEntry,
             'type' | 'uppercase' | 'value'
@@ -270,18 +378,19 @@ export class TextsController {
         const text = type === 'bitmapText' ? new BitmapText() : new Text();
         text.anchor.set(0.5, 0.5);
 
-        this.texts.set(textKey, text);
-        this.setStyle(textKey, rest);
-        this.set(textKey, value ?? '', false);
+        this.texts.set(key, text);
+        this.#meta.set(key, { spineID, textKey });
+        this.setStyle(key, rest);
+        this.set(key, value ?? '', false);
 
-        if (offset) this.setOffset(textKey, offset);
-        this.setMaxWidth(textKey, maxWidth ?? 0);
+        if (offset) this.setOffset(key, offset);
+        this.setMaxWidth(key, maxWidth ?? 0);
 
         const wrapper = new Container();
         wrapper.addChild(text);
         spine.addSlotObject(slot.name, wrapper);
 
-        return `${textKey} -> ${slot.name}`;
+        return `${key} -> ${slot.name}`;
     }
 
     clear() {
@@ -291,11 +400,12 @@ export class TextsController {
         });
         this.#textRunners.clear();
         this.texts.clear();
+        this.#meta.clear();
         this.#textSettings = undefined;
     }
 
     private applyMaxWidth(boneName: string, text: Text | BitmapText) {
-        const entry = this.#textSettings?.[boneName];
+        const entry = this.settingsFor(boneName);
         const maxWidth =
             entry?.type === 'bitmapText' ? (entry as TextsJsonBitmapTextEntry).maxWidth : undefined;
 
