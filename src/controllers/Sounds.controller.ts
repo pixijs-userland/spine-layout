@@ -330,7 +330,6 @@ export class Sounds {
         });
 
         this.soundNames.set(name, [dataUrl]);
-        console.log(`🎶 Loaded sound file "${name}" from user input`);
     }
 
     /** Register a callback to run once sounds are initialized. Fires immediately if already ready. */
