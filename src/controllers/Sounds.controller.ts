@@ -122,10 +122,13 @@ export class Sounds {
     }
 
     private _playFX(fx?: string | string[], loop = false) {
+        // Note: we intentionally do not gate on `userInteraction` here. Sounds
+        // triggered by the init animation (which runs before the first user
+        // interaction) should start playing immediately in a muted state — the
+        // first interaction then unmutes them via `onUserInteraction` -> `unmute`.
         if (
             !fx ||
             (Array.isArray(fx) && fx.length === 0) ||
-            !this.userInteraction ||
             !this.initialized ||
             !this.hasSounds(fx)
         ) {
