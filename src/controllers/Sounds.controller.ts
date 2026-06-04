@@ -63,8 +63,9 @@ export class Sounds {
     }
 
     private extractSoundNames(pixiManifest: AssetsManifest) {
+        const bundleName = this.settings.prefix || 'sounds';
         const assets: UnresolvedAsset[] =
-            (pixiManifest.bundles.find((item) => item.name === 'sounds')
+            (pixiManifest.bundles.find((item) => item.name === bundleName)
                 ?.assets as UnresolvedAsset[]) ?? [];
 
         assets.forEach((asset) => {
@@ -80,10 +81,7 @@ export class Sounds {
 
                     this.soundNames.set(
                         alias,
-                        (asset.src as []).map(
-                            (src) =>
-                                `assets/${this.settings.prefix ? this.settings.prefix + '/' : ''}${src}`,
-                        ),
+                        (asset.src as []).map((src) => `assets/${src}`),
                     );
                 });
             }
