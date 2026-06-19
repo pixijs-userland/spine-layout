@@ -33,7 +33,6 @@ export class SceneController {
                         log.add(LOG.BONES, spineID, `skip: ${slot.name}`);
                     }
                 });
-
                 if (slot.name.startsWith(parcePointers.slot.spine) && !skip) {
                     const childKey = slot.name.replace(parcePointers.slot.spine, '');
                     const childSpine = this.spines.get(childKey);

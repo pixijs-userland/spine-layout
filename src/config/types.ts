@@ -13,6 +13,7 @@ export type SpineLayoutOptions = {
 };
 
 export type SpineInstanceData = {
+    name: string;
     skeleton: SkeletonData;
     atlasText: string;
     textures: Record<string, Texture>;

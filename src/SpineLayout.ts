@@ -161,7 +161,7 @@ export class SpineLayout extends Container {
         // and their slots can be scanned for multiple-instance pointers.
         const dataByID = new Map<string, SpineInstanceData>();
         data.forEach((item) => {
-            const spineID = item.atlasText.split('.')[0];
+            const spineID = item.name;
             dataByID.set(spineID, item);
             this.addDataInstance(spineID, item);
         });
