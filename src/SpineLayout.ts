@@ -17,8 +17,8 @@ import type {
 import { type AssetsManifest, BitmapText, Container, Text, Texture, type Point } from 'pixi.js';
 import { LOG } from './config/logs';
 import { log } from './utils/Log';
-import { parcePointers } from './config/parcePointers';
 import { ManifestParser, type SpineAssetData } from './utils/ManifestParser';
+import { planMultipleInstances } from './utils/multiInstance';
 import { AnimationsController } from './controllers/Animations.controller';
 import { SkinsController } from './controllers/Skins.controller';
 import { TextsController } from './controllers/Texts.controller';
@@ -129,22 +129,19 @@ export class SpineLayout extends Container {
             }
         });
 
-        // A slot named `spine_<id>_<n>` marks `<id>` as a multiple-instance spine: replace
-        // the base instance with one numbered instance (id `<id>_<n>`) per pointer.
-        this.collectMultipleInstancePointers().forEach((instanceIDs, baseID) => {
-            const asset = assetByID.get(baseID);
-            if (!asset) return;
-
-            this.removeSpineInstance(baseID);
-            instanceIDs.forEach((instanceID) => {
-                this.#multipleInstanceIDs.add(instanceID);
+        this.multiplyInstances(
+            (baseID) => assetByID.has(baseID),
+            (baseID, instanceID) => {
                 try {
-                    this.addSpineInstance(instanceID, this.spineFromAsset(asset, folderName));
+                    this.addSpineInstance(
+                        instanceID,
+                        this.spineFromAsset(assetByID.get(baseID)!, folderName),
+                    );
                 } catch (e) {
                     console.error(`[SpineLayout] Error loading spine instance "${instanceID}":`, e);
                 }
-            });
-        });
+            },
+        );
 
         this.render();
 
@@ -178,22 +175,16 @@ export class SpineLayout extends Container {
             }
         });
 
-        // A slot named `spine_<id>_<n>` marks `<id>` as a multiple-instance spine: replace
-        // the base instance with one numbered instance (id `<id>_<n>`) per pointer.
-        this.collectMultipleInstancePointers().forEach((instanceIDs, baseID) => {
-            const item = dataByID.get(baseID);
-            if (!item) return;
-
-            this.removeSpineInstance(baseID);
-            instanceIDs.forEach((instanceID) => {
-                this.#multipleInstanceIDs.add(instanceID);
+        this.multiplyInstances(
+            (baseID) => dataByID.has(baseID),
+            (baseID, instanceID) => {
                 try {
-                    this.addDataInstance(instanceID, item);
+                    this.addDataInstance(instanceID, dataByID.get(baseID)!);
                 } catch (e) {
                     console.error(`[SpineLayout] Error loading spine instance "${instanceID}":`, e);
                 }
-            });
-        });
+            },
+        );
 
         this.render();
 
@@ -240,35 +231,32 @@ export class SpineLayout extends Container {
     }
 
     /**
-     * Scans every registered spine's slots for multiple-instance pointers of the form
-     * `spine_<id>_<n>` and groups them by their base spine id.
+     * Expands base spines that act as multiple-instance templates into their full instance
+     * set (see {@link planMultipleInstances} for the supported pointer conventions). Each
+     * planned base is removed and replaced by its instances, which are tracked in
+     * {@link #multipleInstanceIDs} and built via `spawn`.
      *
-     * Returns a map of `base id -> set of instance ids`, where each instance id is the
-     * full `<id>_<n>` pointer (e.g. `counter` -> `{ "counter_1", "counter_2" }`). Only
-     * pointers whose base id matches an already-registered spine are included.
+     * @param hasSource whether a base id has a backing asset/data entry to clone from.
+     * @param spawn     creates and registers one instance for `(baseID, instanceID)`.
      */
-    private collectMultipleInstancePointers(): Map<string, Set<string>> {
-        const result = new Map<string, Set<string>>();
-        const prefix = parcePointers.slot.spine;
+    private multiplyInstances(
+        hasSource: (baseID: string) => boolean,
+        spawn: (baseID: string, instanceID: string) => void,
+    ) {
+        const bases = [...this.#spines.entries()].map(([id, spine]) => ({
+            id,
+            slots: spine.state.data.skeletonData.slots.map((slot) => slot.name),
+        }));
 
-        this.#spines.forEach((spine) => {
-            spine.state.data.skeletonData.slots.forEach((slot) => {
-                if (!slot.name.startsWith(prefix)) return;
+        planMultipleInstances(bases).forEach(({ baseID, instanceIDs }) => {
+            if (!hasSource(baseID)) return;
 
-                const instanceID = slot.name.slice(prefix.length); // e.g. "counter_1"
-                const match = instanceID.match(/^(.+)_\d+$/);
-                if (!match) return;
-
-                const baseID = match[1]; // e.g. "counter"
-                if (!this.#spines.has(baseID)) return; // not a known spine export
-
-                const ids = result.get(baseID) ?? new Set<string>();
-                ids.add(instanceID);
-                result.set(baseID, ids);
+            this.removeSpineInstance(baseID);
+            instanceIDs.forEach((instanceID) => {
+                this.#multipleInstanceIDs.add(instanceID);
+                spawn(baseID, instanceID);
             });
         });
-
-        return result;
     }
 
     private addSpineInstance(spineID: string, spine: Spine) {
