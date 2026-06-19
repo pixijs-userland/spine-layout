@@ -29,7 +29,15 @@ export class AnimationsController {
     registerSpine(spineID: string, spine: Spine) {
         spine.state.addListener({
             event: (_, event) => {
-                log.add(LOG.EVENT, spineID, `${event.data.name} -> ${JSON.stringify(event.data)}`);
+                // NB: don't JSON.stringify(event.data) — since spine-pixi-v8 4.3.7, EventData
+                // holds a `setupPose: Event` whose `.data` points back to it, so the EventData
+                // is circular. Log the fired event's runtime values instead.
+                const { time, intValue, floatValue, stringValue, volume, balance } = event;
+                log.add(
+                    LOG.EVENT,
+                    spineID,
+                    `${event.data.name} -> ${JSON.stringify({ time, intValue, floatValue, stringValue, volume, balance })}`,
+                );
 
                 if ('vibrate' in navigator && event.data.name.startsWith('vibration_')) {
                     const duration = parseInt(event.data.name.replace('vibration_', ''), 10);
