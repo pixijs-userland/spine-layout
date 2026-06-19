@@ -590,7 +590,7 @@ describe('AnimationsController – playInstanceAnimationLastFrame', () => {
     it('seeks to the end of the animation via trackEntry.trackTime', async () => {
         const trackEntry = { trackTime: 0, animationEnd: 5 };
         const hero = createFakeSpine({ animations: [{ name: 'a', duration: 5 }] });
-        hero.state.getCurrent = () => trackEntry;
+        hero.state.getTrack = () => trackEntry;
 
         const ctl = new AnimationsController(asSpineMap({ hero }));
         await ctl.playInstanceAnimationLastFrame('hero', 'a');

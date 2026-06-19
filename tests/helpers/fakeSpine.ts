@@ -38,7 +38,7 @@ export type FakeSpine = Container & {
         setAnimation: (track: number, name: string, loop: boolean) => FakeTrackEntry;
         clearTracks: () => void;
         clearTrack: (track: number) => void;
-        getCurrent: (track: number) => FakeTrackEntry | undefined;
+        getTrack: (track: number) => FakeTrackEntry | undefined;
         tracks: Array<FakeTrackEntry | null>;
         timeScale: number;
         data: {
@@ -46,6 +46,7 @@ export type FakeSpine = Container & {
                 animations: FakeAnimation[];
                 bones: FakeBone[];
                 slots: FakeSlot[];
+                events: { name: string }[];
                 findAnimation: (name: string) => FakeAnimation | undefined;
                 findSkin: (name: string) => FakeSkin | undefined;
             };
@@ -59,13 +60,13 @@ export type FakeSpine = Container & {
             findSkin: (name: string) => FakeSkin | undefined;
         };
         findSlot: (name: string) =>
-            | { bone: { worldX: number; worldY: number }; getAttachment: () => unknown }
+            | { bone: { pose: { worldX: number; worldY: number } }; pose: { attachment: unknown } }
             | undefined;
-        findBone: (name: string) => { worldX: number; worldY: number } | undefined;
+        findBone: (name: string) => { pose: { worldX: number; worldY: number } } | undefined;
         setSkin: (skin: FakeSkin) => void;
-        setBonesToSetupPose: () => void;
-        setSlotsToSetupPose: () => void;
-        setToSetupPose: () => void;
+        setupPoseBones: () => void;
+        setupPoseSlots: () => void;
+        setupPose: () => void;
         updateWorldTransform: (_: unknown) => void;
     };
     addSlotObject: (name: string, child: Container) => void;
@@ -94,14 +95,14 @@ export function createFakeSpine(options: FakeSpineOptions = {}): FakeSpine {
         const slot = slots.find((s) => s.name === name);
         if (!slot) return undefined;
         return {
-            bone: { worldX: 1, worldY: 2 },
-            getAttachment: () => slot.attachment,
+            bone: { pose: { worldX: 1, worldY: 2 } },
+            pose: { attachment: slot.attachment },
         };
     };
     const findBone = (name: string) => {
         const bone = bones.find((b) => b.name === name);
         if (!bone) return undefined;
-        return { worldX: bone.worldX ?? 0, worldY: bone.worldY ?? 0 };
+        return { pose: { worldX: bone.worldX ?? 0, worldY: bone.worldY ?? 0 } };
     };
 
     const spine = new Container() as FakeSpine;
@@ -145,7 +146,7 @@ export function createFakeSpine(options: FakeSpineOptions = {}): FakeSpine {
             spine.__clearTrackCalls.push(track);
             tracks[track] = null;
         },
-        getCurrent: (track) => tracks[track] ?? undefined,
+        getTrack: (track) => tracks[track] ?? undefined,
         tracks,
         timeScale: 1,
         data: {
@@ -153,6 +154,7 @@ export function createFakeSpine(options: FakeSpineOptions = {}): FakeSpine {
                 animations,
                 bones,
                 slots,
+                events: [],
                 findAnimation,
                 findSkin,
             },
@@ -171,13 +173,13 @@ export function createFakeSpine(options: FakeSpineOptions = {}): FakeSpine {
         setSkin: (skin) => {
             spine.__activeSkin = skin;
         },
-        setBonesToSetupPose: () => {
+        setupPoseBones: () => {
             spine.__bonesSetupPoseCount++;
         },
-        setSlotsToSetupPose: () => {
+        setupPoseSlots: () => {
             spine.__setupPoseCount++;
         },
-        setToSetupPose: () => {
+        setupPose: () => {
             spine.__setupPoseCount++;
         },
         updateWorldTransform: () => {

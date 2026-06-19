@@ -45,7 +45,7 @@ export class SkinsController {
         }
 
         spine.skeleton.setSkin(skin);
-        spine.skeleton.setSlotsToSetupPose();
+        spine.skeleton.setupPoseSlots();
     }
 
     /** Records a skin name as available for the given spine (used during initialization). */

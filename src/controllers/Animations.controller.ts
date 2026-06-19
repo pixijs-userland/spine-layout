@@ -194,7 +194,7 @@ export class AnimationsController {
 
         if (resetPose) {
             affectedSpineIDs.forEach((spineID) => {
-                this.spines.get(spineID)?.skeleton.setToSetupPose();
+                this.spines.get(spineID)?.skeleton.setupPose();
             });
         }
 
@@ -349,7 +349,7 @@ export class AnimationsController {
         const playTrack = this.getTrackID(spineID);
 
         spine.state.setAnimation(playTrack, animation, loop);
-        const trackEntry = spine.state.getCurrent(0);
+        const trackEntry = spine.state.getTrack(0);
 
         if (trackEntry) {
             trackEntry.trackTime = trackEntry.animationEnd;
@@ -364,7 +364,7 @@ export class AnimationsController {
         this.spines.forEach((spine, spineID) => {
             if (spine?.state) {
                 spine.state.clearTracks();
-                spine.skeleton.setToSetupPose();
+                spine.skeleton.setupPose();
             }
             this.activeAnimations.delete(spineID);
             this.loopingAnimations.delete(spineID);
@@ -376,7 +376,7 @@ export class AnimationsController {
         const spine = this.spines.get(spineID);
         if (!spine) return;
         spine.state.clearTracks();
-        spine.skeleton.setToSetupPose();
+        spine.skeleton.setupPose();
         this.activeAnimations.delete(spineID);
         this.loopingAnimations.delete(spineID);
     }
@@ -475,8 +475,8 @@ export class AnimationsController {
             }
         });
 
-        spine.skeleton.setBonesToSetupPose();
-        spine.skeleton.setSlotsToSetupPose();
+        spine.skeleton.setupPoseBones();
+        spine.skeleton.setupPoseSlots();
         spine.skeleton.updateWorldTransform(Physics.update);
 
         this.removeActiveAnimation(spineID, animation);

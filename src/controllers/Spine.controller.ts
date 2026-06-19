@@ -151,7 +151,7 @@ export class SpineController {
         }
 
         const slot = spine.skeleton.findSlot(slotName);
-        const attachment = slot?.getAttachment();
+        const attachment = slot?.pose.attachment;
 
         if (attachment instanceof RegionAttachment || attachment instanceof MeshAttachment) {
             return this.getTextureFromAttachmentRegion(attachment) ?? null;
@@ -164,7 +164,7 @@ export class SpineController {
 
         if (!bone) return null;
 
-        return spine.toGlobal(new Point(bone.worldX, bone.worldY)) as Point;
+        return spine.toGlobal(new Point(bone.pose.worldX, bone.pose.worldY)) as Point;
     }
 
     private getSlotGlobalPos(spine: Spine, slotName: string): Point | null {
@@ -172,18 +172,19 @@ export class SpineController {
 
         if (!slot) return null;
 
-        return spine.toGlobal(new Point(slot.bone.worldX, slot.bone.worldY)) as Point;
+        return spine.toGlobal(new Point(slot.bone.pose.worldX, slot.bone.pose.worldY)) as Point;
     }
 
     private getTextureFromAttachmentRegion(
         att: RegionAttachment | MeshAttachment,
     ): Texture | undefined {
-        if (!att.region) {
+        const rawRegion = att.sequence?.regions[0];
+        if (!rawRegion) {
             console.warn('Invalid attachment or region');
             return;
         }
 
-        const region = att.region as TextureAtlasRegion & { rotate: boolean };
+        const region = rawRegion as TextureAtlasRegion & { rotate: boolean };
         const pageTex: Texture = region.texture.texture;
         const frame = new Rectangle(region.x, region.y, region.width, region.height);
         let sub = new Texture({ source: pageTex.source, frame }) as Texture & { rotate: number };

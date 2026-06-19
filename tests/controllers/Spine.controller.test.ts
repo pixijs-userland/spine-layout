@@ -45,15 +45,20 @@ const makeRegion = (overrides: Partial<{
     rotate: boolean;
 }> = {}) => {
     const attachment = new RegionAttachment(overrides.name ?? 'a', 'p');
-    // The Spine controller reads region.x/y/width/height/degrees, plus region.texture.texture.
-    (attachment as unknown as { region: unknown }).region = {
-        x: overrides.x ?? 0,
-        y: overrides.y ?? 0,
-        width: overrides.width ?? 10,
-        height: overrides.height ?? 20,
-        degrees: overrides.degrees ?? 0,
-        rotate: overrides.rotate ?? false,
-        texture: { texture: { source: { __mark: 'pageTex' } } },
+    // The Spine controller reads region.x/y/width/height/degrees + region.texture.texture
+    // off the attachment's sequence (spine 4.3 stores regions on `sequence.regions`).
+    (attachment as unknown as { sequence: unknown }).sequence = {
+        regions: [
+            {
+                x: overrides.x ?? 0,
+                y: overrides.y ?? 0,
+                width: overrides.width ?? 10,
+                height: overrides.height ?? 20,
+                degrees: overrides.degrees ?? 0,
+                rotate: overrides.rotate ?? false,
+                texture: { texture: { source: { __mark: 'pageTex' } } },
+            },
+        ],
     };
     return attachment;
 };
@@ -200,14 +205,18 @@ describe('SpineController', () => {
 
     it('getSlotTexture accepts MeshAttachment instances', () => {
         const mesh = new MeshAttachment('m', 'p');
-        (mesh as unknown as { region: unknown }).region = {
-            x: 1,
-            y: 2,
-            width: 3,
-            height: 4,
-            degrees: 0,
-            rotate: false,
-            texture: { texture: { source: {} } },
+        (mesh as unknown as { sequence: unknown }).sequence = {
+            regions: [
+                {
+                    x: 1,
+                    y: 2,
+                    width: 3,
+                    height: 4,
+                    degrees: 0,
+                    rotate: false,
+                    texture: { texture: { source: {} } },
+                },
+            ],
         };
         const hero = createFakeSpine({ slots: [{ name: 'icon', attachment: mesh }] });
         const ctl = new SpineController(asSpineMap({ hero }), new AnimationsController(new Map()));
@@ -216,7 +225,8 @@ describe('SpineController', () => {
 
     it('getSlotTexture warns and returns null when attachment region is missing', () => {
         const region = new RegionAttachment('a', 'p');
-        // Leave region.region undefined.
+        // Empty sequence → no region resolved (spine 4.3 shape).
+        (region as unknown as { sequence: unknown }).sequence = { regions: [] };
         const hero = createFakeSpine({ slots: [{ name: 'icon', attachment: region }] });
         const ctl = new SpineController(asSpineMap({ hero }), new AnimationsController(new Map()));
 
