@@ -122,7 +122,11 @@ export class SpineLayout extends Container {
         ManifestParser.getSpineAssets(manifest).forEach((asset) => {
             const spineID = asset.atlas.replace(/\.[^.]+$/, '');
             assetByID.set(spineID, asset);
-            this.addSpineInstance(spineID, this.spineFromAsset(asset, folderName));
+            try {
+                this.addSpineInstance(spineID, this.spineFromAsset(asset, folderName));
+            } catch (e) {
+                console.error(`[SpineLayout] Error loading spine "${spineID}":`, e);
+            }
         });
 
         // A slot named `spine_<id>_<n>` marks `<id>` as a multiple-instance spine: replace
@@ -134,7 +138,11 @@ export class SpineLayout extends Container {
             this.removeSpineInstance(baseID);
             instanceIDs.forEach((instanceID) => {
                 this.#multipleInstanceIDs.add(instanceID);
-                this.addSpineInstance(instanceID, this.spineFromAsset(asset, folderName));
+                try {
+                    this.addSpineInstance(instanceID, this.spineFromAsset(asset, folderName));
+                } catch (e) {
+                    console.error(`[SpineLayout] Error loading spine instance "${instanceID}":`, e);
+                }
             });
         });
 
@@ -163,7 +171,11 @@ export class SpineLayout extends Container {
         data.forEach((item) => {
             const spineID = item.name;
             dataByID.set(spineID, item);
-            this.addDataInstance(spineID, item);
+            try {
+                this.addDataInstance(spineID, item);
+            } catch (e) {
+                console.error(`[SpineLayout] Error loading spine "${spineID}":`, e);
+            }
         });
 
         // A slot named `spine_<id>_<n>` marks `<id>` as a multiple-instance spine: replace
@@ -175,7 +187,11 @@ export class SpineLayout extends Container {
             this.removeSpineInstance(baseID);
             instanceIDs.forEach((instanceID) => {
                 this.#multipleInstanceIDs.add(instanceID);
-                this.addDataInstance(instanceID, item);
+                try {
+                    this.addDataInstance(instanceID, item);
+                } catch (e) {
+                    console.error(`[SpineLayout] Error loading spine instance "${instanceID}":`, e);
+                }
             });
         });
 
