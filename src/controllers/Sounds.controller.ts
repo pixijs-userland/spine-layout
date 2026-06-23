@@ -8,6 +8,11 @@ export type SoundSettings = {
     muted: boolean;
     /** Path prefix used for sound name lookups and file paths (e.g. 'sounds') */
     prefix?: string | null;
+    /**
+     * Base path the manifest `src` paths are resolved against (e.g. 'assets' or
+     * 'assets/<theme>' when each theme has its own manifest). Defaults to 'assets'.
+     */
+    assetBase?: string;
     musicVolume: number; // 0 to 1
     fxVolume: number; // 0 to 1
     soundsVolumes?: { [key: string]: number };
@@ -81,7 +86,7 @@ export class Sounds {
 
                     this.soundNames.set(
                         alias,
-                        (asset.src as []).map((src) => `assets/${src}`),
+                        (asset.src as []).map((src) => `${this.settings.assetBase ?? 'assets'}/${src}`),
                     );
                 });
             }
@@ -382,7 +387,7 @@ export class Sounds {
 
         if (typeof soundData === 'string') {
             return [
-                `assets/${this.settings.prefix ? this.settings.prefix + '/' : ''}sounds/${soundData}.ogg`,
+                `${this.settings.assetBase ?? 'assets'}/${this.settings.prefix ? this.settings.prefix + '/' : ''}sounds/${soundData}.ogg`,
             ];
         }
 
