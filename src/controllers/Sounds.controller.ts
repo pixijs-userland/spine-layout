@@ -355,7 +355,13 @@ export class Sounds {
     private playSounds() {
         if (!this.userInteraction || !this.initialized) return;
 
-        this.unmute();
+        // Apply the actual mute state — not just unmute. `init()` runs more than once
+        // (SpineLayout auto-calls `sounds.init(manifest)` with default settings before the
+        // game re-inits with the real `muted` value). If the user interacts before the game
+        // loads, the first (defaults-only) init would unmute, and a later init carrying
+        // `muted: true` would never re-mute here — leaving sound on despite the mute setting.
+        if (this.settings.muted) this.mute();
+        else this.unmute();
     }
 
     private onVisibilityChange() {
