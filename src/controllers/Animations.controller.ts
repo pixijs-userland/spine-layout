@@ -483,7 +483,12 @@ export class AnimationsController {
 
         spine.skeleton.setupPoseBones();
         spine.skeleton.setupPoseSlots();
-        spine.skeleton.updateWorldTransform(Physics.update);
+        // a zero-delta update instead of a bare updateWorldTransform: it also
+        // re-applies the remaining tracks and syncs slot-object children
+        // (nested spines follow the spine's ticker update, so without this
+        // they keep their stale transforms until the next tick and the reset
+        // shows up one rendered frame late)
+        spine.update(0);
 
         this.removeActiveAnimation(spineID, animation);
         this.removeLoopingAnimation(spineID, animation);
