@@ -53,11 +53,9 @@ export class AnimationsController {
                     sounds.playFX(event.data.name);
                 }
 
+                // playEvent already notifies the named listeners — dispatching
+                // them here as well would call every listener twice per event
                 this.playEvent(event.data.name, spineID);
-
-                this.#eventsListeners
-                    .get(event.data.name)
-                    ?.forEach((cb) => cb(spineID, spine, event.data));
 
                 this.#eventsListeners
                     .get('*')
@@ -489,8 +487,6 @@ export class AnimationsController {
 
         this.removeActiveAnimation(spineID, animation);
         this.removeLoopingAnimation(spineID, animation);
-
-        log.log(`spine reset: ${spineID}(${animation})`);
     }
 
     // ─── Speed ───────────────────────────────────────────────────────────────────
