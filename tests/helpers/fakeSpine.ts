@@ -54,6 +54,7 @@ export type FakeSpine = Container & {
     };
     skeleton: {
         slots: Array<{ data: { name: string } }>;
+        drawOrder: { appliedPose: Array<{ data: { name: string } }> };
         data: {
             slots: FakeSlot[];
             animations: FakeAnimation[];
@@ -70,6 +71,7 @@ export type FakeSpine = Container & {
         updateWorldTransform: (_: unknown) => void;
     };
     addSlotObject: (name: string, child: Container) => void;
+    getSlotObject: (slot: { data: { name: string } }) => Container | undefined;
     __setAnimationCalls: Array<{ track: number; name: string; loop: boolean }>;
     __listeners: FakeSpineEventListener[];
     __slotChildren: Map<string, Container[]>;
@@ -163,6 +165,7 @@ export function createFakeSpine(options: FakeSpineOptions = {}): FakeSpine {
 
     spine.skeleton = {
         slots: slots.map((s) => ({ data: { name: s.name } })),
+        drawOrder: { appliedPose: slots.map((s) => ({ data: { name: s.name } })) },
         data: {
             slots,
             animations,
@@ -192,6 +195,8 @@ export function createFakeSpine(options: FakeSpineOptions = {}): FakeSpine {
         list.push(child);
         spine.__slotChildren.set(name, list);
     };
+
+    spine.getSlotObject = (slot) => spine.__slotChildren.get(slot.data.name)?.[0];
 
     spine.triggerEvent = (eventName: string) => {
         spine.__listeners.forEach((l) =>

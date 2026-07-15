@@ -287,6 +287,7 @@ export class SpineLayout extends Container {
         this.#scene.attachBones((spine) => this.addChild(spine));
         this.#scene.attachTexts();
         this.#scene.activateButtonBones();
+        this.#scene.syncSlotObjectsWithDrawOrder();
     }
 
     // ─── Lifecycle ───────────────────────────────────────────────────────────────

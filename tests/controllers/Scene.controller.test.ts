@@ -153,6 +153,37 @@ describe('SceneController – activateButtonBones', () => {
     });
 });
 
+describe('SceneController – syncSlotObjectsWithDrawOrder', () => {
+    it('reorders slot-object children to match the skeleton draw order', () => {
+        const spine = createFakeSpine({
+            slots: [{ name: 'button_bottom' }, { name: 'button_top' }],
+            bones: [
+                { name: 'button_bottom', worldX: 0, worldY: 0 },
+                { name: 'button_top', worldX: 0, worldY: 0 },
+            ],
+        });
+        const spines = asSpineMap({ hero: spine });
+        const animations = new AnimationsController(spines);
+        const texts = new TextsController(spines);
+        const spineCtl = new SpineController(spines, animations);
+        const scene = new SceneController(spines, texts, animations, spineCtl);
+
+        scene.activateButtonBones();
+        const bottom = spine.__slotChildren.get('button_bottom')![0];
+        const top = spine.__slotChildren.get('button_top')![0];
+
+        // Simulate insertion order that contradicts the draw order: the button rendered
+        // on top ends up below in the children array, so it would lose hit-testing.
+        spine.addChild(top);
+        spine.addChild(bottom);
+        expect(spine.children.indexOf(top)).toBeLessThan(spine.children.indexOf(bottom));
+
+        scene.syncSlotObjectsWithDrawOrder();
+
+        expect(spine.children.indexOf(top)).toBeGreaterThan(spine.children.indexOf(bottom));
+    });
+});
+
 describe('SceneController – addSlotChild & clear', () => {
     it('addSlotChild forwards the child onto the matching slot', () => {
         const spine = createFakeSpine({ slots: [{ name: 'spine_extra' }] });

@@ -120,6 +120,24 @@ export class SceneController {
         log.close(LOG.BUTTONS);
     }
 
+    /**
+     * Pixi hit-tests a spine's children in reverse insertion order, while spine-pixi renders
+     * slot objects (buttons, nested spines, texts) in skeleton draw order. When two slot objects
+     * overlap, the one rendered on top can lose pointer events to the one below it. Reorders each
+     * spine's slot-object children to match the draw order so the visually topmost object also
+     * receives pointer events first.
+     */
+    syncSlotObjectsWithDrawOrder() {
+        this.spines.forEach((spine) => {
+            spine.skeleton.drawOrder.appliedPose.forEach((slot) => {
+                const container = spine.getSlotObject(slot);
+                if (container?.parent === spine) {
+                    spine.setChildIndex(container, spine.children.length - 1);
+                }
+            });
+        });
+    }
+
     /** Manually attaches any Pixi.js `Container` into a named slot on a specific spine. */
     addSlotChild(spineID: string, slotName: string, child: Container) {
         const spine = this.spines.get(spineID);
