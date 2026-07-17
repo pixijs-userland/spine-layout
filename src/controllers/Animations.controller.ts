@@ -402,6 +402,15 @@ export class AnimationsController {
         const loopingTrack = this.loopingAnimations.get(spineID)?.get(animation);
         if (loopingTrack !== undefined) spineState.clearTrack(loopingTrack);
 
+        // a finished animation leaves the registries but its end pose keeps
+        // applying on its track — scan the actual tracks so stale entries are
+        // cleared too, not just the currently registered ones
+        spineState.tracks.forEach((trackEntry, index) => {
+            if (trackEntry?.animation?.name === animation) {
+                spineState.clearTrack(index);
+            }
+        });
+
         this.removeLoopingAnimation(spineID, animation);
         this.removeActiveAnimation(spineID, animation);
     }
