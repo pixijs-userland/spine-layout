@@ -9,14 +9,14 @@ importers:
   .:
     dependencies:
       '@esotericsoftware/spine-pixi-v8':
-        specifier: ~4.2.77
-        version: 4.2.116(pixi.js@8.18.1)
+        specifier: ^4.3.7
+        version: 4.3.11(pixi.js@8.19.0)
       howler:
         specifier: ^2.2.4
         version: 2.2.4
       pixi.js:
-        specifier: ^8.14.0
-        version: 8.18.1
+        specifier: ^8.19.0
+        version: 8.19.0
     devDependencies:
       '@changesets/cli':
         specifier: ^2.27.10
@@ -169,14 +169,14 @@ packages:
     resolution: {integrity: sha512-43/qtrDUokr7LJqoF2c3+RInu/t4zfrpYdoSDfYyhg52rwLV6TnOvdG4fXm7IkSB3wErkcmJS9iEhjVtOSEjjA==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
 
-  '@esotericsoftware/spine-canvas@4.2.116':
-    resolution: {integrity: sha512-XBNNQC6FOu+Yn1zv10nNYAm95siQLTcN2XgE/TfdC1SpJpMXoEc9P/qS6EGY5ADlvbr/aYN71gFHyL5uVmisVg==}
+  '@esotericsoftware/spine-canvas@4.3.11':
+    resolution: {integrity: sha512-0FrMOh4GRNnYz2hBqRB46z0zXa0aIBENFQCiePYBngfvvg9DdFPIXi0PZiUxsBOd/9T5IRwTai3dHcUZQpnotg==}
 
-  '@esotericsoftware/spine-core@4.2.116':
-    resolution: {integrity: sha512-MLaGxr933E5lcH23dFQtCkGNrwl0MRietVCuuanOlO50yCNALrYqH2VUTB12Wt1Zg999Okz+7UBVjpExJYL7hQ==}
+  '@esotericsoftware/spine-core@4.3.11':
+    resolution: {integrity: sha512-CoBxp3+p4Bg2/d+RWqmUXmKAmTA01MpMFF2rVsq9sTzOXKAOczS7gq2mpMicKnbUg+PpGb55jwxG1bRsZ+FpRQ==}
 
-  '@esotericsoftware/spine-pixi-v8@4.2.116':
-    resolution: {integrity: sha512-NLKxI8b0ITZFoN7FfC/irm/9kh/eDCFuPoy1OrtIi9tytfIGZarcdE+Wiwbtm75EjerXgJrhFnXDPAwcjFAdIg==}
+  '@esotericsoftware/spine-pixi-v8@4.3.11':
+    resolution: {integrity: sha512-kzaWV2tbs5jsVHcoj2MpZFCuOf5J9H17P4QadR/fTDXpDQMOua0pV/InJKAGq5n7GquJju0wUjpsyZY8fS5W5g==}
     peerDependencies:
       pixi.js: ^8.16.0
 
@@ -965,8 +965,8 @@ packages:
     resolution: {integrity: sha512-GQ2EWRpQV8/o+Aw8YqtfZZPfNRWZYkbidE9k5rpl/hC3vtHHBfGm2Ifi6qWV+coDGkrUKZAxE3Lot5kcsRlh+g==}
     engines: {node: '>=6'}
 
-  parse-svg-path@0.1.2:
-    resolution: {integrity: sha512-JyPSBnkTJ0AI8GGJLfMXvKq42cj5c006fnLz6fXy6zfoVjJizi8BNTpu8on8ziI1cKy9d9DGNuY17Ce7wuejpQ==}
+  parse-svg-path@0.2.0:
+    resolution: {integrity: sha512-Tf7FFIrguPKQwzD4pWnYkR2VOv3raoHeKED80Bm+BYHI3KxC8KsgsGC5+fSMzAGDA6UEk4bHvmi+RsjmL3khpg==}
 
   path-exists@4.0.0:
     resolution: {integrity: sha512-ak9Qy5Q7jYb2Wwcey5Fpvg2KoAc/ZIhLSLOSBmRmygPsGwkVVt0fZa0qrtMz+m6tJTAHfZQ8FnmB4MG4LWy7/w==}
@@ -998,8 +998,8 @@ packages:
     resolution: {integrity: sha512-uB80kBFb/tfd68bVleG9T5GGsGPjJrLAUpR5PZIrhBnIaRTQRjqdJSsIKkOP6OAIFbj7GOrcudc5pNjZ+geV2g==}
     engines: {node: '>=6'}
 
-  pixi.js@8.18.1:
-    resolution: {integrity: sha512-6LUPWYgulZhp/w4kam2XHXB0QedISZIqrJbRdHLLQ3csn5a38uzKxAp6B5j6s89QFYaIJbg95kvgTRcbgpO1ow==}
+  pixi.js@8.19.0:
+    resolution: {integrity: sha512-pq1O6emA/GFjjeF+8d3Pb5t7knD8FsnfWGqQcRjYjsqFZ7QdzG1XgjLDUu0DFJRbafjV5+g8iNLFBx0b9649lg==}
 
   postcss@8.5.14:
     resolution: {integrity: sha512-SoSL4+OSEtR99LHFZQiJLkT59C5B1amGO1NzTwj7TT1qCUgUO6hxOvzkOYxD+vMrXBM3XJIKzokoERdqQq/Zmg==}
@@ -1498,16 +1498,16 @@ snapshots:
       '@eslint/core': 0.17.0
       levn: 0.4.1
 
-  '@esotericsoftware/spine-canvas@4.2.116':
+  '@esotericsoftware/spine-canvas@4.3.11':
     dependencies:
-      '@esotericsoftware/spine-core': 4.2.116
+      '@esotericsoftware/spine-core': 4.3.11
 
-  '@esotericsoftware/spine-core@4.2.116': {}
+  '@esotericsoftware/spine-core@4.3.11': {}
 
-  '@esotericsoftware/spine-pixi-v8@4.2.116(pixi.js@8.18.1)':
+  '@esotericsoftware/spine-pixi-v8@4.3.11(pixi.js@8.19.0)':
     dependencies:
-      '@esotericsoftware/spine-canvas': 4.2.116
-      pixi.js: 8.18.1
+      '@esotericsoftware/spine-canvas': 4.3.11
+      pixi.js: 8.19.0
 
   '@humanfs/core@0.19.2':
     dependencies:
@@ -2230,7 +2230,7 @@ snapshots:
     dependencies:
       callsites: 3.1.0
 
-  parse-svg-path@0.1.2: {}
+  parse-svg-path@0.2.0: {}
 
   path-exists@4.0.0: {}
 
@@ -2248,7 +2248,7 @@ snapshots:
 
   pify@4.0.1: {}
 
-  pixi.js@8.18.1:
+  pixi.js@8.19.0:
     dependencies:
       '@pixi/colord': 2.9.6
       '@types/earcut': 3.0.0
@@ -2258,7 +2258,7 @@ snapshots:
       eventemitter3: 5.0.4
       gifuct-js: 2.1.2
       ismobilejs: 1.1.1
-      parse-svg-path: 0.1.2
+      parse-svg-path: 0.2.0
       tiny-lru: 11.4.7
 
   postcss@8.5.14:
