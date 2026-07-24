@@ -1,5 +1,5 @@
 {
-    "name": "@pixi/spine-layout",
+    "name": "@pixijs-userland/spine-layout",
     "version": "0.0.1",
     "description": "Compose Pixi.js scenes from Spine skeletons with state/event-based animation",
     "license": "MIT",
@@ -36,7 +36,7 @@
     ],
     "publishConfig": {
         "access": "public",
-        "registry": "https://registry.npmjs.org"
+        "registry": "https://npm.pkg.github.com"
     },
     "scripts": {
         "build": "tsc",
