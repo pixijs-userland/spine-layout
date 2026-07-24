@@ -8,9 +8,7 @@ concurrency: ${{ github.workflow }}-${{ github.ref }}
 
 permissions:
     contents: write
-    pull-requests: write
     packages: write
-    id-token: write
 
 jobs:
     release:
@@ -34,12 +32,35 @@ jobs:
 
             - run: pnpm build
 
-            - uses: changesets/action@v1
-              with:
-                  publish: pnpm release
-                  version: pnpm version-packages
-                  commit: 'chore: version packages'
-                  title: 'chore: version packages'
+            # pnpm ignores auth tokens in a committed project .npmrc, so set it
+            # in pnpm's user-level config where it will be used for publishing.
+            - name: Authenticate to GitHub Packages
+              run: pnpm config set '//npm.pkg.github.com/:_authToken' "${NODE_AUTH_TOKEN}"
               env:
-                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
                   NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+            # The org forbids Actions from opening PRs, so we release directly:
+            # consume pending changesets, publish, and push the bump back to main.
+            - name: Version, publish, and push
+              run: |
+                  git config user.name "github-actions[bot]"
+                  git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+                  # Applies pending changesets: bumps versions, writes CHANGELOG,
+                  # and deletes the consumed changeset files.
+                  pnpm version-packages
+
+                  if git diff --quiet; then
+                      echo "No changesets pending; nothing to release."
+                      exit 0
+                  fi
+
+                  # build + changeset publish to GitHub Packages
+                  pnpm release
+
+                  git add -A
+                  git commit -m "chore: release [skip ci]"
+                  git push origin HEAD:main
+              env:
+                  NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
