@@ -2,13 +2,15 @@ import { describe, expect, it } from 'vitest';
 import { planMultipleInstances, type BaseSpineSlots } from '../../src/utils/multiInstance';
 
 /** Mirrors the slot-zombie-land layout: a `reels` parent with named reel pointers, a single
- *  `reel` template whose repeated `spine_symbol*` slots seed a 25-strong symbol pool. */
+ *  `reel` template whose repeated `spine_symbol*` slots seed a 25-strong symbol pool and
+ *  whose plain `spine_anticipation` slot shares one overlay export across all reels. */
 function zombieLandBases(): BaseSpineSlots[] {
     return [
         { id: 'root', slots: ['spine_bg', 'spine_reels', 'spine_ui'] },
         { id: 'reels', slots: ['spine_reel_1', 'spine_reel_2', 'spine_reel_3', 'spine_reel_4', 'spine_reel_5'] },
-        { id: 'reel', slots: ['spine_symbol0', 'spine_symbol1', 'spine_symbol2', 'spine_symbol3', 'spine_symbol4'] },
+        { id: 'reel', slots: ['spine_symbol0', 'spine_symbol1', 'spine_symbol2', 'spine_symbol3', 'spine_symbol4', 'spine_anticipation'] },
         { id: 'symbol', slots: ['text_value'] },
+        { id: 'anticipation', slots: [] },
         { id: 'bg', slots: [] },
         { id: 'ui', slots: ['button_spin', 'text_balance'] },
     ];
@@ -41,6 +43,43 @@ describe('planMultipleInstances', () => {
         expect(groups.findIndex((g) => g.baseID === 'reel')).toBeLessThan(
             groups.findIndex((g) => g.baseID === 'symbol'),
         );
+    });
+
+    it('multiplies a shared plain pointer (spine_<id> on several parents) per carrying parent', () => {
+        const groups = planMultipleInstances(zombieLandBases());
+
+        const anticipation = groups.find((g) => g.baseID === 'anticipation');
+
+        // every expanded reel carries `spine_anticipation` -> one copy per reel,
+        // named after its parent so SceneController can attach each to its own reel
+        expect(anticipation?.instanceIDs).toEqual([
+            'anticipation_reel_1',
+            'anticipation_reel_2',
+            'anticipation_reel_3',
+            'anticipation_reel_4',
+            'anticipation_reel_5',
+        ]);
+
+        // the carriers must be final before the shared child multiplies off them
+        expect(groups.findIndex((g) => g.baseID === 'reel')).toBeLessThan(
+            groups.findIndex((g) => g.baseID === 'anticipation'),
+        );
+    });
+
+    it('multiplies a shared child off counted parents too', () => {
+        const groups = planMultipleInstances([
+            { id: 'reels', slots: ['spine_reel1', 'spine_reel2', 'spine_reel3'] },
+            { id: 'reel', slots: ['spine_anticipation'] },
+            { id: 'anticipation', slots: [] },
+        ]);
+
+        const anticipation = groups.find((g) => g.baseID === 'anticipation');
+
+        expect(anticipation?.instanceIDs).toEqual([
+            'anticipation_reel1',
+            'anticipation_reel2',
+            'anticipation_reel3',
+        ]);
     });
 
     it('sizes a counted pool off a counted parent, regardless of expansion order', () => {

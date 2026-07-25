@@ -15,7 +15,7 @@ export type InstanceGroup = {
 /**
  * Plans how base spines that act as multiple-instance templates should be expanded.
  *
- * Two pointer conventions are recognised:
+ * Three pointer conventions are recognised:
  *
  * 1. **Named** — `spine_<id>_<n>` (e.g. `spine_reel_1`). Each distinct pointer becomes one
  *    instance `<id>_<n>`, later auto-attached to its own slot by `SceneController`.
@@ -23,6 +23,11 @@ export type InstanceGroup = {
  *    reel's `spine_symbol0`…`spine_symbol4`). The same slot names repeat across parents, so
  *    the pool size is the *total* number of matching slots across every spine; the produced
  *    instances are `<id>1`…`<id>N`.
+ * 3. **Shared** — a plain `spine_<id>` pointer that more than one spine carries (e.g. every
+ *    reel instance carrying `spine_anticipation`). A child can only live under one parent,
+ *    so the base is multiplied into one `<id>_<parent>` instance per carrying spine, which
+ *    `SceneController` then attaches to its own parent's slot. A plain pointer carried by a
+ *    single spine stays a plain single attach.
  *
  * A pointer only expands a base when that base id is a known spine. A counted pointer is
  * additionally ignored when the full pointer is itself a known spine, since that means it
@@ -30,9 +35,10 @@ export type InstanceGroup = {
  *
  * Expansion is resolved to a fixed point so pools size correctly off parents that are
  * themselves multiplied: a reel's `spine_symbol*` slots only number 25 once the single
- * `reel` template has become five reels. A counted pool is therefore held back until none
- * of the spines carrying its slots are still pending expansion. Named pointers take priority
- * and are order-independent (each pointer is unique), so they expand first each round.
+ * `reel` template has become five reels. A counted pool or shared child is therefore held
+ * back until none of the spines carrying its slots are still pending expansion. Named
+ * pointers take priority and are order-independent (each pointer is unique), so they
+ * expand first each round.
  *
  * @returns the expansions in the order they must be applied.
  */
@@ -98,6 +104,26 @@ export function planMultipleInstances(bases: BaseSpineSlots[]): InstanceGroup[] 
         return counted;
     };
 
+    // Shared pointers (`spine_<base>`, no instance suffix): base id -> the spine ids
+    // carrying the slot. Only multi-carrier bases are returned — a plain pointer on a
+    // single spine is a regular single attach.
+    const collectShared = (): Map<string, string[]> => {
+        const shared = new Map<string, string[]>();
+        registry.forEach((slots, containerID) => {
+            slots.forEach((name) => {
+                if (!name.startsWith(prefix)) return;
+
+                const baseID = name.slice(prefix.length); // e.g. "anticipation"
+                if (!registry.has(baseID)) return; // not a known spine export
+
+                const containers = shared.get(baseID) ?? [];
+                containers.push(containerID);
+                shared.set(baseID, containers);
+            });
+        });
+        return new Map([...shared].filter(([, containers]) => containers.length > 1));
+    };
+
     for (;;) {
         const named = collectNamed();
         if (named.size > 0) {
@@ -106,16 +132,24 @@ export function planMultipleInstances(bases: BaseSpineSlots[]): InstanceGroup[] 
         }
 
         const counted = collectCounted();
-        // Only expand a pool once every spine carrying its slots is final — i.e. no longer a
-        // counted template that will itself multiply (and thereby grow this pool).
-        const ready = [...counted].filter(
-            ([, containers]) => containers.length > 1 && !containers.some((id) => counted.has(id)),
+        const shared = collectShared();
+        // Only expand once every spine carrying the slots is final — i.e. not itself a
+        // template that will still multiply (and thereby grow this pool / add carriers).
+        const isPending = (id: string) => counted.has(id) || shared.has(id);
+        const countedReady = [...counted].filter(
+            ([, containers]) => containers.length > 1 && !containers.some(isPending),
         );
-        if (ready.length === 0) break;
+        const sharedReady = [...shared].filter(
+            ([, containers]) => !containers.some(isPending),
+        );
+        if (countedReady.length === 0 && sharedReady.length === 0) break;
 
-        ready.forEach(([baseID, containers]) => {
+        countedReady.forEach(([baseID, containers]) => {
             const instanceIDs = Array.from({ length: containers.length }, (_, i) => `${baseID}${i + 1}`);
             expand(baseID, instanceIDs);
+        });
+        sharedReady.forEach(([baseID, containers]) => {
+            expand(baseID, containers.map((parentID) => `${baseID}_${parentID}`));
         });
     }
 

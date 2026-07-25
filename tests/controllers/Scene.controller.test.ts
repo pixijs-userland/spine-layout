@@ -60,6 +60,28 @@ describe('SceneController – attachBones', () => {
         expect(parent.__slotChildren.has('spine_child')).toBe(false);
     });
 
+    it('prefers a parent-specific shared instance (<child>_<parent>) over the plain child', () => {
+        const shared1 = createFakeSpine();
+        const shared2 = createFakeSpine();
+        const reel1 = createFakeSpine({ slots: [{ name: 'spine_anticipation' }] });
+        const reel2 = createFakeSpine({ slots: [{ name: 'spine_anticipation' }] });
+        const spines = asSpineMap({
+            reel_1: reel1,
+            reel_2: reel2,
+            anticipation_reel_1: shared1,
+            anticipation_reel_2: shared2,
+        });
+        const animations = new AnimationsController(spines);
+        const texts = new TextsController(spines);
+        const spineCtl = new SpineController(spines, animations);
+        const scene = new SceneController(spines, texts, animations, spineCtl);
+
+        scene.attachBones(() => {});
+
+        expect(reel1.__slotChildren.get('spine_anticipation')?.[0]).toBe(shared1);
+        expect(reel2.__slotChildren.get('spine_anticipation')?.[0]).toBe(shared2);
+    });
+
     it('ignores spine_ slots that point at non-existent children', () => {
         const parent = createFakeSpine({ slots: [{ name: 'spine_missing' }] });
         const spines = asSpineMap({ parent });

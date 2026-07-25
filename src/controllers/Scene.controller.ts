@@ -35,11 +35,16 @@ export class SceneController {
                 });
                 if (slot.name.startsWith(parcePointers.slot.spine) && !skip) {
                     const childKey = slot.name.replace(parcePointers.slot.spine, '');
-                    const childSpine = this.spines.get(childKey);
+                    // a child shared by several parents is multiplied into
+                    // `<child>_<parent>` instances — prefer this parent's own copy
+                    const childID = this.spines.has(`${childKey}_${spineID}`)
+                        ? `${childKey}_${spineID}`
+                        : childKey;
+                    const childSpine = this.spines.get(childID);
 
                     if (childSpine) {
                         spine.addSlotObject(slot.name, childSpine);
-                        log.add(LOG.BONES, spineID, `${childKey} -> ${slot.name}`);
+                        log.add(LOG.BONES, spineID, `${childID} -> ${slot.name}`);
                     }
                 }
             });
