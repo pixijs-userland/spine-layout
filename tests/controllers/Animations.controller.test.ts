@@ -501,6 +501,40 @@ describe('AnimationsController – addEventListener / removeEventListener', () =
         expect(cb).toHaveBeenCalledWith('hero', hero, { eventName: 'click' });
     });
 
+    it('payload is merged into the listener event object', async () => {
+        const hero = makeHero();
+        const ctl = new AnimationsController(asSpineMap({ hero }));
+        ctl.registerSpine('hero', hero as never);
+
+        const cb = vi.fn();
+        ctl.addEventListener('balance_change', cb);
+
+        const promise = ctl.playEvent('balance_change', 'hero', { from: '100', to: '250' });
+        await vi.runAllTimersAsync();
+        await promise;
+
+        expect(cb).toHaveBeenCalledWith('hero', hero, {
+            eventName: 'balance_change',
+            from: '100',
+            to: '250',
+        });
+    });
+
+    it('a payload cannot override eventName', async () => {
+        const hero = makeHero();
+        const ctl = new AnimationsController(asSpineMap({ hero }));
+        ctl.registerSpine('hero', hero as never);
+
+        const cb = vi.fn();
+        ctl.addEventListener('real', cb);
+
+        const promise = ctl.playEvent('real', 'hero', { eventName: 'spoofed' });
+        await vi.runAllTimersAsync();
+        await promise;
+
+        expect(cb).toHaveBeenCalledWith('hero', hero, { eventName: 'real' });
+    });
+
     it('multiple listeners on the same event are all invoked', async () => {
         const ctl = new AnimationsController(new Map());
 

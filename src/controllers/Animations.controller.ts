@@ -212,6 +212,7 @@ export class AnimationsController {
      *
      * `payload` is merged into the object handed to the listeners alongside `eventName`, so
      * synthetic events can carry context (e.g. a text change's previous and next value).
+     * `eventName` is applied last and always wins, so a payload can never spoof it.
      */
     async playEvent(eventName: string, spineID: string, payload?: Record<string, unknown>) {
         const logName = `${LOG.EVENT} [${eventName}]`;
@@ -220,7 +221,7 @@ export class AnimationsController {
         const promises: Promise<void>[] = [];
 
         this.#eventsListeners.get(eventName)?.forEach((cb) => {
-            cb(spineID, this.spines.get(spineID), { eventName, ...payload });
+            cb(spineID, this.spines.get(spineID), { ...payload, eventName });
         });
 
         this.eventAnimations.get(eventName)?.forEach((animation) => {
