@@ -188,7 +188,12 @@ describe('SceneController – activateButtonBones (button_ bone wrappers)', () =
     let animations: AnimationsController;
 
     beforeEach(() => {
-        bigButton = createFakeSpine();
+        bigButton = createFakeSpine({
+            animations: [
+                { name: 'click', duration: 0.5 },
+                { name: 'state_init/init', duration: 0 },
+            ],
+        });
         ui = createFakeSpine({
             bones: [
                 { name: 'ui' },
@@ -242,6 +247,96 @@ describe('SceneController – activateButtonBones (button_ bone wrappers)', () =
 
     it('leaves slots without slot objects untouched (no overlay sprite created)', () => {
         expect(ui.__slotChildren.has('text_spin_button')).toBe(false);
+    });
+
+    it('plays the embedded spine\'s own "click" animation on tap when it exists', () => {
+        const spy = vi.spyOn(animations, 'play');
+        bigButton.emit('pointertap', undefined as never);
+        expect(spy).toHaveBeenCalledWith('big_button', 'click');
+        expect(bigButton.__setAnimationCalls.map(({ name }) => name)).toContain('click');
+    });
+
+    it('skips self animations the embedded spine does not have', () => {
+        const spy = vi.spyOn(animations, 'play');
+
+        bigButton.emit('pointerover', undefined as never);
+        bigButton.emit('pointerout', undefined as never);
+        bigButton.emit('pointerdown', undefined as never);
+        bigButton.emit('pointerup', undefined as never);
+
+        expect(spy).not.toHaveBeenCalled();
+        expect(bigButton.__setAnimationCalls).toEqual([]);
+    });
+
+    it('clicking any part of the composite button plays sibling embedded spine animations', () => {
+        const embedded = createFakeSpine({ animations: [{ name: 'click', duration: 0.5 }] });
+        const label = new Container();
+        const parent = createFakeSpine({
+            bones: [
+                { name: 'ui' },
+                { name: 'button_spin', parent: 'ui' },
+                { name: 'spine_big_button', parent: 'button_spin' },
+            ],
+            slots: [
+                { name: 'spine_big_button', boneName: 'spine_big_button' },
+                { name: 'text_spin_button', boneName: 'spine_big_button' },
+            ],
+        });
+        const spines = asSpineMap({ ui: parent, big_button: embedded });
+        const anims = new AnimationsController(spines);
+        const scene = new SceneController(
+            spines,
+            new TextsController(spines),
+            anims,
+            new SpineController(spines, anims),
+        );
+
+        scene.attachBones(() => {});
+        parent.addSlotObject('text_spin_button', label);
+        scene.activateButtonBones();
+
+        const playSpy = vi.spyOn(anims, 'play');
+        const eventSpy = vi.spyOn(anims, 'playEvent');
+        label.emit('pointertap', undefined as never);
+
+        expect(eventSpy).toHaveBeenCalledWith('spin_click', 'ui');
+        expect(playSpy).toHaveBeenCalledWith('big_button', 'click');
+        expect(embedded.__setAnimationCalls.map(({ name }) => name)).toContain('click');
+    });
+
+    it("plays only the clicked button's own embedded instance, not sibling instances", () => {
+        const makeParent = () =>
+            createFakeSpine({
+                bones: [
+                    { name: 'root' },
+                    { name: 'button_spin', parent: 'root' },
+                    { name: 'spine_big_button', parent: 'button_spin' },
+                ],
+                slots: [{ name: 'spine_big_button', boneName: 'spine_big_button' }],
+            });
+        const instanceA = createFakeSpine({ animations: [{ name: 'click', duration: 0.2 }] });
+        const instanceB = createFakeSpine({ animations: [{ name: 'click', duration: 0.2 }] });
+        const spines = asSpineMap({
+            ui1: makeParent(),
+            ui2: makeParent(),
+            big_button_ui1: instanceA,
+            big_button_ui2: instanceB,
+        });
+        const anims = new AnimationsController(spines);
+        const scene = new SceneController(
+            spines,
+            new TextsController(spines),
+            anims,
+            new SpineController(spines, anims),
+        );
+
+        scene.attachBones(() => {});
+        scene.activateButtonBones();
+
+        instanceA.emit('pointertap', undefined as never);
+
+        expect(instanceA.__setAnimationCalls.map(({ name }) => name)).toContain('click');
+        expect(instanceB.__setAnimationCalls).toEqual([]);
     });
 
     it('does not wire slots hanging outside a button_ bone chain', () => {

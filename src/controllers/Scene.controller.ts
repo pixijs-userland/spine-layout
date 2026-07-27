@@ -8,6 +8,8 @@ import type { TextsController } from './Texts.controller';
 import type { AnimationsController } from './Animations.controller';
 import type { SpineController } from './Spine.controller';
 
+type EmbeddedSpine = { spineID: string; spine: Spine };
+
 export class SceneController {
     private buttons: Map<string, Container> = new Map();
 
@@ -80,12 +82,18 @@ export class SceneController {
      * - `button_<key>` **slots** get an invisible interactive sprite overlaid on the slot.
      * - `button_<key>` **bones** turn every slot object attached beneath them (nested
      *   spines, texts) into the hit area itself — use this to wrap composite buttons.
-     * Both fire the same animation events (`<key>_click`, `<key>_hover`, etc.).
+     * Both fire the same animation events (`<key>_click`, `<key>_hover`, etc.). An
+     * embedded spine under a button bone additionally plays its own `click`/`hover`/
+     * `unhover`/`down`/`up` animations when it has them.
      */
     activateButtonBones() {
         log.open(LOG.BUTTONS);
 
         this.spines.forEach((spine, spineID) => {
+            // Slot objects grouped by their wrapping button_<key> bone: each group
+            // acts as one composite button.
+            const wrapperGroups = new Map<string, { slotName: string; object: Container }[]>();
+
             spine.skeleton.slots.forEach((slot) => {
                 const slotName = slot.data.name;
 
@@ -116,11 +124,28 @@ export class SceneController {
                 const slotObject = spine.getSlotObject(slotName);
                 if (!slotObject) return;
 
-                const eventBase = buttonBone.replace(parcePointers.slot.button, '');
-                this.wireButtonEvents(slotObject, eventBase, spineID);
-                this.buttons.set(`${spineID}:${slotName}`, slotObject);
+                const group = wrapperGroups.get(buttonBone) ?? [];
+                group.push({ slotName, object: slotObject });
+                wrapperGroups.set(buttonBone, group);
+            });
 
-                log.add(LOG.BUTTONS, spineID, `${eventBase}_click -> ${slotName} (bone ${buttonBone})`);
+            wrapperGroups.forEach((members, buttonBone) => {
+                const eventBase = buttonBone.replace(parcePointers.slot.button, '');
+                const embedded = members
+                    .map(({ object }) => this.findRegisteredSpine(object))
+                    .filter((entry): entry is EmbeddedSpine => !!entry);
+
+                members.forEach(({ slotName, object }) => {
+                    this.wireButtonEvents(object, eventBase, spineID);
+                    this.wireEmbeddedSpineAnimations(object, embedded);
+                    this.buttons.set(`${spineID}:${slotName}`, object);
+
+                    log.add(
+                        LOG.BUTTONS,
+                        spineID,
+                        `${eventBase}_click -> ${slotName} (bone ${buttonBone})`,
+                    );
+                });
             });
         });
 
@@ -147,6 +172,44 @@ export class SceneController {
         target.on('pointerupoutside', () =>
             this.animations.playEvent(`${eventBase}_up`, spineID),
         );
+    }
+
+    /**
+     * Embedded spines under a button bone can ship their own feedback animations
+     * (`click`, `hover`, `unhover`, `down` or `up`). Interacting with any part of
+     * the composite button plays the matching animation on every embedded spine
+     * of that button — via direct instance playback, so other instances of the
+     * same skeleton stay idle (an `event_` folder would broadcast to all of them).
+     */
+    private wireEmbeddedSpineAnimations(target: Container, embedded: EmbeddedSpine[]) {
+        const wire = (pointerEvent: string, animation: string) => {
+            const players = embedded.filter(({ spine }) =>
+                spine.state.data.skeletonData.findAnimation(animation),
+            );
+            if (!players.length) return;
+
+            target.on(pointerEvent, () =>
+                players.forEach(({ spineID }) => this.animations.play(spineID, animation)),
+            );
+            players.forEach(({ spineID }) =>
+                log.add(LOG.BUTTONS, spineID, `${pointerEvent} -> ${animation} (self)`),
+            );
+        };
+
+        wire('pointertap', 'click');
+        wire('pointerover', 'hover');
+        wire('pointerout', 'unhover');
+        wire('pointerdown', 'down');
+        wire('pointerup', 'up');
+        wire('pointerupoutside', 'up');
+    }
+
+    /** Resolves a slot object back to its registry entry, if it is a spine instance. */
+    private findRegisteredSpine(object: Container): EmbeddedSpine | undefined {
+        for (const [spineID, spine] of this.spines) {
+            if (spine === object) return { spineID, spine };
+        }
+        return undefined;
     }
 
     /**
