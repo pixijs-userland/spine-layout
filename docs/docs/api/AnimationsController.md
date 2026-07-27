@@ -90,10 +90,12 @@ Plays all animations grouped under the given state name (e.g. `"idle"` triggers 
 ### playEvent
 
 ```ts
-playEvent(eventName: string, spineID: string): Promise<void>
+playEvent(eventName: string, spineID: string, payload?: Record<string, unknown>): Promise<void>
 ```
 
 Plays all animations grouped under the given event name and notifies registered listeners.
+`payload` is merged into the object handed to the listeners alongside `eventName`, so synthetic
+events can carry context (e.g. a text change's `from`/`to` values).
 
 ---
 

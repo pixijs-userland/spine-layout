@@ -207,15 +207,20 @@ export class AnimationsController {
         log.close(logName);
     }
 
-    /** Plays all animations grouped under the given event name and notifies registered listeners. */
-    async playEvent(eventName: string, spineID: string) {
+    /**
+     * Plays all animations grouped under the given event name and notifies registered listeners.
+     *
+     * `payload` is merged into the object handed to the listeners alongside `eventName`, so
+     * synthetic events can carry context (e.g. a text change's previous and next value).
+     */
+    async playEvent(eventName: string, spineID: string, payload?: Record<string, unknown>) {
         const logName = `${LOG.EVENT} [${eventName}]`;
         log.open(logName);
 
         const promises: Promise<void>[] = [];
 
         this.#eventsListeners.get(eventName)?.forEach((cb) => {
-            cb(spineID, this.spines.get(spineID), { eventName });
+            cb(spineID, this.spines.get(spineID), { eventName, ...payload });
         });
 
         this.eventAnimations.get(eventName)?.forEach((animation) => {
