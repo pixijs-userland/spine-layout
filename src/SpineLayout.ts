@@ -42,7 +42,11 @@ export class SpineLayout extends Container {
         log.enabled = !!options?.debug;
         this.#animations = new AnimationsController(this.#spines);
         this.#skins = new SkinsController(this.#spines);
-        this.#texts = new TextsController(this.#spines, this.#multipleInstanceIDs);
+        this.#texts = new TextsController(
+            this.#spines,
+            this.#multipleInstanceIDs,
+            this.#animations,
+        );
         this.#spine = new SpineController(this.#spines, this.#animations);
         this.#scene = new SceneController(
             this.#spines,

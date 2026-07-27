@@ -240,6 +240,90 @@ describe('TextsController – animated numbers', () => {
     });
 });
 
+describe('TextsController – change events', () => {
+    function setup(
+        settings: Record<string, Record<string, unknown>>,
+        opts: { multi?: Set<string>; spineID?: string } = {},
+    ) {
+        const spineID = opts.spineID ?? 'hero';
+        const textKey = Object.keys(settings[spineID.replace(/_\d+$/, '')] ?? settings[spineID])[0];
+        const slot = { name: `text_${textKey}` } as FakeSlot;
+        const spine = createFakeSpine({ slots: [slot] });
+        const playEvent = vi.fn();
+        const ctl = new TextsController(
+            asSpineMap({ [spineID]: spine }),
+            opts.multi ?? new Set(),
+            { playEvent } as never,
+        );
+        ctl.settings = settings as never;
+        ctl.add(slot as never, spine as never, textKey, spineID);
+
+        return { ctl, playEvent };
+    }
+
+    it('fires <textKey>_change with the previous and next value when the text changes', async () => {
+        const { ctl, playEvent } = setup({ hero: { balance: { type: 'text', value: '100' } } });
+
+        await ctl.set('balance', '250');
+
+        expect(playEvent).toHaveBeenCalledWith('balance_change', 'hero', {
+            from: '100',
+            to: '250',
+        });
+    });
+
+    it('does not fire on registration, nor when the value is unchanged', async () => {
+        const { ctl, playEvent } = setup({ hero: { balance: { type: 'text', value: '100' } } });
+
+        expect(playEvent).not.toHaveBeenCalled();
+
+        await ctl.set('balance', '100');
+        expect(playEvent).not.toHaveBeenCalled();
+    });
+
+    it('reports the uppercased value when the entry is uppercase', async () => {
+        const { ctl, playEvent } = setup({
+            hero: { label: { type: 'text', value: 'spin', uppercase: true } },
+        });
+
+        await ctl.set('label', 'stop');
+
+        expect(playEvent).toHaveBeenCalledWith('label_change', 'hero', {
+            from: 'SPIN',
+            to: 'STOP',
+        });
+    });
+
+    it('fires once up front for an animated count-up, not per tick', async () => {
+        vi.useFakeTimers();
+        const { ctl, playEvent } = setup({ hero: { score: { type: 'text', value: '0' } } });
+
+        const promise = ctl.set('score', '100', true, 320);
+        expect(playEvent).toHaveBeenCalledTimes(1);
+        expect(playEvent).toHaveBeenCalledWith('score_change', 'hero', { from: '0', to: '100' });
+
+        await vi.runAllTimersAsync();
+        await promise;
+
+        expect(playEvent).toHaveBeenCalledTimes(1);
+        vi.useRealTimers();
+    });
+
+    it('uses the bare slot text key for multiple-instance spines', async () => {
+        const { ctl, playEvent } = setup(
+            { counter: { reward: { type: 'text', value: '1' } } },
+            { multi: new Set(['counter_1']), spineID: 'counter_1' },
+        );
+
+        await ctl.set('counter_1_reward', '2');
+
+        expect(playEvent).toHaveBeenCalledWith('reward_change', 'counter_1', {
+            from: '1',
+            to: '2',
+        });
+    });
+});
+
 describe('TextsController – attach / settings / clear', () => {
     it('add creates a wrapper Container and attaches via addSlotObject', () => {
         const slot = { name: 'text_a' } as FakeSlot;

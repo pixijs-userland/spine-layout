@@ -2,6 +2,7 @@ import { Assets, BitmapText, Container, Text } from 'pixi.js';
 import type { Spine, SlotData } from '@esotericsoftware/spine-pixi-v8';
 import type { SpineID, TextsJson, TextsJsonBitmapTextEntry, TextsJsonEntry } from '../config/types';
 import { parcePointers } from '../config/parcePointers';
+import type { AnimationsController } from './Animations.controller';
 
 export class TextsController {
     /** Text nodes keyed by their registration key (see {@link configKey}). */
@@ -19,10 +20,14 @@ export class TextsController {
      * @param multipleInstanceIDs Ids of spines created as multiple instances (e.g.
      *   `counter_1`). Text slots on these get per-instance config keys so each instance
      *   can be styled separately (see {@link configKey}).
+     * @param animations Used to fire the synthetic `<textKey>_change` event whenever a text
+     *   value changes (see {@link emitChange}). Optional so the controller stays usable
+     *   standalone.
      */
     constructor(
         private spines: Map<SpineID, Spine>,
         private multipleInstanceIDs: Set<string> = new Set(),
+        private animations?: AnimationsController,
     ) { }
 
     /** Returns all active text instances (both `Text` and `BitmapText`) keyed by bone name. */
@@ -136,11 +141,12 @@ export class TextsController {
         await Promise.all(keys.map((key) => this.setOne(key, text, animate, duration)));
     }
 
-    private async setOne(key: string, text: string, animate = false, duration = 0) {
+    private async setOne(key: string, text: string, animate = false, duration = 0, emit = true) {
         const target = this.texts.get(key);
         if (!target) return;
 
         const settings = this.settingsFor(key);
+        const previous = target.text;
 
         const existing = this.#textRunners.get(key);
         if (existing !== undefined) {
@@ -161,9 +167,14 @@ export class TextsController {
                 const diff = Math.abs(end - value);
 
                 if (diff === 0) {
+                    if (emit && target.text !== text) this.emitChange(key, previous, text);
                     target.text = text;
                     return;
                 }
+
+                // fired up front so the spine animation runs alongside the count-up
+                // rather than after it
+                if (emit) this.emitChange(key, previous, text);
 
                 const DURATION_MS = duration || 500;
                 const INTERVAL_MS = 16;
@@ -193,8 +204,28 @@ export class TextsController {
             }
         }
 
-        target.text = settings?.uppercase ? text.toUpperCase() : text;
+        const next = settings?.uppercase ? text.toUpperCase() : text;
+        if (emit && next !== previous) this.emitChange(key, previous, next);
+
+        target.text = next;
         this.applyMaxWidth(key, target);
+    }
+
+    /**
+     * Fires the synthetic `<textKey>_change` animation event for a text node whose value just
+     * changed — e.g. setting `balance` (the `text_balance` slot) plays everything under
+     * `event_balance_change/` and notifies `animations.addEventListener('balance_change', …)`.
+     *
+     * The bare slot text key is used even for multiple-instance spines, so `counter_1_reward`
+     * fires `reward_change` rather than `counter_1_reward_change`.
+     */
+    private emitChange(key: string, from: string, to: string) {
+        if (!this.animations) return;
+
+        const meta = this.#meta.get(key);
+        if (!meta?.spineID) return;
+
+        this.animations.playEvent(`${meta.textKey}_change`, meta.spineID, { from, to });
     }
 
     /** Moves a text node by the given pixel offset relative to its bone position. */
@@ -381,7 +412,8 @@ export class TextsController {
         this.texts.set(key, text);
         this.#meta.set(key, { spineID, textKey });
         this.setStyle(key, rest);
-        this.set(key, value ?? '', false);
+        // registration seeds the configured value — not a change, so no `_change` event
+        this.setOne(key, value ?? '', false, 0, false);
 
         if (offset) this.setOffset(key, offset);
         this.setMaxWidth(key, maxWidth ?? 0);
