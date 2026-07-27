@@ -2,12 +2,15 @@ import { Container, Point } from 'pixi.js';
 import type { Spine } from '@esotericsoftware/spine-pixi-v8';
 
 export type FakeAnimation = { name: string; duration?: number };
-export type FakeBone = { name: string; worldX?: number; worldY?: number };
+export type FakeBone = { name: string; worldX?: number; worldY?: number; parent?: string };
 export type FakeSlot = {
     name: string;
     attachment?: unknown;
     boneName?: string;
 };
+
+export type FakeSkeletonBone = { data: { name: string }; parent: FakeSkeletonBone | null };
+export type FakeSkeletonSlot = { data: { name: string }; bone: FakeSkeletonBone };
 export type FakeSkin = { name: string };
 
 export type FakeSpineOptions = {
@@ -53,11 +56,12 @@ export type FakeSpine = Container & {
         };
     };
     skeleton: {
-        slots: Array<{ data: { name: string } }>;
+        slots: FakeSkeletonSlot[];
         drawOrder: { appliedPose: Array<{ data: { name: string } }> };
         data: {
             slots: FakeSlot[];
             animations: FakeAnimation[];
+            events: { name: string }[];
             findSkin: (name: string) => FakeSkin | undefined;
         };
         findSlot: (name: string) =>
@@ -71,7 +75,8 @@ export type FakeSpine = Container & {
         updateWorldTransform: (_: unknown) => void;
     };
     addSlotObject: (name: string, child: Container) => void;
-    getSlotObject: (slot: { data: { name: string } }) => Container | undefined;
+    getSlotObject: (slot: string | { data: { name: string } }) => Container | undefined;
+    update: (dt: number) => void;
     __setAnimationCalls: Array<{ track: number; name: string; loop: boolean }>;
     __listeners: FakeSpineEventListener[];
     __slotChildren: Map<string, Container[]>;
@@ -163,12 +168,28 @@ export function createFakeSpine(options: FakeSpineOptions = {}): FakeSpine {
         },
     };
 
+    // Mirror the runtime skeleton: bones carry parent links and every slot hangs
+    // from a bone (a detached placeholder when the fixture doesn't specify one).
+    const skeletonBones = new Map<string, FakeSkeletonBone>(
+        bones.map((b) => [b.name, { data: { name: b.name }, parent: null }]),
+    );
+    bones.forEach((b) => {
+        if (b.parent) skeletonBones.get(b.name)!.parent = skeletonBones.get(b.parent) ?? null;
+    });
+    const skeletonSlotBone = (s: FakeSlot): FakeSkeletonBone =>
+        (s.boneName && skeletonBones.get(s.boneName)) || {
+            data: { name: s.boneName ?? '' },
+            parent: null,
+        };
+
     spine.skeleton = {
-        slots: slots.map((s) => ({ data: { name: s.name } })),
+        slots: slots.map((s) => ({ data: { name: s.name }, bone: skeletonSlotBone(s) })),
         drawOrder: { appliedPose: slots.map((s) => ({ data: { name: s.name } })) },
         data: {
             slots,
             animations,
+            // spine 4.3 SkeletonData always carries an events array
+            events: [],
             findSkin,
         },
         findSlot,
@@ -190,13 +211,22 @@ export function createFakeSpine(options: FakeSpineOptions = {}): FakeSpine {
         },
     };
 
+    // Spine.update(0) re-applies tracks and refreshes world transforms; the
+    // fake only needs to record that a transform refresh happened.
+    spine.update = () => {
+        spine.__worldTransformUpdates++;
+    };
+
     spine.addSlotObject = (name, child) => {
         const list = spine.__slotChildren.get(name) ?? [];
         list.push(child);
         spine.__slotChildren.set(name, list);
     };
 
-    spine.getSlotObject = (slot) => spine.__slotChildren.get(slot.data.name)?.[0];
+    spine.getSlotObject = (slot) => {
+        const name = typeof slot === 'string' ? slot : slot.data.name;
+        return spine.__slotChildren.get(name)?.[0];
+    };
 
     spine.triggerEvent = (eventName: string) => {
         spine.__listeners.forEach((l) =>

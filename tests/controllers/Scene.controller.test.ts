@@ -177,6 +177,96 @@ describe('SceneController – activateButtonBones', () => {
     });
 });
 
+describe('SceneController – activateButtonBones (button_ bone wrappers)', () => {
+    // Mirrors the ui.spine structure:
+    //   bone button_spin
+    //     └─ bone spine_big_button
+    //          ├─ slot spine_big_button (nested spine)
+    //          └─ slot text_spin_button (no slot object attached)
+    let ui: FakeSpine;
+    let bigButton: FakeSpine;
+    let animations: AnimationsController;
+
+    beforeEach(() => {
+        bigButton = createFakeSpine();
+        ui = createFakeSpine({
+            bones: [
+                { name: 'ui' },
+                { name: 'button_spin', parent: 'ui' },
+                { name: 'spine_big_button', parent: 'button_spin' },
+            ],
+            slots: [
+                { name: 'spine_big_button', boneName: 'spine_big_button' },
+                { name: 'text_spin_button', boneName: 'spine_big_button' },
+            ],
+        });
+        const spines = asSpineMap({ ui, big_button: bigButton });
+        animations = new AnimationsController(spines);
+        const texts = new TextsController(spines);
+        const spineCtl = new SpineController(spines, animations);
+        const scene = new SceneController(spines, texts, animations, spineCtl);
+
+        scene.attachBones(() => {});
+        scene.activateButtonBones();
+    });
+
+    it('turns slot objects under a button_ bone into interactive hit areas', () => {
+        expect(ui.__slotChildren.get('spine_big_button')?.[0]).toBe(bigButton);
+        expect(bigButton.eventMode).toBe('static');
+        expect(bigButton.cursor).toBe('pointer');
+    });
+
+    it('fires <key>_click derived from the wrapping bone, on the owning spine', () => {
+        const spy = vi.spyOn(animations, 'playEvent');
+        bigButton.emit('pointertap', undefined as never);
+        expect(spy).toHaveBeenCalledWith('spin_click', 'ui');
+    });
+
+    it('wires the full pointer event set from the bone name', () => {
+        const spy = vi.spyOn(animations, 'playEvent');
+
+        bigButton.emit('pointerover', undefined as never);
+        bigButton.emit('pointerout', undefined as never);
+        bigButton.emit('pointerdown', undefined as never);
+        bigButton.emit('pointerup', undefined as never);
+        bigButton.emit('pointerupoutside', undefined as never);
+
+        expect(spy.mock.calls.map(([eventName]) => eventName)).toEqual([
+            'spin_hover',
+            'spin_unhover',
+            'spin_down',
+            'spin_up',
+            'spin_up',
+        ]);
+    });
+
+    it('leaves slots without slot objects untouched (no overlay sprite created)', () => {
+        expect(ui.__slotChildren.has('text_spin_button')).toBe(false);
+    });
+
+    it('does not wire slots hanging outside a button_ bone chain', () => {
+        const other = createFakeSpine();
+        const parent = createFakeSpine({
+            bones: [{ name: 'ui' }, { name: 'panel', parent: 'ui' }],
+            slots: [{ name: 'spine_other', boneName: 'panel' }],
+        });
+        const spines = asSpineMap({ parent, other });
+        const anims = new AnimationsController(spines);
+        const scene = new SceneController(
+            spines,
+            new TextsController(spines),
+            anims,
+            new SpineController(spines, anims),
+        );
+
+        scene.attachBones(() => {});
+        scene.activateButtonBones();
+
+        expect(other.eventMode).not.toBe('static');
+        expect(other.cursor).not.toBe('pointer');
+    });
+});
+
 describe('SceneController – syncSlotObjectsWithDrawOrder', () => {
     it('reorders slot-object children to match the skeleton draw order', () => {
         const spine = createFakeSpine({

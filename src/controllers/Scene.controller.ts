@@ -1,4 +1,4 @@
-import { type Spine } from '@esotericsoftware/spine-pixi-v8';
+import { type Bone, type Slot, type Spine } from '@esotericsoftware/spine-pixi-v8';
 import { Container, Sprite, Texture } from 'pixi.js';
 import type { SpineID, SpineLayoutOptions } from '../config/types';
 import { parcePointers } from '../config/parcePointers';
@@ -9,7 +9,7 @@ import type { AnimationsController } from './Animations.controller';
 import type { SpineController } from './Spine.controller';
 
 export class SceneController {
-    private buttons: Map<string, Sprite> = new Map();
+    private buttons: Map<string, Container> = new Map();
 
     constructor(
         private spines: Map<SpineID, Spine>,
@@ -75,54 +75,78 @@ export class SceneController {
         log.close(LOG.TEXT);
     }
 
-    /** Creates invisible interactive sprites over `button_<key>` slots and wires pointer events to animation events (`<key>_click`, `<key>_hover`, etc.). */
+    /**
+     * Wires up buttons declared in the skeleton, two conventions:
+     * - `button_<key>` **slots** get an invisible interactive sprite overlaid on the slot.
+     * - `button_<key>` **bones** turn every slot object attached beneath them (nested
+     *   spines, texts) into the hit area itself — use this to wrap composite buttons.
+     * Both fire the same animation events (`<key>_click`, `<key>_hover`, etc.).
+     */
     activateButtonBones() {
         log.open(LOG.BUTTONS);
 
         this.spines.forEach((spine, spineID) => {
-            spine.skeleton.slots.forEach((bone) => {
-                const boneName = bone.data.name;
-                if (!boneName.startsWith(parcePointers.slot.button)) return;
+            spine.skeleton.slots.forEach((slot) => {
+                const slotName = slot.data.name;
 
-                const texture = this.spine.getSlotTexture(spineID, boneName);
-                const bonePos = this.spine.getBoneGlobalPos(spine, boneName);
-                const button = new Sprite(texture || Texture.WHITE);
+                if (slotName.startsWith(parcePointers.slot.button)) {
+                    const texture = this.spine.getSlotTexture(spineID, slotName);
+                    const bonePos = this.spine.getBoneGlobalPos(spine, slotName);
+                    const button = new Sprite(texture || Texture.WHITE);
 
-                if (bonePos) {
-                    button.x = bonePos.x;
-                    button.y = bonePos.y;
+                    if (bonePos) {
+                        button.x = bonePos.x;
+                        button.y = bonePos.y;
+                    }
+                    button.anchor.set(0.5);
+
+                    const eventBase = slotName.replace(parcePointers.slot.button, '');
+                    this.wireButtonEvents(button, eventBase, spineID);
+
+                    spine.addSlotObject(slotName, button);
+                    this.buttons.set(slotName, button);
+
+                    log.add(LOG.BUTTONS, spineID, `${eventBase}_click -> ${slotName}`);
+                    return;
                 }
-                button.anchor.set(0.5);
-                button.eventMode = 'static';
-                button.cursor = 'pointer';
 
-                const eventBase = boneName.replace(parcePointers.slot.button, '');
+                const buttonBone = this.findButtonBoneAncestor(slot);
+                if (!buttonBone) return;
 
-                button.on('pointertap', () =>
-                    this.animations.playEvent(`${eventBase}_click`, spineID),
-                );
-                button.on('pointerover', () =>
-                    this.animations.playEvent(`${eventBase}_hover`, spineID),
-                );
-                button.on('pointerout', () =>
-                    this.animations.playEvent(`${eventBase}_unhover`, spineID),
-                );
-                button.on('pointerdown', () =>
-                    this.animations.playEvent(`${eventBase}_down`, spineID),
-                );
-                button.on('pointerup', () => this.animations.playEvent(`${eventBase}_up`, spineID));
-                button.on('pointerupoutside', () =>
-                    this.animations.playEvent(`${eventBase}_up`, spineID),
-                );
+                const slotObject = spine.getSlotObject(slotName);
+                if (!slotObject) return;
 
-                spine.addSlotObject(boneName, button);
-                this.buttons.set(boneName, button);
+                const eventBase = buttonBone.replace(parcePointers.slot.button, '');
+                this.wireButtonEvents(slotObject, eventBase, spineID);
+                this.buttons.set(`${spineID}:${slotName}`, slotObject);
 
-                log.add(LOG.BUTTONS, spineID, `${eventBase}_click -> ${boneName}`);
+                log.add(LOG.BUTTONS, spineID, `${eventBase}_click -> ${slotName} (bone ${buttonBone})`);
             });
         });
 
         log.close(LOG.BUTTONS);
+    }
+
+    /** Returns the name of the nearest `button_<key>` bone the slot hangs from, if any. */
+    private findButtonBoneAncestor(slot: Slot): string | undefined {
+        for (let bone: Bone | null = slot.bone; bone; bone = bone.parent) {
+            if (bone.data.name.startsWith(parcePointers.slot.button)) return bone.data.name;
+        }
+        return undefined;
+    }
+
+    private wireButtonEvents(target: Container, eventBase: string, spineID: string) {
+        target.eventMode = 'static';
+        target.cursor = 'pointer';
+
+        target.on('pointertap', () => this.animations.playEvent(`${eventBase}_click`, spineID));
+        target.on('pointerover', () => this.animations.playEvent(`${eventBase}_hover`, spineID));
+        target.on('pointerout', () => this.animations.playEvent(`${eventBase}_unhover`, spineID));
+        target.on('pointerdown', () => this.animations.playEvent(`${eventBase}_down`, spineID));
+        target.on('pointerup', () => this.animations.playEvent(`${eventBase}_up`, spineID));
+        target.on('pointerupoutside', () =>
+            this.animations.playEvent(`${eventBase}_up`, spineID),
+        );
     }
 
     /**
