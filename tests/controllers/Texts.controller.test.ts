@@ -361,28 +361,35 @@ describe('TextsController – attach / settings / clear', () => {
         expect(node.y).toBe(4);
     });
 
-    it('setBySpineID adds the text container to the matched slot', () => {
+    it('addTextToSlot adds the text container to the matched slot', () => {
         const slot = { name: 'text_a' } as FakeSlot;
         const spine = createFakeSpine({ slots: [slot] });
         const ctl = new TextsController(asSpineMap({ hero: spine }));
 
         const txt = new Text({ text: 'x' });
-        ctl.setBySpineID('hero', 'text_a', txt);
+        ctl.addTextToSlot('hero', 'text_a', txt);
         expect(spine.__slotChildren.get('text_a')?.[0]).toBe(txt);
     });
 
     it('setBySpineID logs on unknown spine', () => {
         const err = vi.spyOn(console, 'error').mockImplementation(() => {});
         const ctl = new TextsController(new Map());
-        ctl.setBySpineID('missing', 'slot', new Text());
+        ctl.setBySpineID('missing', 'slot', 'x');
         expect(err).toHaveBeenCalledWith('Spine "missing" not found');
     });
 
-    it('setBySpineID logs on unknown slot', () => {
+    it('addTextToSlot logs on unknown spine', () => {
+        const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+        const ctl = new TextsController(new Map());
+        ctl.addTextToSlot('missing', 'slot', new Text());
+        expect(err).toHaveBeenCalledWith('Spine "missing" not found');
+    });
+
+    it('addTextToSlot logs on unknown slot', () => {
         const err = vi.spyOn(console, 'error').mockImplementation(() => {});
         const spine = createFakeSpine({ slots: [{ name: 'text_a' }] });
         const ctl = new TextsController(asSpineMap({ hero: spine }));
-        ctl.setBySpineID('hero', 'text_missing', new Text());
+        ctl.addTextToSlot('hero', 'text_missing', new Text());
         expect(err).toHaveBeenCalledWith(
             'Slot "text_missing" not found',
             expect.anything(),

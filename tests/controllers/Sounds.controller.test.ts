@@ -188,11 +188,17 @@ describe('Sounds – playFX', () => {
         expect(Howl).not.toHaveBeenCalled();
     });
 
-    it('does nothing before user interaction', async () => {
+    it('plays before user interaction (audio is globally muted until the first one)', async () => {
+        // playFX intentionally does not gate on user interaction: init-animation
+        // sounds start immediately while Howler is muted, and the first
+        // interaction unmutes them.
+        vi.spyOn(console, 'error').mockImplementation(() => {});
         const s = new Sounds();
+        vi.mocked(Howler.mute).mockClear();
         s.init(makeManifest(['coin']));
         await s.playFX('coin');
-        expect(Howl).not.toHaveBeenCalled();
+        expect(Howl).toHaveBeenCalledOnce();
+        expect(Howler.mute).not.toHaveBeenCalledWith(false);
     });
 
     it('does nothing when the sound is not in the manifest', async () => {

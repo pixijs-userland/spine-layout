@@ -83,7 +83,7 @@ describe('planMultipleInstances', () => {
     });
 
     it('sizes a counted pool off a counted parent, regardless of expansion order', () => {
-        // frozen-lake / valkyrie use the un-migrated `spine_reel1` (no underscore) naming, so
+        // valkyrie uses the un-migrated `spine_reel1` (no underscore) naming, so
         // reels are *counted* too. The symbol pool must still resolve to 25, which requires
         // reels to expand before symbols are counted.
         const groups = planMultipleInstances([

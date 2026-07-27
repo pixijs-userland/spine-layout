@@ -20,7 +20,7 @@ vi.mock('@esotericsoftware/spine-pixi-v8', async (importOriginal) => {
             this.__sourceData = data;
             this.state = {
                 addListener: () => {},
-                data: { skeletonData: data ?? { animations: [], bones: [], slots: [] } },
+                data: { skeletonData: data ?? { animations: [], bones: [], slots: [], events: [] } },
             };
             this.skeleton = {
                 data,

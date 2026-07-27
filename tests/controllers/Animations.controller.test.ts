@@ -271,11 +271,11 @@ describe('AnimationsController – playback', () => {
         expect(ctl.speed).toBe(2);
     });
 
-    it('pauseSpineByID sets timeScale to 0 on the target spine', () => {
+    it('pauseBySpineID sets timeScale to 0 on the target spine', () => {
         const hero = createFakeSpine();
         const ctl = new AnimationsController(asSpineMap({ hero }));
         hero.state.timeScale = 1;
-        ctl.pauseSpineByID('hero');
+        ctl.pauseBySpineID('hero');
         expect(hero.state.timeScale).toBe(0);
     });
 
@@ -296,7 +296,7 @@ describe('AnimationsController – playback', () => {
         await vi.runAllTimersAsync();
     });
 
-    it('stopAnimation clears the right track for the named animation', async () => {
+    it('stop clears the right track for the named animation', async () => {
         const hero = createFakeSpine({
             animations: [
                 { name: 'a', duration: 1 },
@@ -309,8 +309,8 @@ describe('AnimationsController – playback', () => {
         void ctl.play('hero', 'a');
         void ctl.play('hero', 'b_loop');
 
-        ctl.stopAnimation('hero', 'a');
-        ctl.stopAnimation('hero', 'b_loop');
+        ctl.stop('hero', 'a');
+        ctl.stop('hero', 'b_loop');
 
         // tracks were 0 and 1
         expect(hero.__clearTrackCalls.sort()).toEqual([0, 1]);
@@ -347,7 +347,7 @@ describe('AnimationsController – playback', () => {
     });
 });
 
-describe('AnimationsController – pauseAnimation', () => {
+describe('AnimationsController – pause', () => {
     let err: ReturnType<typeof vi.spyOn>;
 
     beforeEach(() => {
@@ -361,7 +361,7 @@ describe('AnimationsController – pauseAnimation', () => {
 
     it('logs an error when the spine is unknown', () => {
         const ctl = new AnimationsController(new Map());
-        ctl.pauseAnimation('missing', 'a');
+        ctl.pause('missing', 'a');
         expect(err).toHaveBeenCalledWith('Spine missing not found');
     });
 
@@ -370,7 +370,7 @@ describe('AnimationsController – pauseAnimation', () => {
         const ctl = new AnimationsController(asSpineMap({ hero }));
         ctl.registerSpine('hero', hero as never);
 
-        ctl.pauseAnimation('hero', 'a');
+        ctl.pause('hero', 'a');
 
         expect(hero.state.tracks.length).toBe(0);
         expect(hero.__worldTransformUpdates).toBe(0);
@@ -385,7 +385,7 @@ describe('AnimationsController – pauseAnimation', () => {
         const entry = hero.state.tracks[0]!;
         entry.trackTime = 0.42;
 
-        ctl.pauseAnimation('hero', 'a');
+        ctl.pause('hero', 'a');
 
         expect(entry.timeScale).toBe(0);
         expect(entry.trackEnd).toBe(0.42);
@@ -403,7 +403,7 @@ describe('AnimationsController – pauseAnimation', () => {
         const entry = hero.state.tracks[0]!;
         entry.trackTime = 0.7;
 
-        ctl.pauseAnimation('hero', 'idle_loop');
+        ctl.pause('hero', 'idle_loop');
 
         expect(entry.timeScale).toBe(0);
         expect(entry.trackEnd).toBe(0.7);
@@ -412,7 +412,7 @@ describe('AnimationsController – pauseAnimation', () => {
     });
 });
 
-describe('AnimationsController – resetAnimation', () => {
+describe('AnimationsController – reset', () => {
     let err: ReturnType<typeof vi.spyOn>;
 
     beforeEach(() => {
@@ -426,7 +426,7 @@ describe('AnimationsController – resetAnimation', () => {
 
     it('logs an error when the spine is unknown', () => {
         const ctl = new AnimationsController(new Map());
-        ctl.resetAnimation('missing', 'a');
+        ctl.reset('missing', 'a');
         expect(err).toHaveBeenCalledWith('Spine missing not found');
     });
 
@@ -438,7 +438,7 @@ describe('AnimationsController – resetAnimation', () => {
         void ctl.play('hero', 'a');
         expect(ctl.getActive()).toEqual(['hero']);
 
-        ctl.resetAnimation('hero', 'a');
+        ctl.reset('hero', 'a');
 
         expect(hero.__clearTrackCalls).toEqual([0]);
         expect(hero.__bonesSetupPoseCount).toBe(1);
@@ -447,7 +447,7 @@ describe('AnimationsController – resetAnimation', () => {
 
         // Idempotent: a second reset should be a no-op clear (animation
         // entry was already removed from the internal track map).
-        ctl.resetAnimation('hero', 'a');
+        ctl.reset('hero', 'a');
         expect(hero.__clearTrackCalls).toEqual([0]);
 
         await vi.runAllTimersAsync();
@@ -461,7 +461,7 @@ describe('AnimationsController – resetAnimation', () => {
         void ctl.play('hero', 'idle_loop');
         expect(ctl.getLooping()).toEqual(['hero']);
 
-        ctl.resetAnimation('hero', 'idle_loop');
+        ctl.reset('hero', 'idle_loop');
 
         expect(hero.__clearTrackCalls).toEqual([0]);
 
@@ -473,7 +473,7 @@ describe('AnimationsController – resetAnimation', () => {
         const ctl = new AnimationsController(asSpineMap({ hero }));
         ctl.registerSpine('hero', hero as never);
 
-        ctl.resetAnimation('hero', 'a');
+        ctl.reset('hero', 'a');
 
         expect(hero.__clearTrackCalls).toEqual([]);
         expect(hero.__bonesSetupPoseCount).toBe(1);
@@ -579,11 +579,11 @@ describe('AnimationsController – addEventListener / removeEventListener', () =
     });
 });
 
-describe('AnimationsController – playInstanceAnimationLastFrame', () => {
+describe('AnimationsController – playLastFrame', () => {
     it('warns when spine is unknown', async () => {
         const err = vi.spyOn(console, 'error').mockImplementation(() => {});
         const ctl = new AnimationsController(new Map());
-        await ctl.playInstanceAnimationLastFrame('missing', 'anim');
+        await ctl.playLastFrame('missing', 'anim');
         expect(err).toHaveBeenCalledWith('Track spine not found');
     });
 
@@ -593,7 +593,7 @@ describe('AnimationsController – playInstanceAnimationLastFrame', () => {
         hero.state.getTrack = () => trackEntry;
 
         const ctl = new AnimationsController(asSpineMap({ hero }));
-        await ctl.playInstanceAnimationLastFrame('hero', 'a');
+        await ctl.playLastFrame('hero', 'a');
 
         expect(trackEntry.trackTime).toBe(5);
     });
