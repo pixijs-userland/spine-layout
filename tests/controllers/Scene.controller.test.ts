@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { Container, Sprite } from 'pixi.js';
-import { RegionAttachment } from '@esotericsoftware/spine-pixi-v8';
+import { Container, Sprite, Texture } from 'pixi.js';
+import { RegionAttachment, Sequence, type TextureRegion } from '@esotericsoftware/spine-pixi-v8';
 
 import { SceneController } from '../../src/controllers/Scene.controller';
 import { AnimationsController } from '../../src/controllers/Animations.controller';
@@ -9,17 +9,19 @@ import { TextsController } from '../../src/controllers/Texts.controller';
 import { asSpineMap, createFakeSpine, type FakeSpine } from '../helpers/fakeSpine';
 
 function makeRegion(): RegionAttachment {
-    const att = new RegionAttachment('a', 'p');
-    (att as unknown as { region: unknown }).region = {
+    // spine 4.3+: attachments hold their region(s) in a Sequence — static
+    // images are single-frame sequences.
+    const sequence = new Sequence(1, false);
+    sequence.regions[0] = {
         x: 0,
         y: 0,
         width: 8,
         height: 8,
         degrees: 0,
         rotate: false,
-        texture: { texture: { source: {} } },
-    };
-    return att;
+        texture: { texture: Texture.WHITE },
+    } as unknown as TextureRegion;
+    return new RegionAttachment('a', sequence);
 }
 
 describe('SceneController – attachBones', () => {

@@ -178,7 +178,9 @@ export class SpineController {
     private getTextureFromAttachmentRegion(
         att: RegionAttachment | MeshAttachment,
     ): Texture | undefined {
-        const rawRegion = att.sequence?.regions[0];
+        // In spine 4.3+ every region/mesh attachment stores its region(s) in a
+        // Sequence — static attachments are single-frame sequences.
+        const rawRegion = att.sequence?.regions?.[0];
         if (!rawRegion) {
             console.warn('Invalid attachment or region');
             return;
