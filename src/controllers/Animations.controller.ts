@@ -601,7 +601,6 @@ export class AnimationsController {
         fxNames.forEach((fx) => {
             if (this.isFXHeldByRunningAnimation(fx)) return;
             sounds.stopFX(fx);
-            log.log(`spine sound stop: ${spineID}(${animation}) -> ${fx}`);
         });
     }
 
