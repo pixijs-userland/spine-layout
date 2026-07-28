@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { planMultipleInstances, type BaseSpineSlots } from '../../src/utils/multiInstance';
 
-/** Mirrors the slot-zombie-land layout: a `reels` parent with named reel pointers, a single
+/** Mirrors the slot-reel-of-the-dead layout: a `reels` parent with named reel pointers, a single
  *  `reel` template whose repeated `spine_symbol*` slots seed a 25-strong symbol pool and
  *  whose plain `spine_anticipation` slot shares one overlay export across all reels. */
-function zombieLandBases(): BaseSpineSlots[] {
+function reelOfTheDeadBases(): BaseSpineSlots[] {
     return [
         { id: 'root', slots: ['spine_bg', 'spine_reels', 'spine_ui'] },
         { id: 'reels', slots: ['spine_reel_1', 'spine_reel_2', 'spine_reel_3', 'spine_reel_4', 'spine_reel_5'] },
@@ -27,7 +27,7 @@ describe('planMultipleInstances', () => {
     });
 
     it('expands counted pointers (spine_<id><n>) sized off already-multiplied parents', () => {
-        const groups = planMultipleInstances(zombieLandBases());
+        const groups = planMultipleInstances(reelOfTheDeadBases());
 
         const reel = groups.find((g) => g.baseID === 'reel');
         const symbol = groups.find((g) => g.baseID === 'symbol');
@@ -46,7 +46,7 @@ describe('planMultipleInstances', () => {
     });
 
     it('multiplies a shared plain pointer (spine_<id> on several parents) per carrying parent', () => {
-        const groups = planMultipleInstances(zombieLandBases());
+        const groups = planMultipleInstances(reelOfTheDeadBases());
 
         const anticipation = groups.find((g) => g.baseID === 'anticipation');
 
