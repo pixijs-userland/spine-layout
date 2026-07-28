@@ -14,6 +14,7 @@ type FakeHowl = {
     stop: ReturnType<typeof vi.fn>;
     mute: ReturnType<typeof vi.fn>;
     volume: ReturnType<typeof vi.fn>;
+    playing: ReturnType<typeof vi.fn>;
     on: ReturnType<typeof vi.fn>;
 };
 
@@ -23,6 +24,7 @@ function makeFakeHowl(): FakeHowl {
         stop: vi.fn(),
         mute: vi.fn(),
         volume: vi.fn(),
+        playing: vi.fn(() => false),
         on: vi.fn((event: string, cb: () => void) => {
             if (event === 'end') cb();
         }),
@@ -230,6 +232,48 @@ describe('Sounds – playFX', () => {
         expect(fakeHowl.play).toHaveBeenCalledOnce();
     });
 
+    it('does not restart a looping fx that is already playing', async () => {
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+        const s = new Sounds();
+        s.init(makeManifest(['spin']));
+        s.onUserInteraction();
+
+        await s.playFX('spin', true);
+        fakeHowl.playing.mockReturnValue(true);
+        fakeHowl.play.mockClear();
+
+        // a looping FX re-fires on every cycle of its animation — it must not stack
+        await s.playFX('spin', true);
+
+        expect(fakeHowl.play).not.toHaveBeenCalled();
+    });
+
+    it('replays a finished looping fx', async () => {
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+        const s = new Sounds();
+        s.init(makeManifest(['spin']));
+        s.onUserInteraction();
+
+        await s.playFX('spin', true);
+        fakeHowl.playing.mockReturnValue(false);
+        fakeHowl.play.mockClear();
+
+        await s.playFX('spin', true);
+
+        expect(fakeHowl.play).toHaveBeenCalledOnce();
+    });
+
+    it('treats a _loop suffix as a looping fx', async () => {
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+        const s = new Sounds();
+        s.init(makeManifest(['spin']));
+        s.onUserInteraction();
+
+        await s.playFX('spin_loop');
+
+        expect(Howl).toHaveBeenCalledWith(expect.objectContaining({ loop: true }));
+    });
+
     it('picks randomly from an array argument', async () => {
         vi.spyOn(console, 'error').mockImplementation(() => {});
         const s = new Sounds();
@@ -289,6 +333,36 @@ describe('Sounds – playMusic', () => {
         await s.playMusic('bgm');
         await s.playMusic('bgm2');
         expect(fakeHowl.stop).toHaveBeenCalled();
+    });
+
+    it('keeps the current track playing when the requested one cannot be resolved', async () => {
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+        const s = new Sounds();
+        s.init(makeManifest(['bgm']));
+        s.onUserInteraction();
+        await s.playMusic('bgm');
+        fakeHowl.stop.mockClear();
+
+        // only other music stops music — a missing track must not silence the game
+        await s.playMusic('missing');
+
+        expect(fakeHowl.stop).not.toHaveBeenCalled();
+    });
+
+    it('resumes a previously played track and stops the outgoing one', async () => {
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+        const s = new Sounds();
+        s.init(makeManifest(['bgm', 'bgm2']));
+        s.onUserInteraction();
+        await s.playMusic('bgm');
+        await s.playMusic('bgm2');
+        fakeHowl.stop.mockClear();
+        fakeHowl.play.mockClear();
+
+        await s.playMusic('bgm');
+
+        expect(fakeHowl.stop).toHaveBeenCalled();
+        expect(fakeHowl.play).toHaveBeenCalled();
     });
 });
 

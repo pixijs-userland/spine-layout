@@ -12,4 +12,12 @@ export const parcePointers = {
         next: '_next',
         loop: '_loop',
     },
+    sound: {
+        /**
+         * Prefix marking a skeleton event as a music track (`music_loop`, `music2`) instead of
+         * an FX. `_loop` alone does *not* mean music — it means the sound loops, so `spin_loop`
+         * is a looping FX owned by the animation that fired it.
+         */
+        music: 'music',
+    },
 };

@@ -90,12 +90,18 @@ activated: boolean
 playFX(fx?: string | string[], loop?: boolean): Promise<void>
 ```
 
-Plays a sound effect. Pass an array to pick one entry at random each call. Uses the per-sound override from `soundsVolumes` if present, otherwise `fxVolume`. No-ops until both `init()` and `onUserInteraction()` have been called.
+Plays a sound effect. Pass an array to pick one entry at random each call. Uses the per-sound override from `soundsVolumes` if present, otherwise `fxVolume`. No-ops until `init()` has been called.
+
+A name ending in `_loop` is played as a looping FX under its stripped name, so `playFX('spin_loop')`
+and `playFX('spin', true)` are the same call and both are stopped by `stopFX('spin')`. Re-requesting
+a looping FX that is still playing is a no-op rather than a second, overlapping instance — a looping
+animation can fire its sound event every cycle without stacking.
 
 ```ts
 sounds.playFX('coin');
 sounds.playFX(['hit1', 'hit2', 'hit3']);   // random pick
 sounds.playFX('laser', true);              // looping FX
+sounds.playFX('laser_loop');               // the same looping FX
 ```
 
 ---
@@ -116,7 +122,7 @@ Stops a named FX sound (useful for looping FX started with `playFX(..., true)`).
 playMusic(music: string): Promise<void>
 ```
 
-Starts a looping music track. If a different track is already playing it is stopped first. Calling `playMusic` with the same track name that is already active is a no-op.
+Starts a looping music track. If a different track is already playing it is stopped first — but only once the new track has actually started, so requesting a track that is missing from the manifest leaves the current music playing. Only other music stops music: FX never do, whatever their name. Calling `playMusic` with the same track name that is already active is a no-op.
 
 ```ts
 sounds.playMusic('bgm_main');

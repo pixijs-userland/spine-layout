@@ -143,6 +143,11 @@ export class Sounds {
         const fxInstance = this.fxSounds.get(sound);
 
         if (fxInstance) {
+            // A looping FX re-fires every cycle of a looping animation. `Howl.play()` would
+            // start a *second*, overlapping sound id each time (and only the newest would be
+            // audible-but-doubled), so let the running loop carry on instead.
+            if (loop && fxInstance.playing()) return;
+
             fxInstance.play();
             return;
         }
@@ -189,11 +194,10 @@ export class Sounds {
     private _playMusic(music: string) {
         if (this.activeMusic === music) return;
 
-        this.stopAllMusic();
-
         const musicInstance = this.musicSounds.get(music);
 
         if (musicInstance) {
+            this.stopAllMusic();
             musicInstance.play();
             this.activeMusic = music;
             return;
@@ -203,6 +207,8 @@ export class Sounds {
             console.log('🎶 Play music', music);
         }
 
+        // Started before the outgoing track is stopped, on purpose: a track that cannot be
+        // resolved must leave the current music playing. Only other music stops music.
         const newInstance = this.addAndPlay(music, {
             loop: true,
             volume: this.settings.musicVolume,
@@ -216,6 +222,9 @@ export class Sounds {
 
             return;
         }
+
+        // `newInstance` is not registered yet, so it survives the stop
+        this.stopAllMusic();
 
         this.musicSounds.set(music, newInstance);
         this.activeMusic = music;

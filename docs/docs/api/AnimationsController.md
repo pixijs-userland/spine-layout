@@ -196,3 +196,19 @@ set speed(value: number)
 ```
 
 Sets the global playback speed for all spines (`timeScale`).
+
+---
+
+## Behaviour Notes
+
+- **Sound channel per event** — a skeleton event whose name starts with `music` plays on the music
+  channel (`playMusic`); everything else is FX (`playFX`), looping when the name ends with `_loop`.
+  So `spin_loop` is a looping *effect*, not a music track.
+- **Sound cleanup on stop** — FX started by a skeleton event are attributed to the animation whose
+  timeline fired them, and every stop path (`stopAnimation`, `stopState`, `stopAll`,
+  `stopAllBySpineID`, `reset`, `unregisterSpine`, `clear`) stops those FX, so a looping or long FX
+  cannot outlive its animation. An FX is left playing when another still-running animation triggered
+  the same sound — `Sounds` keeps one instance per sound name, so stopping it would cut that
+  animation's audio too (five reels sharing one spin loop stop it only when the last reel does).
+  Music is never stopped this way: a track plays until another one replaces it. Animations that
+  finish on their own are not affected — only explicit stops are.

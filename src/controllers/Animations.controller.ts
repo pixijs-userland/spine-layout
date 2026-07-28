@@ -18,6 +18,14 @@ export class AnimationsController {
     private eventAnimations: Map<string, string[]> = new Map();
     private activeAnimations: Map<string, AnimationTrackRegistry> = new Map();
     private loopingAnimations: Map<string, AnimationTrackRegistry> = new Map();
+    /**
+     * FX started by a spine event, grouped by the animation whose timeline fired it
+     * (`spineID -> animation -> fx names`), so stopping that animation can stop its FX.
+     *
+     * Music events (`music*`) are intentionally *not* tracked: a track keeps playing until
+     * another one replaces it, regardless of the animation that started it.
+     */
+    private triggeredFX: Map<SpineID, Map<AnimationName, Set<string>>> = new Map();
     #eventsListeners: EventsListeners = new Map();
     #speed = 1;
 
@@ -28,7 +36,7 @@ export class AnimationsController {
     /** Registers a spine instance, wiring up its animation metadata and event listeners. */
     registerSpine(spineID: string, spine: Spine) {
         spine.state.addListener({
-            event: (_, event) => {
+            event: (entry, event) => {
                 // NB: don't JSON.stringify(event.data) — since spine-pixi-v8 4.3.7, EventData
                 // holds a `setupPose: Event` whose `.data` points back to it, so the EventData
                 // is circular. Log the fired event's runtime values instead.
@@ -47,10 +55,22 @@ export class AnimationsController {
                     }
                 }
 
-                if (event.data.name.endsWith('_loop')) {
-                    sounds.playMusic(event.data.name.slice(0, -5))
+                // `_loop` marks a *looping* sound, not a music track: only the music pointer
+                // (`music_loop`, `music2`) reaches the music channel, which keeps playing until
+                // another track replaces it. Everything else is FX owned by the animation that
+                // fired it — including looping FX like `spin_loop`, which would otherwise loop
+                // on forever after its animation stops.
+                const looping = event.data.name.endsWith(parcePointers.mod.loop);
+                const sound = looping
+                    ? event.data.name.slice(0, -parcePointers.mod.loop.length)
+                    : event.data.name;
+
+                if (sound.startsWith(parcePointers.sound.music)) {
+                    sounds.playMusic(sound);
                 } else {
-                    sounds.playFX(event.data.name);
+                    sounds.playFX(sound, looping);
+                    // remember which animation owns this FX so `stop`/`reset` can cut it short
+                    this.rememberTriggeredFX(spineID, entry?.animation?.name, sound);
                 }
 
                 // playEvent already notifies the named listeners — dispatching
@@ -118,6 +138,7 @@ export class AnimationsController {
         this.animations.forEach((registry) => registry.delete(spineID));
         this.activeAnimations.delete(spineID);
         this.loopingAnimations.delete(spineID);
+        this.stopAllTriggeredFX(spineID);
     }
 
     // ─── Getters ─────────────────────────────────────────────────────────────────
@@ -381,6 +402,7 @@ export class AnimationsController {
             this.activeAnimations.delete(spineID);
             this.loopingAnimations.delete(spineID);
         });
+        this.stopAllTriggeredFX();
     }
 
     /** Stops all animations on a specific spine and resets it to the setup pose. */
@@ -391,6 +413,7 @@ export class AnimationsController {
         spine.skeleton.setupPose();
         this.activeAnimations.delete(spineID);
         this.loopingAnimations.delete(spineID);
+        this.stopAllTriggeredFX(spineID);
     }
 
     /** Stops a specific animation on a specific spine, clearing its track. */
@@ -419,6 +442,7 @@ export class AnimationsController {
 
         this.removeLoopingAnimation(spineID, animation);
         this.removeActiveAnimation(spineID, animation);
+        this.stopTriggeredFX(spineID, animation);
     }
 
     /**
@@ -507,6 +531,7 @@ export class AnimationsController {
 
         this.removeActiveAnimation(spineID, animation);
         this.removeLoopingAnimation(spineID, animation);
+        this.stopTriggeredFX(spineID, animation);
     }
 
     // ─── Speed ───────────────────────────────────────────────────────────────────
@@ -544,6 +569,65 @@ export class AnimationsController {
         this.loopingAnimations.get(spineID)?.delete(animation);
     }
 
+    // ─── Animation-triggered FX (private) ────────────────────────────────────────
+
+    private rememberTriggeredFX(spineID: SpineID, animation: string | undefined, fx: string) {
+        if (!animation) return;
+
+        const perAnimation = this.triggeredFX.get(spineID) ?? new Map<AnimationName, Set<string>>();
+        const fxNames = perAnimation.get(animation) ?? new Set<string>();
+
+        fxNames.add(fx);
+        perAnimation.set(animation, fxNames);
+        this.triggeredFX.set(spineID, perAnimation);
+    }
+
+    /**
+     * Stops the FX this animation's timeline started — the inverse of the event listener's
+     * `playFX` — and forgets them. A long one-shot is cut short instead of outliving the
+     * animation that triggered it.
+     *
+     * FX another *still-running* animation also triggered are left playing: `Sounds` keeps one
+     * instance per FX name, so stopping it here would cut the other animation's audio too.
+     * Called after the animation has left `activeAnimations`/`loopingAnimations`, so an
+     * animation never counts as holding its own FX.
+     */
+    private stopTriggeredFX(spineID: SpineID, animation: string) {
+        const fxNames = this.triggeredFX.get(spineID)?.get(animation);
+        if (!fxNames) return;
+
+        this.triggeredFX.get(spineID)!.delete(animation);
+
+        fxNames.forEach((fx) => {
+            if (this.isFXHeldByRunningAnimation(fx)) return;
+            sounds.stopFX(fx);
+            log.log(`spine sound stop: ${spineID}(${animation}) -> ${fx}`);
+        });
+    }
+
+    /** Stops the FX triggered by every animation of a spine, or of all spines when omitted. */
+    private stopAllTriggeredFX(spineID?: SpineID) {
+        const spineIDs = spineID ? [spineID] : Array.from(this.triggeredFX.keys());
+
+        spineIDs.forEach((id) => {
+            Array.from(this.triggeredFX.get(id)?.keys() ?? []).forEach((animation) =>
+                this.stopTriggeredFX(id, animation),
+            );
+            this.triggeredFX.delete(id);
+        });
+    }
+
+    private isFXHeldByRunningAnimation(fx: string): boolean {
+        return Array.from(this.triggeredFX).some(([spineID, perAnimation]) =>
+            Array.from(perAnimation).some(
+                ([animation, fxNames]) =>
+                    fxNames.has(fx) &&
+                    (this.activeAnimations.get(spineID)?.has(animation) ||
+                        this.loopingAnimations.get(spineID)?.has(animation)),
+            ),
+        );
+    }
+
     // ─── Name parsing (private) ──────────────────────────────────────────────────
 
     private getStateName(animationName: string): string | undefined {
@@ -571,6 +655,8 @@ export class AnimationsController {
         this.eventAnimations.clear();
         this.activeAnimations.clear();
         this.loopingAnimations.clear();
+        // after the registries are cleared, so nothing counts as still holding its FX
+        this.stopAllTriggeredFX();
         this.#eventsListeners.clear();
         this.#speed = 1;
     }

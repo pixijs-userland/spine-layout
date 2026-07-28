@@ -87,7 +87,7 @@ export type FakeSpine = Container & {
     __clearTracksCalls: number;
     __worldTransformUpdates: number;
     __destroyed: boolean;
-    triggerEvent: (eventName: string) => void;
+    triggerEvent: (eventName: string, animationName?: string) => void;
 };
 
 export function createFakeSpine(options: FakeSpineOptions = {}): FakeSpine {
@@ -228,10 +228,11 @@ export function createFakeSpine(options: FakeSpineOptions = {}): FakeSpine {
         return spine.__slotChildren.get(name)?.[0];
     };
 
-    spine.triggerEvent = (eventName: string) => {
-        spine.__listeners.forEach((l) =>
-            l.event?.(undefined, { data: { name: eventName } }),
-        );
+    // `animationName` fills in the TrackEntry the runtime hands to listeners, so a fired
+    // event can be attributed to the animation whose timeline holds it.
+    spine.triggerEvent = (eventName: string, animationName?: string) => {
+        const entry = animationName ? { animation: { name: animationName } } : undefined;
+        spine.__listeners.forEach((l) => l.event?.(entry, { data: { name: eventName } }));
     };
 
     const originalDestroy = spine.destroy.bind(spine);

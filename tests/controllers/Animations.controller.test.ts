@@ -1,11 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../src/controllers/Sounds.controller', () => ({
-    sounds: { playFX: vi.fn() },
+    sounds: { playFX: vi.fn(), stopFX: vi.fn(), playMusic: vi.fn() },
 }));
 
 import { AnimationsController } from '../../src/controllers/Animations.controller';
+import { sounds } from '../../src/controllers/Sounds.controller';
 import { asSpineMap, createFakeSpine, type FakeSpine } from '../helpers/fakeSpine';
+
+const soundsMock = sounds as unknown as {
+    playFX: ReturnType<typeof vi.fn>;
+    stopFX: ReturnType<typeof vi.fn>;
+    playMusic: ReturnType<typeof vi.fn>;
+};
 
 function makeHero(extra: Parameters<typeof createFakeSpine>[0] = {}): FakeSpine {
     return createFakeSpine({
@@ -478,6 +485,249 @@ describe('AnimationsController – reset', () => {
         expect(hero.__clearTrackCalls).toEqual([]);
         expect(hero.__bonesSetupPoseCount).toBe(1);
         expect(hero.__setupPoseCount).toBe(1);
+    });
+});
+
+describe('AnimationsController – animation-triggered FX', () => {
+    function makeSpineWithFX(): FakeSpine {
+        return createFakeSpine({
+            animations: [
+                { name: 'a', duration: 1 },
+                { name: 'b', duration: 1 },
+            ],
+        });
+    }
+
+    beforeEach(() => {
+        soundsMock.playFX.mockClear();
+        soundsMock.stopFX.mockClear();
+        soundsMock.playMusic.mockClear();
+        vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+        vi.useRealTimers();
+    });
+
+    it('stop stops the FX the animation triggered', async () => {
+        const hero = makeSpineWithFX();
+        const ctl = new AnimationsController(asSpineMap({ hero }));
+        ctl.registerSpine('hero', hero as never);
+
+        void ctl.play('hero', 'a');
+        hero.triggerEvent('whoosh', 'a');
+        expect(soundsMock.playFX).toHaveBeenCalledWith('whoosh', false);
+
+        ctl.stop('hero', 'a');
+
+        expect(soundsMock.stopFX).toHaveBeenCalledWith('whoosh');
+        await vi.runAllTimersAsync();
+    });
+
+    it('treats a *_loop event as a looping FX, not music, and stops it with the animation', async () => {
+        const hero = makeSpineWithFX();
+        const ctl = new AnimationsController(asSpineMap({ hero }));
+        ctl.registerSpine('hero', hero as never);
+
+        void ctl.play('hero', 'a');
+        hero.triggerEvent('spin_loop', 'a');
+
+        expect(soundsMock.playFX).toHaveBeenCalledWith('spin', true);
+        expect(soundsMock.playMusic).not.toHaveBeenCalled();
+
+        ctl.stop('hero', 'a');
+
+        expect(soundsMock.stopFX).toHaveBeenCalledWith('spin');
+        await vi.runAllTimersAsync();
+    });
+
+    it('stop leaves FX triggered by a different animation playing', async () => {
+        const hero = makeSpineWithFX();
+        const ctl = new AnimationsController(asSpineMap({ hero }));
+        ctl.registerSpine('hero', hero as never);
+
+        void ctl.play('hero', 'a');
+        void ctl.play('hero', 'b');
+        hero.triggerEvent('whoosh', 'a');
+
+        ctl.stop('hero', 'b');
+
+        expect(soundsMock.stopFX).not.toHaveBeenCalled();
+        await vi.runAllTimersAsync();
+    });
+
+    it('leaves music alone — a music_* event is not stopped with its animation', async () => {
+        const hero = makeSpineWithFX();
+        const ctl = new AnimationsController(asSpineMap({ hero }));
+        ctl.registerSpine('hero', hero as never);
+
+        void ctl.play('hero', 'a');
+        hero.triggerEvent('music_loop', 'a');
+        expect(soundsMock.playMusic).toHaveBeenCalledWith('music');
+        expect(soundsMock.playFX).not.toHaveBeenCalled();
+
+        ctl.stop('hero', 'a');
+
+        expect(soundsMock.stopFX).not.toHaveBeenCalled();
+        await vi.runAllTimersAsync();
+    });
+
+    it('routes a music track without the _loop suffix to the music channel too', async () => {
+        const hero = makeSpineWithFX();
+        const ctl = new AnimationsController(asSpineMap({ hero }));
+        ctl.registerSpine('hero', hero as never);
+
+        void ctl.play('hero', 'a');
+        hero.triggerEvent('music2', 'a');
+
+        expect(soundsMock.playMusic).toHaveBeenCalledWith('music2');
+        expect(soundsMock.playFX).not.toHaveBeenCalled();
+        await vi.runAllTimersAsync();
+    });
+
+    it('keeps an FX playing while another running animation also triggered it', async () => {
+        const hero = makeSpineWithFX();
+        const ctl = new AnimationsController(asSpineMap({ hero }));
+        ctl.registerSpine('hero', hero as never);
+
+        void ctl.play('hero', 'a');
+        void ctl.play('hero', 'b');
+        hero.triggerEvent('whoosh', 'a');
+        hero.triggerEvent('whoosh', 'b');
+
+        // 'b' still holds the shared Sounds instance for 'whoosh'
+        ctl.stop('hero', 'a');
+        expect(soundsMock.stopFX).not.toHaveBeenCalled();
+
+        // ...once it stops too, nothing holds it any more
+        ctl.stop('hero', 'b');
+        expect(soundsMock.stopFX).toHaveBeenCalledWith('whoosh');
+
+        await vi.runAllTimersAsync();
+    });
+
+    it('reset stops the FX the animation triggered', async () => {
+        const hero = makeSpineWithFX();
+        const ctl = new AnimationsController(asSpineMap({ hero }));
+        ctl.registerSpine('hero', hero as never);
+
+        void ctl.play('hero', 'a');
+        hero.triggerEvent('whoosh', 'a');
+
+        ctl.reset('hero', 'a');
+
+        expect(soundsMock.stopFX).toHaveBeenCalledWith('whoosh');
+        await vi.runAllTimersAsync();
+    });
+
+    it('stopState stops the FX triggered by the state animations', async () => {
+        const hero = makeHero();
+        const ctl = new AnimationsController(asSpineMap({ hero }));
+        ctl.registerSpine('hero', hero as never);
+
+        void ctl.playState('idle');
+        hero.triggerEvent('whoosh', 'state_idle/breathe');
+
+        await ctl.stopState('idle');
+
+        expect(soundsMock.stopFX).toHaveBeenCalledWith('whoosh');
+        await vi.runAllTimersAsync();
+    });
+
+    it('stopAllForSpine stops that spine FX and leaves other spines untouched', async () => {
+        const hero = makeSpineWithFX();
+        const enemy = makeSpineWithFX();
+        const ctl = new AnimationsController(asSpineMap({ hero, enemy }));
+        ctl.registerSpine('hero', hero as never);
+        ctl.registerSpine('enemy', enemy as never);
+
+        void ctl.play('hero', 'a');
+        void ctl.play('enemy', 'a');
+        hero.triggerEvent('whoosh', 'a');
+        enemy.triggerEvent('growl', 'a');
+
+        ctl.stopAllForSpine('hero');
+
+        expect(soundsMock.stopFX).toHaveBeenCalledWith('whoosh');
+        expect(soundsMock.stopFX).not.toHaveBeenCalledWith('growl');
+        await vi.runAllTimersAsync();
+    });
+
+    it('stopAll stops the FX triggered on every spine', async () => {
+        const hero = makeSpineWithFX();
+        const enemy = makeSpineWithFX();
+        const ctl = new AnimationsController(asSpineMap({ hero, enemy }));
+        ctl.registerSpine('hero', hero as never);
+        ctl.registerSpine('enemy', enemy as never);
+
+        void ctl.play('hero', 'a');
+        void ctl.play('enemy', 'a');
+        hero.triggerEvent('whoosh', 'a');
+        enemy.triggerEvent('growl', 'a');
+
+        ctl.stopAll();
+
+        expect(soundsMock.stopFX).toHaveBeenCalledWith('whoosh');
+        expect(soundsMock.stopFX).toHaveBeenCalledWith('growl');
+        await vi.runAllTimersAsync();
+    });
+
+    it('clear stops the FX triggered by all animations', async () => {
+        const hero = makeSpineWithFX();
+        const ctl = new AnimationsController(asSpineMap({ hero }));
+        ctl.registerSpine('hero', hero as never);
+
+        void ctl.play('hero', 'a');
+        hero.triggerEvent('whoosh', 'a');
+
+        ctl.clear();
+
+        expect(soundsMock.stopFX).toHaveBeenCalledWith('whoosh');
+        await vi.runAllTimersAsync();
+    });
+
+    it('unregisterSpine stops the FX that spine triggered', async () => {
+        const hero = makeSpineWithFX();
+        const ctl = new AnimationsController(asSpineMap({ hero }));
+        ctl.registerSpine('hero', hero as never);
+
+        void ctl.play('hero', 'a');
+        hero.triggerEvent('whoosh', 'a');
+
+        ctl.unregisterSpine('hero');
+
+        expect(soundsMock.stopFX).toHaveBeenCalledWith('whoosh');
+        await vi.runAllTimersAsync();
+    });
+
+    it('re-triggers and re-stops the FX after the animation is replayed', async () => {
+        const hero = makeSpineWithFX();
+        const ctl = new AnimationsController(asSpineMap({ hero }));
+        ctl.registerSpine('hero', hero as never);
+
+        void ctl.play('hero', 'a');
+        hero.triggerEvent('whoosh', 'a');
+        ctl.stop('hero', 'a');
+
+        void ctl.play('hero', 'a');
+        hero.triggerEvent('whoosh', 'a');
+        ctl.stop('hero', 'a');
+
+        expect(soundsMock.stopFX).toHaveBeenCalledTimes(2);
+        await vi.runAllTimersAsync();
+    });
+
+    it('does not throw when an event fires without a track entry', async () => {
+        const hero = makeSpineWithFX();
+        const ctl = new AnimationsController(asSpineMap({ hero }));
+        ctl.registerSpine('hero', hero as never);
+
+        void ctl.play('hero', 'a');
+        expect(() => hero.triggerEvent('whoosh')).not.toThrow();
+
+        ctl.stop('hero', 'a');
+        expect(soundsMock.stopFX).not.toHaveBeenCalled();
+        await vi.runAllTimersAsync();
     });
 });
 
