@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { Assets, BitmapText, Container, Text } from 'pixi.js';
+import { Assets, BitmapText, Cache, Container, Text } from 'pixi.js';
 import { TextsController } from '../../src/controllers/Texts.controller';
 import {
     asSpineMap,
@@ -440,6 +440,72 @@ describe('TextsController – attach / settings / clear', () => {
         expect(ctl.settings).toBe(fakeSettings);
 
         spy.mockRestore();
+    });
+
+    it('keeps a max-width-scaled bitmap text centred on the spot the full-size text held', () => {
+        // Mimics our exported fonts, where `lineHeight`/`base` are authored in different units
+        // than the glyph rects (`size=10 lineHeight=13 base=10` against a 300-unit tall glyph),
+        // so BitmapText.anchor leaves the glyphs hanging below the origin.
+        const glyph = {
+            id: 48,
+            xOffset: 0,
+            yOffset: 20,
+            xAdvance: 100,
+            kerning: {},
+            texture: { orig: { width: 100, height: 300 } },
+        };
+        Cache.set('fake-bitmap', {
+            chars: { '0': glyph },
+            lineHeight: 13,
+            baseLineOffset: 3,
+            baseMeasurementFontSize: 10,
+            fontMetrics: { fontSize: 10, ascent: 0, descent: 0 },
+        } as never);
+
+        const slot = { name: 'text_a' } as FakeSlot;
+        const spine = createFakeSpine({ slots: [slot] });
+        const ctl = new TextsController(asSpineMap({ hero: spine }));
+        ctl.settings = {
+            hero: {
+                a: {
+                    type: 'bitmapText',
+                    fontFamily: 'fake',
+                    fontSize: 10,
+                    letterSpacing: 0,
+                    offset: { x: 0, y: -100 },
+                    // '000' lays out 300 wide, so it has to halve to fit
+                    maxWidth: 150,
+                    value: '000',
+                },
+            },
+        };
+        ctl.add(slot as never, spine as never, 'a', 'hero');
+        const node = ctl.getInstances().get('a') as BitmapText;
+
+        // glyph box spans y 23…323, its centre 165 below the origin the node scales towards;
+        // halving the node would take that centre to 82.5, so it is pushed back down by 82.5
+        expect(node.scale.y).toBeCloseTo(0.5);
+        expect(node.x).toBeCloseTo(0);
+        expect(node.y).toBeCloseTo(-17.5);
+
+        // a value that fits drops the scale and the compensation with it
+        ctl.set('a', '0');
+        expect(node.scale.y).toBe(1);
+        expect(node.y).toBe(-100);
+
+        // and setOffset stays the base the compensation rides on
+        ctl.set('a', '000');
+        ctl.setOffset('a', { x: 5, y: -50 });
+        expect(node.y).toBeCloseTo(32.5);
+        expect(node.x).toBeCloseTo(5);
+
+        // clearing maxWidth — which the editor can do live — restores full size and position
+        ctl.setMaxWidth('a', 0);
+        expect(node.scale.y).toBe(1);
+        expect(node.y).toBeCloseTo(-50);
+        expect(node.x).toBeCloseTo(5);
+
+        Cache.remove('fake-bitmap');
     });
 
     it('clear drops settings, runners, and instances', () => {
