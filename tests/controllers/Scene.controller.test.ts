@@ -8,6 +8,29 @@ import { SpineController } from '../../src/controllers/Spine.controller';
 import { TextsController } from '../../src/controllers/Texts.controller';
 import { asSpineMap, createFakeSpine, type FakeSpine } from '../helpers/fakeSpine';
 
+/** The bit of a Pixi pointer event the button wiring reads. */
+const pointer = (pointerType = 'mouse') => ({ pointerType }) as never;
+
+/** Presses and releases a hit area, the way Pixi dispatches a tap on a single target. */
+function press(target: Container, pointerType?: string) {
+    target.emit('pointerdown', pointer(pointerType));
+    target.emit('pointerup', pointer(pointerType));
+}
+
+/**
+ * Hover transitions are reconciled in a microtask (see `queueHoverSync`), so tests await the
+ * pointer event to observe what it triggered.
+ */
+async function hover(target: Container) {
+    target.emit('pointerover', pointer());
+    await Promise.resolve();
+}
+
+async function unhover(target: Container) {
+    target.emit('pointerout', pointer());
+    await Promise.resolve();
+}
+
 function makeRegion(): RegionAttachment {
     // spine 4.3+: attachments hold their region(s) in a Sequence — static
     // images are single-frame sequences.
@@ -149,31 +172,46 @@ describe('SceneController – activateButtonBones', () => {
         expect(sprite.y).toBe(240);
     });
 
-    it('plays <key>_click event when the sprite is tapped', () => {
+    it('plays <key>_click event when the sprite is pressed and released', () => {
         const sprite = spine.__slotChildren.get('button_play')?.[0] as Sprite;
         const spy = vi.spyOn(animations, 'playEvent');
-        sprite.emit('pointertap', undefined as never);
+        press(sprite);
         expect(spy).toHaveBeenCalledWith('play_click', 'hero');
     });
 
-    it('wires hover/unhover/down/up/upoutside events with the right event names', () => {
+    it('wires hover/out/down/up/up_out events with the right event names', async () => {
         const sprite = spine.__slotChildren.get('button_play')?.[0] as Sprite;
         const spy = vi.spyOn(animations, 'playEvent');
 
-        sprite.emit('pointerover', undefined as never);
-        sprite.emit('pointerout', undefined as never);
-        sprite.emit('pointerdown', undefined as never);
-        sprite.emit('pointerup', undefined as never);
-        sprite.emit('pointerupoutside', undefined as never);
+        await hover(sprite);
+        await unhover(sprite);
+        sprite.emit('pointerdown', pointer());
+        sprite.emit('pointerup', pointer());
+        sprite.emit('pointerdown', pointer());
+        sprite.emit('pointerupoutside', pointer());
 
         const called = spy.mock.calls.map(([eventName]) => eventName);
         expect(called).toEqual([
             'play_hover',
+            // `unhover` stays wired next to `out` as the legacy name of the same interaction
+            'play_out',
             'play_unhover',
             'play_down',
             'play_up',
-            'play_up',
+            'play_click',
+            'play_down',
+            'play_up_out',
         ]);
+    });
+
+    it('ignores a release that did not start on the button', () => {
+        const sprite = spine.__slotChildren.get('button_play')?.[0] as Sprite;
+        const spy = vi.spyOn(animations, 'playEvent');
+
+        sprite.emit('pointerup', pointer());
+        sprite.emit('pointerupoutside', pointer());
+
+        expect(spy).not.toHaveBeenCalled();
     });
 });
 
@@ -223,25 +261,29 @@ describe('SceneController – activateButtonBones (button_ bone wrappers)', () =
 
     it('fires <key>_click derived from the wrapping bone, on the owning spine', () => {
         const spy = vi.spyOn(animations, 'playEvent');
-        bigButton.emit('pointertap', undefined as never);
+        press(bigButton);
         expect(spy).toHaveBeenCalledWith('spin_click', 'ui');
     });
 
-    it('wires the full pointer event set from the bone name', () => {
+    it('wires the full pointer event set from the bone name', async () => {
         const spy = vi.spyOn(animations, 'playEvent');
 
-        bigButton.emit('pointerover', undefined as never);
-        bigButton.emit('pointerout', undefined as never);
-        bigButton.emit('pointerdown', undefined as never);
-        bigButton.emit('pointerup', undefined as never);
-        bigButton.emit('pointerupoutside', undefined as never);
+        await hover(bigButton);
+        await unhover(bigButton);
+        bigButton.emit('pointerdown', pointer());
+        bigButton.emit('pointerup', pointer());
+        bigButton.emit('pointerdown', pointer());
+        bigButton.emit('pointerupoutside', pointer());
 
         expect(spy.mock.calls.map(([eventName]) => eventName)).toEqual([
             'spin_hover',
+            'spin_out',
             'spin_unhover',
             'spin_down',
             'spin_up',
-            'spin_up',
+            'spin_click',
+            'spin_down',
+            'spin_up_out',
         ]);
     });
 
@@ -251,18 +293,163 @@ describe('SceneController – activateButtonBones (button_ bone wrappers)', () =
 
     it('plays the embedded spine\'s own "click" animation on tap when it exists', () => {
         const spy = vi.spyOn(animations, 'play');
-        bigButton.emit('pointertap', undefined as never);
-        expect(spy).toHaveBeenCalledWith('big_button', 'click');
+        press(bigButton);
+        expect(spy).toHaveBeenCalledWith('big_button', 'click', false, expect.any(Number));
         expect(bigButton.__setAnimationCalls.map(({ name }) => name)).toContain('click');
     });
 
-    it('skips self animations the embedded spine does not have', () => {
+    it('plays every feedback animation of the embedded spine on its own interaction', async () => {
+        const button = createFakeSpine({
+            animations: (['down', 'hover', 'out', 'up', 'up_out'] as const).map((name) => ({
+                name,
+                duration: 0,
+            })),
+        });
+        const parent = createFakeSpine({
+            bones: [
+                { name: 'ui' },
+                { name: 'button_spin', parent: 'ui' },
+                { name: 'spine_big_button', parent: 'button_spin' },
+            ],
+            slots: [{ name: 'spine_big_button', boneName: 'spine_big_button' }],
+        });
+        const spines = asSpineMap({ ui: parent, big_button: button });
+        const anims = new AnimationsController(spines);
+        const scene = new SceneController(
+            spines,
+            new TextsController(spines),
+            anims,
+            new SpineController(spines, anims),
+        );
+
+        scene.attachBones(() => {});
+        scene.activateButtonBones();
+
+        await hover(button);
+        button.emit('pointerdown', pointer());
+        button.emit('pointerup', pointer());
+        button.emit('pointerdown', pointer());
+        button.emit('pointerupoutside', pointer());
+        await unhover(button);
+
+        expect(button.__setAnimationCalls.map(({ name }) => name)).toEqual([
+            'hover',
+            'down',
+            'up',
+            'down',
+            'up_out',
+            'out',
+        ]);
+    });
+
+    it('settles a button back down after a touch tap, which leaves no hover to return to', () => {
+        const button = createFakeSpine({
+            animations: [
+                { name: 'down', duration: 0 },
+                { name: 'up', duration: 0 },
+                { name: 'out', duration: 0 },
+            ],
+        });
+        const parent = createFakeSpine({
+            bones: [
+                { name: 'ui' },
+                { name: 'button_spin', parent: 'ui' },
+                { name: 'spine_big_button', parent: 'button_spin' },
+            ],
+            slots: [{ name: 'spine_big_button', boneName: 'spine_big_button' }],
+        });
+        const spines = asSpineMap({ ui: parent, big_button: button });
+        const anims = new AnimationsController(spines);
+        const scene = new SceneController(
+            spines,
+            new TextsController(spines),
+            anims,
+            new SpineController(spines, anims),
+        );
+
+        scene.attachBones(() => {});
+        scene.activateButtonBones();
+
+        press(button, 'touch');
+
+        expect(button.__setAnimationCalls.map(({ name }) => name)).toEqual(['down', 'up', 'out']);
+    });
+
+    it('keeps a mouse release on the hovered look, with no settling out', async () => {
+        const button = createFakeSpine({
+            animations: [
+                { name: 'down', duration: 0 },
+                { name: 'up', duration: 0 },
+                { name: 'out', duration: 0 },
+            ],
+        });
+        const parent = createFakeSpine({
+            bones: [
+                { name: 'ui' },
+                { name: 'button_spin', parent: 'ui' },
+                { name: 'spine_big_button', parent: 'button_spin' },
+            ],
+            slots: [{ name: 'spine_big_button', boneName: 'spine_big_button' }],
+        });
+        const spines = asSpineMap({ ui: parent, big_button: button });
+        const anims = new AnimationsController(spines);
+        const scene = new SceneController(
+            spines,
+            new TextsController(spines),
+            anims,
+            new SpineController(spines, anims),
+        );
+
+        scene.attachBones(() => {});
+        scene.activateButtonBones();
+
+        await hover(button);
+        press(button);
+
+        expect(button.__setAnimationCalls.map(({ name }) => name)).toEqual(['down', 'up']);
+    });
+
+    it('plays all feedback animations on one track, so each replaces the previous look', async () => {
+        const button = createFakeSpine({
+            animations: [
+                { name: 'hover', duration: 0 },
+                { name: 'down', duration: 0 },
+            ],
+        });
+        const parent = createFakeSpine({
+            bones: [
+                { name: 'ui' },
+                { name: 'button_spin', parent: 'ui' },
+                { name: 'spine_big_button', parent: 'button_spin' },
+            ],
+            slots: [{ name: 'spine_big_button', boneName: 'spine_big_button' }],
+        });
+        const spines = asSpineMap({ ui: parent, big_button: button });
+        const anims = new AnimationsController(spines);
+        const scene = new SceneController(
+            spines,
+            new TextsController(spines),
+            anims,
+            new SpineController(spines, anims),
+        );
+
+        scene.attachBones(() => {});
+        scene.activateButtonBones();
+
+        await hover(button);
+        button.emit('pointerdown', pointer());
+
+        const tracks = button.__setAnimationCalls.map(({ track }) => track);
+        expect(tracks.length).toBe(2);
+        expect(new Set(tracks).size).toBe(1);
+    });
+
+    it('skips self animations the embedded spine does not have', async () => {
         const spy = vi.spyOn(animations, 'play');
 
-        bigButton.emit('pointerover', undefined as never);
-        bigButton.emit('pointerout', undefined as never);
-        bigButton.emit('pointerdown', undefined as never);
-        bigButton.emit('pointerup', undefined as never);
+        await hover(bigButton);
+        await unhover(bigButton);
+        bigButton.emit('pointerdown', pointer());
 
         expect(spy).not.toHaveBeenCalled();
         expect(bigButton.__setAnimationCalls).toEqual([]);
@@ -297,10 +484,10 @@ describe('SceneController – activateButtonBones (button_ bone wrappers)', () =
 
         const playSpy = vi.spyOn(anims, 'play');
         const eventSpy = vi.spyOn(anims, 'playEvent');
-        label.emit('pointertap', undefined as never);
+        press(label);
 
         expect(eventSpy).toHaveBeenCalledWith('spin_click', 'ui');
-        expect(playSpy).toHaveBeenCalledWith('big_button', 'click');
+        expect(playSpy).toHaveBeenCalledWith('big_button', 'click', false, expect.any(Number));
         expect(embedded.__setAnimationCalls.map(({ name }) => name)).toContain('click');
     });
 
@@ -333,10 +520,112 @@ describe('SceneController – activateButtonBones (button_ bone wrappers)', () =
         scene.attachBones(() => {});
         scene.activateButtonBones();
 
-        instanceA.emit('pointertap', undefined as never);
+        press(instanceA);
 
         expect(instanceA.__setAnimationCalls.map(({ name }) => name)).toContain('click');
         expect(instanceB.__setAnimationCalls).toEqual([]);
+    });
+
+    it('plays the animations of spines nested deeper inside the button, not just its hit areas', () => {
+        // button_spin
+        //   └─ slot spine_big_button -> big_button (hit area)
+        //        └─ slot spine_icon  -> icon (nested one level deeper)
+        const icon = createFakeSpine({ animations: [{ name: 'down', duration: 0 }] });
+        const button = createFakeSpine({
+            slots: [{ name: 'spine_icon' }],
+            animations: [{ name: 'down', duration: 0 }],
+        });
+        const parent = createFakeSpine({
+            bones: [
+                { name: 'ui' },
+                { name: 'button_spin', parent: 'ui' },
+                { name: 'spine_big_button', parent: 'button_spin' },
+            ],
+            slots: [{ name: 'spine_big_button', boneName: 'spine_big_button' }],
+        });
+        const spines = asSpineMap({ ui: parent, big_button: button, icon });
+        const anims = new AnimationsController(spines);
+        const scene = new SceneController(
+            spines,
+            new TextsController(spines),
+            anims,
+            new SpineController(spines, anims),
+        );
+
+        scene.attachBones(() => {});
+        // the real Spine.addSlotObject also parents the container; the fake only records it
+        button.addChild(icon);
+        scene.activateButtonBones();
+
+        button.emit('pointerdown', pointer());
+
+        expect(button.__setAnimationCalls.map(({ name }) => name)).toEqual(['down']);
+        expect(icon.__setAnimationCalls.map(({ name }) => name)).toEqual(['down']);
+    });
+
+    it('treats the whole composite button as one hit area for hover and for a press', async () => {
+        const button = createFakeSpine({
+            animations: [
+                { name: 'hover', duration: 0 },
+                { name: 'out', duration: 0 },
+                { name: 'up', duration: 0 },
+                { name: 'up_out', duration: 0 },
+            ],
+        });
+        const label = new Container();
+        const parent = createFakeSpine({
+            bones: [
+                { name: 'ui' },
+                { name: 'button_spin', parent: 'ui' },
+                { name: 'spine_big_button', parent: 'button_spin' },
+            ],
+            slots: [
+                { name: 'spine_big_button', boneName: 'spine_big_button' },
+                { name: 'text_spin_button', boneName: 'spine_big_button' },
+            ],
+        });
+        const spines = asSpineMap({ ui: parent, big_button: button });
+        const anims = new AnimationsController(spines);
+        const scene = new SceneController(
+            spines,
+            new TextsController(spines),
+            anims,
+            new SpineController(spines, anims),
+        );
+
+        scene.attachBones(() => {});
+        parent.addSlotObject('text_spin_button', label);
+        scene.activateButtonBones();
+
+        const eventSpy = vi.spyOn(anims, 'playEvent');
+
+        // entering the button, then crossing from its graphic onto its label: Pixi fires
+        // pointerout on the graphic before pointerover on the label, within one dispatch
+        await hover(button);
+        button.emit('pointerout', pointer());
+        await hover(label);
+
+        // pressing the graphic and releasing over the label is still one click on the button
+        button.emit('pointerdown', pointer());
+        label.emit('pointerup', pointer());
+        button.emit('pointerupoutside', pointer());
+
+        // and leaving the button as a whole ends the hover
+        await unhover(label);
+
+        expect(eventSpy.mock.calls.map(([eventName]) => eventName)).toEqual([
+            'spin_hover',
+            'spin_down',
+            'spin_up',
+            'spin_click',
+            'spin_out',
+            'spin_unhover',
+        ]);
+        expect(button.__setAnimationCalls.map(({ name }) => name)).toEqual([
+            'hover',
+            'up',
+            'out',
+        ]);
     });
 
     it('does not wire slots hanging outside a button_ bone chain', () => {

@@ -317,7 +317,16 @@ export class AnimationsController {
             console.error(`Spine ${spineID} not found`);
             return;
         }
-        if (this.activeAnimations.get(spineID)?.get(animation) !== undefined) return;
+        // An already-running animation is not restarted from zero — unless the caller names
+        // the track, which means it owns that track and is asking for the animation to be
+        // (re)applied there. A button re-entering `hover` on its feedback track while the
+        // previous `hover` still runs must land, or its look desyncs from the pointer.
+        if (
+            trackID === undefined &&
+            this.activeAnimations.get(spineID)?.get(animation) !== undefined
+        ) {
+            return;
+        }
 
         const loop = mod.includes(parcePointers.mod.loop);
 

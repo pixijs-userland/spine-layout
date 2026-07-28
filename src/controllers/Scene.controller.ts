@@ -1,5 +1,5 @@
 import { type Bone, type Slot, type Spine } from '@esotericsoftware/spine-pixi-v8';
-import { Container, Sprite, Texture } from 'pixi.js';
+import { Container, Sprite, Texture, type FederatedPointerEvent } from 'pixi.js';
 import type { SpineID, SpineLayoutOptions } from '../config/types';
 import { parcePointers } from '../config/parcePointers';
 import { LOG } from '../config/logs';
@@ -9,6 +9,56 @@ import type { AnimationsController } from './Animations.controller';
 import type { SpineController } from './Spine.controller';
 
 type EmbeddedSpine = { spineID: string; spine: Spine };
+
+type ButtonInteraction = 'click' | 'hover' | 'out' | 'down' | 'up' | 'up_out';
+
+/**
+ * The interactions a button reacts to, and what each one triggers.
+ *
+ * `events` are suffixed onto the button's key and played on the spine declaring the button
+ * (`spin_hover`, `spin_up_out`). `animations` are played on every spine nested inside the
+ * button — the first name that spine actually has, so a skeleton can ship either the current
+ * `out` or the older `unhover`, and one that has no dedicated `up_out` still returns to its
+ * default look when the press is released outside.
+ */
+const BUTTON_INTERACTIONS: Record<ButtonInteraction, { events: string[]; animations: string[] }> = {
+    click: { events: ['click'], animations: ['click'] },
+    hover: { events: ['hover'], animations: ['hover'] },
+    out: { events: ['out', 'unhover'], animations: ['out', 'unhover'] },
+    down: { events: ['down'], animations: ['down'] },
+    up: { events: ['up'], animations: ['up'] },
+    up_out: { events: ['up_out'], animations: ['up_out', 'out', 'unhover'] },
+};
+
+/**
+ * The track every button feedback animation plays on.
+ *
+ * `hover`, `down`, `up`, `out` … are mutually exclusive looks of the same button, so they
+ * share one track: each replaces the previous instead of stacking, and a finished one stops
+ * holding its end pose underneath the next (a leftover `hover` on its own track would keep
+ * re-applying the hovered attachment over the pressed one). The index sits above the range
+ * `AnimationsController` allocates from (it counts up from 0), so a button's current look is
+ * applied after — and therefore wins over — the state animations of the same spine.
+ */
+const BUTTON_ANIMATION_TRACK = 10;
+
+/** A logical button: every container acting as its hit area, plus the pointer state they share. */
+type ButtonGroup = {
+    /** Button key (`spin` for `button_spin`), the base of its `<key>_<event>` event names. */
+    key: string;
+    /** The spine the button is declared on — the one its events are played for. */
+    spineID: string;
+    /** Every container that acts as a hit area for this button. */
+    targets: Container[];
+    /** The targets the pointer is currently over; the button counts as hovered while non-empty. */
+    hovered: Set<Container>;
+    /** Whether the button is currently reported as hovered, so only real transitions trigger. */
+    isHovered: boolean;
+    /** Whether a press started on this button and has not been released yet. */
+    isPressed: boolean;
+    /** Set while a hover sync is already queued, so one pointer move triggers at most once. */
+    hoverSyncQueued: boolean;
+};
 
 export class SceneController {
     private buttons: Map<string, Container> = new Map();
@@ -82,17 +132,26 @@ export class SceneController {
      * - `button_<key>` **slots** get an invisible interactive sprite overlaid on the slot.
      * - `button_<key>` **bones** turn every slot object attached beneath them (nested
      *   spines, texts) into the hit area itself — use this to wrap composite buttons.
-     * Both fire the same animation events (`<key>_click`, `<key>_hover`, etc.). An
-     * embedded spine under a button bone additionally plays its own `click`/`hover`/
-     * `unhover`/`down`/`up` animations when it has them.
+     *
+     * Both conventions build one logical button per key, whatever the number of hit areas:
+     * every interaction ({@link BUTTON_INTERACTIONS}) plays its `<key>_<event>` animation
+     * event on the declaring spine, and its own animation (`click`, `hover`, `out`, `down`,
+     * `up`, `up_out`) on every spine nested inside the button — nested spines of nested
+     * spines included, since a composite button animates as a whole.
      */
     activateButtonBones() {
         log.open(LOG.BUTTONS);
 
         this.spines.forEach((spine, spineID) => {
-            // Slot objects grouped by their wrapping button_<key> bone: each group
-            // acts as one composite button.
-            const wrapperGroups = new Map<string, { slotName: string; object: Container }[]>();
+            // Hit areas grouped by button key: a `button_<key>` slot contributes its overlay
+            // sprite, a `button_<key>` bone every slot object hanging beneath it. Both land
+            // in the same group, so one key always stays one button.
+            const groups = new Map<string, Container[]>();
+            const addTarget = (key: string, target: Container) => {
+                const targets = groups.get(key) ?? [];
+                targets.push(target);
+                groups.set(key, targets);
+            };
 
             spine.skeleton.slots.forEach((slot) => {
                 const slotName = slot.data.name;
@@ -108,13 +167,13 @@ export class SceneController {
                     }
                     button.anchor.set(0.5);
 
-                    const eventBase = slotName.replace(parcePointers.slot.button, '');
-                    this.wireButtonEvents(button, eventBase, spineID);
+                    const key = slotName.replace(parcePointers.slot.button, '');
 
                     spine.addSlotObject(slotName, button);
                     this.buttons.set(slotName, button);
+                    addTarget(key, button);
 
-                    log.add(LOG.BUTTONS, spineID, `${eventBase}_click -> ${slotName}`);
+                    log.add(LOG.BUTTONS, spineID, `${key} -> ${slotName}`);
                     return;
                 }
 
@@ -124,28 +183,32 @@ export class SceneController {
                 const slotObject = spine.getSlotObject(slotName);
                 if (!slotObject) return;
 
-                const group = wrapperGroups.get(buttonBone) ?? [];
-                group.push({ slotName, object: slotObject });
-                wrapperGroups.set(buttonBone, group);
+                const key = buttonBone.replace(parcePointers.slot.button, '');
+
+                this.buttons.set(`${spineID}:${slotName}`, slotObject);
+                addTarget(key, slotObject);
+
+                log.add(LOG.BUTTONS, spineID, `${key} -> ${slotName} (bone ${buttonBone})`);
             });
 
-            wrapperGroups.forEach((members, buttonBone) => {
-                const eventBase = buttonBone.replace(parcePointers.slot.button, '');
-                const embedded = members
-                    .map(({ object }) => this.findRegisteredSpine(object))
-                    .filter((entry): entry is EmbeddedSpine => !!entry);
+            groups.forEach((targets, key) => {
+                this.wireButton({
+                    key,
+                    spineID,
+                    targets,
+                    hovered: new Set(),
+                    isHovered: false,
+                    isPressed: false,
+                    hoverSyncQueued: false,
+                });
 
-                members.forEach(({ slotName, object }) => {
-                    this.wireButtonEvents(object, eventBase, spineID);
-                    this.wireEmbeddedSpineAnimations(object, embedded);
-                    this.buttons.set(`${spineID}:${slotName}`, object);
-
+                this.collectNestedSpines(targets).forEach((nested) =>
                     log.add(
                         LOG.BUTTONS,
-                        spineID,
-                        `${eventBase}_click -> ${slotName} (bone ${buttonBone})`,
-                    );
-                });
+                        nested.spineID,
+                        `${key} -> ${this.listOwnAnimations(nested).join(', ') || 'no own animations'} (self)`,
+                    ),
+                );
             });
         });
 
@@ -160,48 +223,138 @@ export class SceneController {
         return undefined;
     }
 
-    private wireButtonEvents(target: Container, eventBase: string, spineID: string) {
-        target.eventMode = 'static';
-        target.cursor = 'pointer';
+    /**
+     * Turns every hit area of a button into one interactive whole.
+     *
+     * Pointer events land on the individual targets, but the button's state lives on the
+     * group, which keeps the seams between the targets invisible: `hover` and `out` follow
+     * the pointer entering and leaving the button as a whole (see {@link queueHoverSync}),
+     * and a press is tracked across all of them — so releasing over a *different* target of
+     * the same button still counts as `up` + `click` (Pixi would fire only `pointertap` on
+     * the shared ancestor, which is not a hit area, and nothing on the button itself), while
+     * releasing off the button is the distinct `up_out`.
+     */
+    private wireButton(group: ButtonGroup) {
+        group.targets.forEach((target) => {
+            target.eventMode = 'static';
+            target.cursor = 'pointer';
 
-        target.on('pointertap', () => this.animations.playEvent(`${eventBase}_click`, spineID));
-        target.on('pointerover', () => this.animations.playEvent(`${eventBase}_hover`, spineID));
-        target.on('pointerout', () => this.animations.playEvent(`${eventBase}_unhover`, spineID));
-        target.on('pointerdown', () => this.animations.playEvent(`${eventBase}_down`, spineID));
-        target.on('pointerup', () => this.animations.playEvent(`${eventBase}_up`, spineID));
-        target.on('pointerupoutside', () =>
-            this.animations.playEvent(`${eventBase}_up`, spineID),
-        );
+            target.on('pointerover', () => {
+                group.hovered.add(target);
+                this.queueHoverSync(group);
+            });
+            target.on('pointerout', () => {
+                group.hovered.delete(target);
+                this.queueHoverSync(group);
+            });
+            target.on('pointerdown', () => {
+                group.isPressed = true;
+                this.trigger(group, 'down');
+            });
+            // Pixi dispatches `pointerup` on the released-over target before
+            // `pointerupoutside` on the pressed one, so consuming the press here is what
+            // keeps a release inside the button from also counting as a release outside it.
+            target.on('pointerup', (event: FederatedPointerEvent) => {
+                if (!group.isPressed) return;
+                group.isPressed = false;
+                this.trigger(group, 'up');
+                this.trigger(group, 'click');
+
+                // A touch pointer is gone the moment it lifts — it never hovers, and Pixi
+                // fires no `pointerout` for it. Settling the button back down keeps one whose
+                // `up` restores the *hovered* look from staying lit after a tap.
+                if (event.pointerType === 'touch') {
+                    group.hovered.clear();
+                    group.isHovered = false;
+                    this.trigger(group, 'out');
+                }
+            });
+            target.on('pointerupoutside', () => {
+                if (!group.isPressed) return;
+                group.isPressed = false;
+                this.trigger(group, 'up_out');
+            });
+        });
     }
 
     /**
-     * Embedded spines under a button bone can ship their own feedback animations
-     * (`click`, `hover`, `unhover`, `down` or `up`). Interacting with any part of
-     * the composite button plays the matching animation on every embedded spine
-     * of that button — via direct instance playback, so other instances of the
-     * same skeleton stay idle (an `event_` folder would broadcast to all of them).
+     * Reconciles the button's hover state with the targets the pointer is over, once per
+     * pointer move.
+     *
+     * A composite button's hit areas are siblings, so moving the pointer from one onto
+     * another makes Pixi fire `pointerout` on the first and `pointerover` on the second
+     * within the same dispatch. Collapsing both into a single microtask — and triggering
+     * only on a real change — means crossing a seam inside the button stays silent, instead
+     * of replaying `hover` (and any sound its animation fires) on every internal border.
      */
-    private wireEmbeddedSpineAnimations(target: Container, embedded: EmbeddedSpine[]) {
-        const wire = (pointerEvent: string, animation: string) => {
-            const players = embedded.filter(({ spine }) =>
-                spine.state.data.skeletonData.findAnimation(animation),
-            );
-            if (!players.length) return;
+    private queueHoverSync(group: ButtonGroup) {
+        if (group.hoverSyncQueued) return;
+        group.hoverSyncQueued = true;
 
-            target.on(pointerEvent, () =>
-                players.forEach(({ spineID }) => this.animations.play(spineID, animation)),
-            );
-            players.forEach(({ spineID }) =>
-                log.add(LOG.BUTTONS, spineID, `${pointerEvent} -> ${animation} (self)`),
-            );
+        queueMicrotask(() => {
+            group.hoverSyncQueued = false;
+
+            const isHovered = group.hovered.size > 0;
+            if (isHovered === group.isHovered) return;
+
+            group.isHovered = isHovered;
+            this.trigger(group, isHovered ? 'hover' : 'out');
+        });
+    }
+
+    /**
+     * Fires one interaction: the button's `<key>_<event>` animation events on the spine
+     * declaring it, plus the matching animation on every spine nested inside it.
+     *
+     * Nested spines are played by instance rather than through an `event_` folder, so other
+     * instances of the same skeleton (a second copy of the same button) stay idle.
+     */
+    private trigger(group: ButtonGroup, interaction: ButtonInteraction) {
+        const { events, animations } = BUTTON_INTERACTIONS[interaction];
+
+        events.forEach((event) =>
+            this.animations.playEvent(`${group.key}_${event}`, group.spineID),
+        );
+
+        this.collectNestedSpines(group.targets).forEach(({ spineID, spine }) => {
+            const animation = animations.find((name) => this.hasAnimation(spine, name));
+            if (!animation) return;
+
+            this.animations.play(spineID, animation, false, BUTTON_ANIMATION_TRACK);
+        });
+    }
+
+    /**
+     * Every registered spine inside the button, the hit areas themselves included.
+     *
+     * Walks the whole container subtree — nested spines are Pixi children of the spine
+     * holding their slot — so a button wrapping a spine that itself nests more spines
+     * animates all of them. Resolved per interaction instead of cached at wire time, so
+     * spines added to the button later (`addSlotChild`) animate with it too.
+     */
+    private collectNestedSpines(targets: Container[]): EmbeddedSpine[] {
+        const nested = new Map<string, Spine>();
+
+        const walk = (container: Container) => {
+            const entry = this.findRegisteredSpine(container);
+            if (entry) nested.set(entry.spineID, entry.spine);
+            container.children.forEach(walk);
         };
+        targets.forEach(walk);
 
-        wire('pointertap', 'click');
-        wire('pointerover', 'hover');
-        wire('pointerout', 'unhover');
-        wire('pointerdown', 'down');
-        wire('pointerup', 'up');
-        wire('pointerupoutside', 'up');
+        return Array.from(nested, ([spineID, spine]) => ({ spineID, spine }));
+    }
+
+    /** The animations a nested spine answers the button's interactions with, for the log. */
+    private listOwnAnimations(nested: EmbeddedSpine): string[] {
+        const own = Object.values(BUTTON_INTERACTIONS).map(({ animations }) =>
+            animations.find((name) => this.hasAnimation(nested.spine, name)),
+        );
+        return Array.from(new Set(own.filter((animation): animation is string => !!animation)));
+    }
+
+    private hasAnimation(spine: Spine, animation: string): boolean {
+        return !!spine.state.data.skeletonData.findAnimation(animation);
     }
 
     /** Resolves a slot object back to its registry entry, if it is a spine instance. */
