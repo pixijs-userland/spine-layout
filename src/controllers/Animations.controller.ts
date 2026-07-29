@@ -182,8 +182,17 @@ export class AnimationsController {
 
     // ─── Playback ────────────────────────────────────────────────────────────────
 
-    /** Plays all animations grouped under the given state name (e.g. `"idle"` triggers every animation in `state_idle/`). */
-    async playState(stateName: string) {
+    /**
+     * Plays all animations grouped under the given state name (e.g. `"idle"` triggers every
+     * animation in `state_idle/`).
+     *
+     * `trackID` pins the whole state to one track instead of letting each animation take the
+     * next free one (see {@link getTrackID}). For a state that has to outrank whatever else is
+     * on the spine — a popup's fade-in over the stale end pose of the fade-out that closed the
+     * last one — the counted track is not enough: it moves with how many animations happen to
+     * be running, so the state can land *under* a finished animation still applying its pose.
+     */
+    async playState(stateName: string, trackID?: number) {
         const logName = `${LOG.STATE} [${stateName}]`;
         log.open(logName);
 
@@ -192,7 +201,7 @@ export class AnimationsController {
         this.stateAnimations.get(stateName)?.forEach((animation) => {
             this.animations.get(animation)?.forEach((animations, spineID) => {
                 animations.forEach(async (animation) => {
-                    promises.push(this.play(spineID, animation));
+                    promises.push(this.play(spineID, animation, false, trackID));
                     log.add(logName, spineID, `${stateName} -> ${animation}`);
                 });
             });
