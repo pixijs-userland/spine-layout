@@ -3,11 +3,13 @@ import type {
     AnimationName,
     AnimationsRegistry,
     AnimationTrackRegistry,
+    PlayOptions,
     SpineID,
 } from '../config/types';
 import { LOG } from '../config/logs';
 import { log } from '../utils/Log';
 import { parcePointers } from '../config/parcePointers';
+import { claimsCollide, EMPTY_CLAIM, poseClaims } from '../utils/poseClaims';
 import { sounds } from './Sounds.controller';
 
 type EventsListeners = Map<string, ((spineID: string, spine?: Spine, event?: unknown) => void)[]>;
@@ -186,13 +188,11 @@ export class AnimationsController {
      * Plays all animations grouped under the given state name (e.g. `"idle"` triggers every
      * animation in `state_idle/`).
      *
-     * `trackID` pins the whole state to one track instead of letting each animation take the
-     * next free one (see {@link getTrackID}). For a state that has to outrank whatever else is
-     * on the spine — a popup's fade-in over the stale end pose of the fade-out that closed the
-     * last one — the counted track is not enough: it moves with how many animations happen to
-     * be running, so the state can land *under* a finished animation still applying its pose.
+     * Where each animation lands is decided by {@link allocateTrack} from what it poses — a
+     * state that has to outrank whatever else is on the spine does so because it claims the
+     * same properties, not because a caller reserved an index for it.
      */
-    async playState(stateName: string, trackID?: number) {
+    async playState(stateName: string) {
         const logName = `${LOG.STATE} [${stateName}]`;
         log.open(logName);
 
@@ -201,7 +201,7 @@ export class AnimationsController {
         this.stateAnimations.get(stateName)?.forEach((animation) => {
             this.animations.get(animation)?.forEach((animations, spineID) => {
                 animations.forEach(async (animation) => {
-                    promises.push(this.play(spineID, animation, false, trackID));
+                    promises.push(this.play(spineID, animation));
                     log.add(logName, spineID, `${stateName} -> ${animation}`);
                 });
             });
@@ -279,12 +279,12 @@ export class AnimationsController {
     }
 
     /** Plays the named animation on every spine that has it. Pass `playSolo=true` to stop all other animations first. */
-    async playByName(animationName: string, playSolo = false, trackID?: number) {
+    async playByName(animationName: string, playSolo = false) {
         const promises: Promise<void>[] = [];
 
         this.animations.get(animationName)?.forEach((animations, spineID) => {
             animations.forEach(async (animation) => {
-                promises.push(this.play(spineID, animation, playSolo, trackID));
+                promises.push(this.play(spineID, animation, playSolo));
                 log.add(LOG.PLAY_ANIMATION, spineID, `${animationName} -> ${animation}`);
             });
         });
@@ -299,22 +299,67 @@ export class AnimationsController {
     }
 
     /**
-     * Computes the next free track index for a spine.
+     * Picks the track an animation plays on. Callers never choose one.
      *
-     * Tracks are allocated as `activeAnimations.size + loopingAnimations.size`.
-     * Because finished non-looping animations remove themselves from `activeAnimations`
-     * (via the completion timer), the index naturally recycles to the lowest free slot.
-     * The resulting `state.setAnimation(track, …)` then *replaces* the previous, finished
-     * entry on the Spine track rather than stacking a new track on top of stale end poses.
+     * A track is a *claim* on a set of skeleton properties — the bone and slot properties the
+     * animation's timelines actually write (see {@link poseClaims}). Allocation upholds one
+     * invariant: **nothing that poses the same properties is ever left on a track above this
+     * one.** Higher tracks are applied last and win, so a stale entry above would silently
+     * override the animation that just started.
      *
-     * If we used a monotonically-incrementing counter instead, each completed animation's
-     * end pose would keep being applied on its own track forever (until `clearTrack`),
-     * leading to visible artifacts like "the finish-line bones never disappear".
+     * - **A colliding track is taken over.** Alternatives of the same thing — a panel's
+     *   `show`/`hide`, a button's `hover`/`down`/`up`/`out` — therefore take turns on one
+     *   track instead of stacking, and a finished one can never hold its end pose over its
+     *   own successor.
+     * - **Several colliding tracks: the highest wins, the lower ones are stopped.** They are
+     *   superseded for the properties at stake, and leaving them would recreate the masking
+     *   this exists to prevent.
+     * - **No collision: the lowest free track, else a new one on top.** An independent layer
+     *   (a spin button held hidden for a whole feature, a win counter) keeps its own track
+     *   and is never evicted by an unrelated animation that merely started later.
+     *
+     * This replaces counting the registries. A count moves with how many animations happen
+     * to be running, and finished-but-uncleared entries keep applying their end pose, so
+     * indices got recycled while still occupied: a popup's fade-in could land *under* the
+     * fade-out that closed the previous one (invisible popup), or land *on* an unrelated
+     * state's track and evict a pose that was meant to hold.
      */
-    private getTrackID(spineID: SpineID): number {
-        const active = this.activeAnimations.get(spineID)?.size ?? 0;
-        const looping = this.loopingAnimations.get(spineID)?.size ?? 0;
-        return active + looping;
+    private allocateTrack(spineID: SpineID, spine: Spine, animation: string): number {
+        const claims = poseClaims(spine.state.data.skeletonData);
+        const claim = claims.get(animation) ?? EMPTY_CLAIM;
+        const tracks = spine.state.tracks;
+        const colliding: number[] = [];
+
+        for (let index = 0; index < tracks.length; index++) {
+            const running = tracks[index]?.animation?.name;
+            if (!running) continue;
+            if (claimsCollide(claim, claims.get(running) ?? EMPTY_CLAIM)) colliding.push(index);
+        }
+
+        const owner = colliding.pop();
+
+        if (owner !== undefined) {
+            colliding.forEach((index) => this.evictTrack(spineID, spine, index));
+            return owner;
+        }
+
+        const free = tracks.findIndex((entry) => !entry);
+
+        return free === -1 ? tracks.length : free;
+    }
+
+    /**
+     * Stops whatever holds a track, so a superseded entry stops applying its pose.
+     *
+     * Routed through {@link stop} rather than a bare `clearTrack` so the animation also
+     * leaves the active/looping registries and its triggered FX are cut — an evicted
+     * looping animation would otherwise keep its sound running with nothing on screen.
+     */
+    private evictTrack(spineID: SpineID, spine: Spine, index: number) {
+        const animation = spine.state.tracks[index]?.animation?.name;
+
+        if (animation) this.stop(spineID, animation);
+        else spine.state.clearTrack(index);
     }
 
     /** Plays a specific animation on a single spine by ID. Resolves when the animation completes (looping animations resolve immediately). */
@@ -322,7 +367,7 @@ export class AnimationsController {
         spineID: string,
         animation: string,
         playSolo = false,
-        trackID?: number,
+        options?: PlayOptions,
     ): Promise<void> {
         const mod = Object.values(parcePointers.mod).filter((m) => animation.includes(m));
         const spine = this.spines.get(spineID);
@@ -337,12 +382,10 @@ export class AnimationsController {
             console.error(`Spine ${spineID} not found`);
             return;
         }
-        // An already-running animation is not restarted from zero — unless the caller names
-        // the track, which means it owns that track and is asking for the animation to be
-        // (re)applied there. A button re-entering `hover` on its feedback track while the
-        // previous `hover` still runs must land, or its look desyncs from the pointer.
+        // An already-running animation is not restarted from zero — unless the caller asks
+        // for it (see `PlayOptions.restart`).
         if (
-            trackID === undefined &&
+            !options?.restart &&
             this.activeAnimations.get(spineID)?.get(animation) !== undefined
         ) {
             return;
@@ -356,7 +399,7 @@ export class AnimationsController {
             }
         }
 
-        const playTrack = trackID ?? this.getTrackID(spineID);
+        const playTrack = this.allocateTrack(spineID, spine, animation);
 
         spine.state.setAnimation(playTrack, animation, loop);
         spine.state.timeScale = this.#speed;
@@ -386,7 +429,7 @@ export class AnimationsController {
                 resolve();
             }
         }).then(() => {
-            if (nextAnimation) this.playByName(nextAnimation, playSolo, trackID);
+            if (nextAnimation) this.playByName(nextAnimation, playSolo);
         });
     }
 
@@ -408,10 +451,12 @@ export class AnimationsController {
             this.stopAllForSpine(spineID);
         }
 
-        const playTrack = this.getTrackID(spineID);
+        const playTrack = this.allocateTrack(spineID, spine, animation);
 
         spine.state.setAnimation(playTrack, animation, loop);
-        const trackEntry = spine.state.getTrack(0);
+        // the entry just set, not track 0 — allocation picks the track from what the
+        // animation poses, so it is only track 0 when nothing else claims those properties
+        const trackEntry = spine.state.getTrack(playTrack);
 
         if (trackEntry) {
             trackEntry.trackTime = trackEntry.animationEnd;

@@ -294,7 +294,7 @@ describe('SceneController – activateButtonBones (button_ bone wrappers)', () =
     it('plays the embedded spine\'s own "click" animation on tap when it exists', () => {
         const spy = vi.spyOn(animations, 'play');
         press(bigButton);
-        expect(spy).toHaveBeenCalledWith('big_button', 'click', false, expect.any(Number));
+        expect(spy).toHaveBeenCalledWith('big_button', 'click', false, { restart: true });
         expect(bigButton.__setAnimationCalls.map(({ name }) => name)).toContain('click');
     });
 
@@ -487,7 +487,7 @@ describe('SceneController – activateButtonBones (button_ bone wrappers)', () =
         press(label);
 
         expect(eventSpy).toHaveBeenCalledWith('spin_click', 'ui');
-        expect(playSpy).toHaveBeenCalledWith('big_button', 'click', false, expect.any(Number));
+        expect(playSpy).toHaveBeenCalledWith('big_button', 'click', false, { restart: true });
         expect(embedded.__setAnimationCalls.map(({ name }) => name)).toContain('click');
     });
 

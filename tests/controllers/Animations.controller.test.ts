@@ -83,6 +83,133 @@ describe('AnimationsController – registration & getters', () => {
     });
 });
 
+describe('AnimationsController – track allocation', () => {
+    /** The `ui` skeleton's real claims: what each animation poses in reel-of-the-dead. */
+    const UI = [
+        { name: 'state_winInfo/show_win_text', duration: 1.5, poses: ['bone:text_win'] },
+        { name: 'state_freeSpinTrigger/hide_spin_button', duration: 0.167, poses: ['bone:button_spin'] },
+        { name: 'state_freeSpinEnd/show_spin_button', duration: 0.167, poses: ['bone:button_spin'] },
+        { name: 'state_popup/show_popup', duration: 0.333, poses: ['bone:spine_popup', 'slot:spine_popup'] },
+        { name: 'event_accept_popup_click/hide_popup', duration: 0.333, poses: ['bone:spine_popup', 'slot:spine_popup'] },
+    ];
+
+    /** Which animation each occupied track currently applies. */
+    const held = (ui: FakeSpine) =>
+        ui.state.tracks.map((entry) => entry?.animation.name ?? null);
+
+    const trackOf = (ui: FakeSpine, animation: string) =>
+        ui.state.tracks.findIndex((entry) => entry?.animation.name === animation);
+
+    let ui: FakeSpine;
+    let ctl: AnimationsController;
+
+    beforeEach(() => {
+        vi.useFakeTimers();
+        ui = createFakeSpine({ animations: UI });
+        ctl = new AnimationsController(asSpineMap({ ui }));
+        ctl.registerSpine('ui', ui as never);
+    });
+
+    afterEach(() => vi.useRealTimers());
+
+    it('keeps animations that pose the same properties on one shared track', async () => {
+        void ctl.playState('popup');
+        const opened = trackOf(ui, 'state_popup/show_popup');
+
+        await vi.advanceTimersByTimeAsync(400); // show_popup finishes, still holding its pose
+        void ctl.playEvent('accept_popup_click', 'ui');
+
+        // hide_popup takes over show_popup's own track instead of stacking above or below it
+        expect(trackOf(ui, 'event_accept_popup_click/hide_popup')).toBe(opened);
+        expect(held(ui).filter(Boolean)).toEqual(['event_accept_popup_click/hide_popup']);
+    });
+
+    it('never lands an animation under a stale entry that poses the same properties', async () => {
+        // the round that reproduced the invisible popup: a win, a trigger, a popup, a dismiss
+        void ctl.playState('winInfo');
+        void ctl.playState('freeSpinTrigger');
+        await vi.advanceTimersByTimeAsync(200);
+        void ctl.playState('popup');
+        await vi.advanceTimersByTimeAsync(400);
+        ctl.stopState('popup', false);
+        void ctl.playEvent('accept_popup_click', 'ui');
+        await vi.advanceTimersByTimeAsync(3000); // everything finishes; nothing clears its track
+
+        const stale = trackOf(ui, 'event_accept_popup_click/hide_popup');
+        expect(stale).toBeGreaterThanOrEqual(0); // the fade-out is still applied somewhere
+
+        void ctl.playState('popup'); // the next popup
+
+        // it reuses the fade-out's track, so no hidden pose is left above it
+        expect(trackOf(ui, 'state_popup/show_popup')).toBe(stale);
+        expect(held(ui).includes('event_accept_popup_click/hide_popup')).toBe(false);
+    });
+
+    it('leaves a holding state alone when an unrelated animation starts', async () => {
+        void ctl.playState('freeSpinTrigger'); // holds the spin button hidden
+        await vi.advanceTimersByTimeAsync(200); // finishes, but must keep applying
+        const holding = trackOf(ui, 'state_freeSpinTrigger/hide_spin_button');
+
+        void ctl.playState('popup'); // poses spine_popup — nothing to do with button_spin
+
+        expect(trackOf(ui, 'state_freeSpinTrigger/hide_spin_button')).toBe(holding);
+        expect(trackOf(ui, 'state_popup/show_popup')).not.toBe(holding);
+    });
+
+    it('replaces a holding state with its opposite on the same track', async () => {
+        void ctl.playState('freeSpinTrigger');
+        await vi.advanceTimersByTimeAsync(200);
+        const holding = trackOf(ui, 'state_freeSpinTrigger/hide_spin_button');
+
+        void ctl.playState('freeSpinEnd'); // shows the button again — same bone
+
+        expect(trackOf(ui, 'state_freeSpinEnd/show_spin_button')).toBe(holding);
+        expect(held(ui).includes('state_freeSpinTrigger/hide_spin_button')).toBe(false);
+    });
+
+    it('stops the lower of several colliding tracks and takes over the highest', async () => {
+        const spine = createFakeSpine({
+            animations: [
+                { name: 'head', duration: 1, poses: ['bone:head'] },
+                { name: 'tail', duration: 1, poses: ['bone:tail'] },
+                { name: 'whole_body', duration: 1, poses: ['bone:head', 'bone:tail'] },
+            ],
+        });
+        const controller = new AnimationsController(asSpineMap({ beast: spine }));
+        controller.registerSpine('beast', spine as never);
+
+        void controller.play('beast', 'head'); // track 0
+        void controller.play('beast', 'tail'); // track 1
+        void controller.play('beast', 'whole_body'); // collides with both
+
+        expect(spine.state.tracks.map((e) => e?.animation.name ?? null)).toEqual([
+            null,
+            'whole_body',
+        ]);
+        expect(controller.getActive()).toEqual(['beast']);
+
+        await vi.runAllTimersAsync();
+    });
+
+    it('parks animations that pose nothing on one track instead of growing the list', async () => {
+        const spine = createFakeSpine({
+            animations: [
+                { name: 'ping', duration: 0.1 },
+                { name: 'pong', duration: 0.1 },
+            ],
+        });
+        const controller = new AnimationsController(asSpineMap({ bell: spine }));
+        controller.registerSpine('bell', spine as never);
+
+        void controller.play('bell', 'ping');
+        void controller.play('bell', 'pong');
+
+        expect(spine.__setAnimationCalls.map((c) => c.track)).toEqual([0, 0]);
+
+        await vi.runAllTimersAsync();
+    });
+});
+
 describe('AnimationsController – playback', () => {
     beforeEach(() => {
         vi.useFakeTimers();
@@ -107,11 +234,11 @@ describe('AnimationsController – playback', () => {
         expect(enemy.__setAnimationCalls).toEqual([{ track: 0, name: 'misc/wave', loop: false }]);
     });
 
-    it('play increments track IDs per spine across calls', async () => {
+    it('play gives animations that pose different things a track each', async () => {
         const hero = createFakeSpine({
             animations: [
-                { name: 'a', duration: 0.1 },
-                { name: 'b', duration: 0.1 },
+                { name: 'a', duration: 0.1, poses: ['bone:head'] },
+                { name: 'b', duration: 0.1, poses: ['bone:tail'] },
             ],
         });
         const ctl = new AnimationsController(asSpineMap({ hero }));
@@ -339,8 +466,8 @@ describe('AnimationsController – playback', () => {
     it('stop clears the right track for the named animation', async () => {
         const hero = createFakeSpine({
             animations: [
-                { name: 'a', duration: 1 },
-                { name: 'b_loop', duration: 1 },
+                { name: 'a', duration: 1, poses: ['bone:head'] },
+                { name: 'b_loop', duration: 1, poses: ['bone:tail'] },
             ],
         });
         const ctl = new AnimationsController(asSpineMap({ hero }));

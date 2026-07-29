@@ -368,17 +368,12 @@ export class SpineLayout extends Container {
         return this.#animations.playEvent(eventName, spineID);
     }
     /** @deprecated Use `animations.playByName()` instead. */
-    async playAnimationByName(animationName: string, playSolo = false, trackID?: number) {
-        return this.#animations.playByName(animationName, playSolo, trackID);
+    async playAnimationByName(animationName: string, playSolo = false) {
+        return this.#animations.playByName(animationName, playSolo);
     }
     /** @deprecated Use `animations.play()` instead. */
-    async playInstanceAnimation(
-        spineID: string,
-        animation: string,
-        playSolo = false,
-        trackID?: number,
-    ) {
-        return this.#animations.play(spineID, animation, playSolo, trackID);
+    async playInstanceAnimation(spineID: string, animation: string, playSolo = false) {
+        return this.#animations.play(spineID, animation, playSolo);
     }
     /** @deprecated Use `animations.playSolo()` instead. */
     async playSolo(animationName: string) {

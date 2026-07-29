@@ -30,18 +30,6 @@ const BUTTON_INTERACTIONS: Record<ButtonInteraction, { events: string[]; animati
     up_out: { events: ['up_out'], animations: ['up_out', 'out', 'unhover'] },
 };
 
-/**
- * The track every button feedback animation plays on.
- *
- * `hover`, `down`, `up`, `out` … are mutually exclusive looks of the same button, so they
- * share one track: each replaces the previous instead of stacking, and a finished one stops
- * holding its end pose underneath the next (a leftover `hover` on its own track would keep
- * re-applying the hovered attachment over the pressed one). The index sits above the range
- * `AnimationsController` allocates from (it counts up from 0), so a button's current look is
- * applied after — and therefore wins over — the state animations of the same spine.
- */
-const BUTTON_ANIMATION_TRACK = 10;
-
 /** A logical button: every container acting as its hit area, plus the pointer state they share. */
 type ButtonGroup = {
     /** Button key (`spin` for `button_spin`), the base of its `<key>_<event>` event names. */
@@ -320,7 +308,11 @@ export class SceneController {
             const animation = animations.find((name) => this.hasAnimation(spine, name));
             if (!animation) return;
 
-            this.animations.play(spineID, animation, false, BUTTON_ANIMATION_TRACK);
+            // `restart`, because a pointer re-entering an interaction it is already showing
+            // must re-apply — a second `hover` while the first still runs, or the look
+            // desyncs from the pointer. The feedback animations pose the same bones, so the
+            // allocator keeps them taking turns on one track without a reserved index.
+            this.animations.play(spineID, animation, false, { restart: true });
         });
     }
 

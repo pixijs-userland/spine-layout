@@ -6,6 +6,17 @@ export type AnimationName = string;
 export type AnimationsRegistry = Map<SpineID, AnimationName[]>;
 export type AnimationTrackRegistry = Map<AnimationName, number>;
 
+export type PlayOptions = {
+    /**
+     * Re-apply the animation even when it is already running, restarting it from frame 0.
+     *
+     * Off by default, so repeated state and event dispatches leave what is already playing
+     * alone. Button feedback needs it: a pointer re-entering `hover` while the previous
+     * `hover` still runs must land, or the button's look desyncs from the pointer.
+     */
+    restart?: boolean;
+};
+
 export type SpineLayoutOptions = {
     debug?: boolean;
     manifest?: AssetsManifest;

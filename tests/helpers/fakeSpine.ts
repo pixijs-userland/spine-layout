@@ -1,7 +1,17 @@
 import { Container, Point } from 'pixi.js';
 import type { Spine } from '@esotericsoftware/spine-pixi-v8';
 
-export type FakeAnimation = { name: string; duration?: number };
+export type FakeAnimation = {
+    name: string;
+    duration?: number;
+    /**
+     * The skeleton properties this animation poses, as `AnimationsController` reads them —
+     * one `Timeline.propertyIds` entry each. Any string works as an opaque id (`'bone:spin'`
+     * is easier to read in a test than the runtime's `'1|4'`); two animations sharing one
+     * compete for a track. Omit for an animation that poses nothing.
+     */
+    poses?: string[];
+};
 export type FakeBone = { name: string; worldX?: number; worldY?: number; parent?: string };
 export type FakeSlot = {
     name: string;
@@ -91,7 +101,12 @@ export type FakeSpine = Container & {
 };
 
 export function createFakeSpine(options: FakeSpineOptions = {}): FakeSpine {
-    const animations = options.animations ?? [];
+    // Mirror the runtime: every Animation carries timelines, and each timeline names the
+    // properties it writes. Track allocation reads exactly this.
+    const animations = (options.animations ?? []).map((animation) => ({
+        ...animation,
+        timelines: (animation.poses ?? []).map((id) => ({ propertyIds: [id] })),
+    }));
     const bones = options.bones ?? [];
     const slots = options.slots ?? [];
     const skins = (options.skins ?? []).map((name) => ({ name }));
