@@ -147,17 +147,20 @@ export class SpineLayout extends Container {
             },
         );
 
+        // Registration is done — flush its tables before anything is played, so the console
+        // reads in load order (what was registered, then what `init` did with it) instead of
+        // showing `Play State [init]` above the registries it was built from.
+        log.close(LOG.SPINES);
+        log.close(LOG.STATES);
+        log.close(LOG.EVENTS);
+        log.close(LOG.SPINE_EVENTS);
+
         this.render();
 
         sounds.init(manifest);
 
         this.#animations.playState('init');
         this.#animations.playByName('init');
-
-        log.close(LOG.SPINES);
-        log.close(LOG.STATES);
-        log.close(LOG.EVENTS);
-        log.close(LOG.SPINE_EVENTS);
     }
 
     createInstancesFromDataArray(data: SpineInstanceData[]) {
@@ -190,12 +193,12 @@ export class SpineLayout extends Container {
             },
         );
 
-        this.render();
-
         log.close(LOG.SPINES);
         log.close(LOG.STATES);
         log.close(LOG.EVENTS);
         log.close(LOG.SPINE_EVENTS);
+
+        this.render();
 
         this.#animations.playState('init');
         this.#animations.playByName('init');

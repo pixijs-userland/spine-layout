@@ -207,8 +207,15 @@ export class AnimationsController {
             });
         });
 
-        await Promise.all(promises);
+        // Printed on dispatch, not on completion: `play()` resolves only when the animation
+        // ends, so closing after the await held the table back for the state's whole duration
+        // and printed it after everything dispatched in the meantime — `init`, whose animations
+        // are the longest, landing in the console below the events that came after it. Closing
+        // here also keeps open→add→close synchronous, so two overlapping calls for the same
+        // state can't share the label and wipe each other's rows.
         log.close(logName);
+
+        await Promise.all(promises);
     }
 
     /** Stops all animations grouped under the given state name. And resets all elements the their initial state. */
@@ -263,8 +270,12 @@ export class AnimationsController {
             });
         });
 
-        await Promise.all(promises);
+        // Closed on dispatch for the same reason as `playState` — and here the label repeats
+        // constantly (`spin_click` every round), so a group left open across the await was
+        // routinely reopened, and wiped, by the next fire of the same event.
         log.close(logName);
+
+        await Promise.all(promises);
     }
 
     /** Plays the named animation on every spine that has it. Pass `playSolo=true` to stop all other animations first. */

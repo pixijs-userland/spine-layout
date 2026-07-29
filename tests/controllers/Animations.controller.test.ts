@@ -7,6 +7,7 @@ vi.mock('../../src/controllers/Sounds.controller', () => ({
 import { AnimationsController } from '../../src/controllers/Animations.controller';
 import { sounds } from '../../src/controllers/Sounds.controller';
 import { asSpineMap, createFakeSpine, type FakeSpine } from '../helpers/fakeSpine';
+import { log } from '../../src/utils/Log';
 
 const soundsMock = sounds as unknown as {
     playFX: ReturnType<typeof vi.fn>;
@@ -199,6 +200,38 @@ describe('AnimationsController – playback', () => {
         const enemyNames = enemy.__setAnimationCalls.map((c) => c.name).sort();
         expect(heroNames).toEqual(['state_idle/blink_loop', 'state_idle/breathe']);
         expect(enemyNames).toEqual(['state_idle/blink_loop', 'state_idle/breathe']);
+    });
+
+    // A state's log table must be printed when the state is dispatched, not when its
+    // animations finish — otherwise a long state (`init`) is logged after everything
+    // that was dispatched while it played, and the console order lies about the
+    // actual order of events.
+    it.each([
+        ['playState', (ctl: AnimationsController) => ctl.playState('idle'), '🎬 Play State [idle]'],
+        [
+            'playEvent',
+            (ctl: AnimationsController) => ctl.playEvent('click', 'hero'),
+            '⚡ Play event [click]',
+        ],
+    ])('%s logs its group on dispatch, before the animations complete', async (_, run, label) => {
+        const group = vi.spyOn(console, 'groupCollapsed').mockImplementation(() => {});
+        vi.spyOn(console, 'table').mockImplementation(() => {});
+        vi.spyOn(console, 'groupEnd').mockImplementation(() => {});
+        log.enabled = true;
+
+        const hero = makeHero();
+        const ctl = new AnimationsController(asSpineMap({ hero }));
+        ctl.registerSpine('hero', hero as never);
+
+        const promise = run(ctl);
+
+        expect(group).toHaveBeenCalledWith(label);
+
+        await vi.runAllTimersAsync();
+        await promise;
+
+        log.enabled = false;
+        vi.restoreAllMocks();
     });
 
     it('playEvent invokes registered listeners and plays event animations', async () => {
