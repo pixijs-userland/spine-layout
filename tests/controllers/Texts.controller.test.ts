@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { Assets, BitmapText, Cache, Container, Text } from 'pixi.js';
+import { Assets, BitmapFontManager, BitmapText, Cache, Container, Text } from 'pixi.js';
 import { TextsController } from '../../src/controllers/Texts.controller';
 import {
     asSpineMap,
@@ -567,6 +567,70 @@ describe('TextsController – attach / settings / clear', () => {
         expect(node.scale.y).toBe(1);
         expect(node.y).toBeCloseTo(-50);
         expect(node.x).toBeCloseTo(5);
+
+        Cache.remove('fake-bitmap');
+    });
+
+    it('wraps bitmap text at maxWidth rather than pixi default width', () => {
+        // One 100-wide glyph per character, so '000 000' is 700 wide laid out on one line and
+        // the space at 350 is the only place it can break.
+        const glyph = {
+            id: 48,
+            xOffset: 0,
+            yOffset: 20,
+            xAdvance: 100,
+            kerning: {},
+            texture: { orig: { width: 100, height: 300 } },
+        };
+        Cache.set('fake-bitmap', {
+            chars: { '0': glyph, ' ': { ...glyph, id: 32, texture: undefined } },
+            lineHeight: 13,
+            baseLineOffset: 3,
+            baseMeasurementFontSize: 10,
+            fontMetrics: { fontSize: 10, ascent: 0, descent: 0 },
+        } as never);
+
+        const slot = { name: 'text_a' } as FakeSlot;
+        const spine = createFakeSpine({ slots: [slot] });
+        const ctl = new TextsController(asSpineMap({ hero: spine }));
+        ctl.settings = {
+            hero: {
+                a: {
+                    type: 'bitmapText',
+                    fontFamily: 'fake',
+                    fontSize: 10,
+                    letterSpacing: 0,
+                    wordWrap: true,
+                    // wide enough for one of the two words, so they take a line each — with
+                    // pixi's own default of 100 not even a whole word would fit on one
+                    maxWidth: 400,
+                    value: '000 000',
+                },
+            },
+        };
+        ctl.add(slot as never, spine as never, 'a', 'hero');
+        const node = ctl.getInstances().get('a') as BitmapText;
+
+        expect(node.style.wordWrap).toBe(true);
+        expect(node.style.wordWrapWidth).toBe(400);
+
+        // wrapped, so it fits the box and never had to be scaled to reach it
+        const layout = BitmapFontManager.getLayout(node.text, node.style);
+        expect(layout.lines.filter((line) => line.charPositions.length > 0).length).toBe(2);
+        expect(node.scale.x).toBe(1);
+
+        // and the wrap's lines are spaced off the glyphs, like hand-written ones: the font's
+        // own 13 units of advance would stack them on top of each other
+        expect(node.style.lineHeight).toBeCloseTo(300);
+
+        // a value that fits on one line goes back to the font's spacing
+        ctl.set('a', '000');
+        expect(node.style.lineHeight).toBe(0);
+
+        // and with no box to wrap into, the wrap is off rather than left on pixi's 100
+        ctl.set('a', '000 000');
+        ctl.setMaxWidth('a', 0);
+        expect(node.style.wordWrap).toBe(false);
 
         Cache.remove('fake-bitmap');
     });

@@ -37,6 +37,11 @@ type TextsJsonEntryBase = {
     fontFamily?: string;
     fontSize?: number;
     letterSpacing?: number;
+    /**
+     * Whether the value breaks onto further lines instead of running on. The width it breaks
+     * at is `wordWrapWidth` for a `text` entry and {@link TextsJsonBitmapTextEntry.maxWidth}
+     * for a `bitmapText` one, which is the box that entry is already sized against.
+     */
     wordWrap?: boolean;
 };
 
@@ -69,6 +74,15 @@ export type TextsJsonTextEntry = TextsJsonEntryBase & {
 export type TextsJsonBitmapTextEntry = TextsJsonEntryBase & {
     type: 'bitmapText';
     offset?: { x: number; y: number };
+    /**
+     * Widest the value may render, in pixels. Text past it is scaled down uniformly, and
+     * `0` or absent leaves the width unconstrained.
+     *
+     * Doubles as the width {@link TextsJsonEntryBase.wordWrap} breaks lines at, so a
+     * wrapping value fills this box rather than overflowing it, and the scaling is left to
+     * catch what no line break can — a single word wider than the box. A wrapping entry
+     * without a `maxWidth` has no width to wrap into and so does not wrap.
+     */
     maxWidth?: number;
     /**
      * Tallest the value may render, in pixels — the vertical twin of {@link maxWidth}.

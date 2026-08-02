@@ -403,7 +403,15 @@ export class TextsController {
             delete style.animateNumber;
             delete style.offset;
             delete style.maxWidth;
-            if (isBitmap) style.fill = '#ffffff';
+            if (isBitmap) {
+                style.fill = '#ffffff';
+                // the box `maxWidth` names is also what the value wraps at, and it has just
+                // been dropped from the style — see wrapWidth. Nothing fits these nodes
+                // afterwards, so the width has to be right here or not at all.
+                const width = this.wrapWidth(entry as TextsJsonBitmapTextEntry);
+                style.wordWrap = width > 0;
+                if (width > 0) style.wordWrapWidth = width;
+            }
             text.style = style as Partial<Text['style']>;
         }
 
@@ -483,8 +491,10 @@ export class TextsController {
         const entry = this.settingsFor(boneName);
         if (entry?.type !== 'bitmapText') return;
 
-        // before the measuring below: it decides how tall the text is, and the
-        // centring compensation is read off the same layout
+        // both before the measuring below: the wrap width decides where the lines break,
+        // the spacing decides how tall they stack, and the centring compensation is read
+        // off the same layout the two of them produce
+        this.applyWrapWidth(entry as TextsJsonBitmapTextEntry, text);
         this.applyLineSpacing(entry as TextsJsonBitmapTextEntry, text);
 
         const { maxWidth, maxHeight } = entry as TextsJsonBitmapTextEntry;
@@ -525,6 +535,45 @@ export class TextsController {
     }
 
     /**
+     * The width a bitmap entry wraps its value at — `0` for one that does not wrap.
+     *
+     * `maxWidth` is the box the text is already fitted to, so it is also the width to break
+     * lines at: the two are the same measurement, and a second one would only let them
+     * disagree. An entry with `wordWrap` on and no `maxWidth` has no box to wrap into, so it
+     * does not wrap — see {@link applyWrapWidth} for why that beats the alternative.
+     */
+    private wrapWidth(entry: TextsJsonBitmapTextEntry): number {
+        return entry.wordWrap ? (entry.maxWidth ?? 0) : 0;
+    }
+
+    /**
+     * Hands a wrapping bitmap text the width to break its lines at.
+     *
+     * Pixi wraps at `style.wordWrapWidth`, which our bitmap entries have never carried — the
+     * editor writes `wordWrap` and `maxWidth`, and nothing filled the gap between them. So
+     * pixi used its own default of 100 pixels, which at the sizes these fields render at is
+     * narrower than a single word: every word overflowed the line it started on and got a
+     * line of its own, which is not wrapping so much as shredding.
+     *
+     * Wrapping at `maxWidth` instead makes the two knobs one behaviour: the value fills the
+     * box the artist drew, and the scaling in {@link applyMaxSize} only steps in when even a
+     * wrapped line will not fit it — a single word longer than the whole box, which no line
+     * break can rescue.
+     *
+     * With no `maxWidth` the wrap is switched off rather than left on pixi's 100: an entry
+     * that never says how wide it is has not asked for lines a hundred pixels long, and text
+     * running past its bone is a plainer thing to see and fix than text minced into a column.
+     */
+    private applyWrapWidth(entry: TextsJsonBitmapTextEntry, text: Text | BitmapText) {
+        if (!(text instanceof BitmapText)) return;
+
+        const width = this.wrapWidth(entry);
+
+        text.style.wordWrap = width > 0;
+        if (width > 0) text.style.wordWrapWidth = width;
+    }
+
+    /**
      * Gives multi-line bitmap text a line advance its glyphs actually fit in.
      *
      * Pixi spaces lines by the `lineHeight` in the font's own header, and our fonts are
@@ -545,7 +594,7 @@ export class TextsController {
     private applyLineSpacing(entry: TextsJsonBitmapTextEntry, text: Text | BitmapText) {
         if (!(text instanceof BitmapText) || entry.lineHeight) return;
 
-        if (!text.text.includes('\n')) {
+        if (!this.isMultiLine(text)) {
             // back to the font's own spacing, for a field that no longer wraps
             if (text.style.lineHeight) text.style.lineHeight = 0;
             return;
@@ -562,6 +611,28 @@ export class TextsController {
         // a default because multi-line bitmap text had no working appearance to preserve —
         // until the spacing above, the lines were drawn on top of one another.
         if (!entry.align) text.style.align = 'center';
+    }
+
+    /**
+     * Whether a bitmap text renders on more than one line — either because its value carries
+     * a `\n`, or because {@link applyWrapWidth} left it wrapping and the value is wide enough
+     * to break. Both need the glyph-measured spacing of {@link applyLineSpacing}: lines the
+     * wrap put there land on top of each other exactly like the hand-written ones do.
+     *
+     * Written text is answered without measuring, and the layout is only asked about text
+     * that can actually wrap — a field with no wrap has no lines beyond the ones in its
+     * value, and laying its glyphs out to be told so would cost every field that value
+     * changes on.
+     */
+    private isMultiLine(text: BitmapText): boolean {
+        if (text.text.includes('\n')) return true;
+        if (!text.style.wordWrap) return false;
+
+        const layout = BitmapFontManager.getLayout(text.text, text.style);
+
+        // the layout always closes with an empty trailing line, so the lines carrying glyphs
+        // are what it has to be counted by
+        return layout.lines.filter((line) => line.charPositions.length > 0).length > 1;
     }
 
     /**
