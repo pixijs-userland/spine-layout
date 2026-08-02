@@ -50,6 +50,8 @@ type ButtonGroup = {
 
 export class SceneController {
     private buttons: Map<string, Container> = new Map();
+    /** Every wired button, by key — what lets {@link press} fire one without a pointer. */
+    private buttonGroups: Map<string, ButtonGroup[]> = new Map();
 
     constructor(
         private spines: Map<SpineID, Spine>,
@@ -180,7 +182,7 @@ export class SceneController {
             });
 
             groups.forEach((targets, key) => {
-                this.wireButton({
+                const group: ButtonGroup = {
                     key,
                     spineID,
                     targets,
@@ -188,7 +190,14 @@ export class SceneController {
                     isHovered: false,
                     isPressed: false,
                     hoverSyncQueued: false,
-                });
+                };
+
+                this.wireButton(group);
+
+                // kept so the button can also be pressed by something that isn't a
+                // pointer — see {@link press}. Appended rather than replaced: one key
+                // may be declared on more than one spine, and a press means all of them.
+                this.buttonGroups.set(key, [...(this.buttonGroups.get(key) ?? []), group]);
 
                 this.collectNestedSpines(targets).forEach((nested) =>
                     log.add(
@@ -393,7 +402,37 @@ export class SceneController {
         spine.addSlotObject(slot.name, child);
     }
 
+    /**
+     * Presses a button by key, as if it had been clicked.
+     *
+     * Runs the same `down` → `up` → `click` sequence {@link wireButton} runs for a
+     * pointer, so a keyboard shortcut gets the button's press animation and its
+     * `<key>_<event>` events, not just the listener — the button looks pressed
+     * because it *is* pressed, through the one path.
+     *
+     * A press already in progress is left alone: holding the key while the mouse is
+     * down must not release the pointer's press out from under it.
+     *
+     * @returns whether any button carries this key.
+     */
+    press(key: string): boolean {
+        const groups = this.buttonGroups.get(key);
+
+        if (!groups?.length) return false;
+
+        groups.forEach((group) => {
+            if (group.isPressed) return;
+
+            this.trigger(group, 'down');
+            this.trigger(group, 'up');
+            this.trigger(group, 'click');
+        });
+
+        return true;
+    }
+
     clear() {
         this.buttons.clear();
+        this.buttonGroups.clear();
     }
 }
