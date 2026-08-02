@@ -112,6 +112,14 @@ export class SpineLayout extends Container {
         return this.#animations.speed;
     }
 
+    /**
+     * Runs one spine faster or slower than the rest of the layout — a multiplier on
+     * {@link speed}. See {@link AnimationsController.setSpineSpeed}.
+     */
+    setSpineSpeed(spineID: SpineID, value: number) {
+        this.#animations.setSpineSpeed(spineID, value);
+    }
+
     // ─── Instance creation ───────────────────────────────────────────────────────
 
     createInstancesFromManifest(manifest: AssetsManifest, folderName?: string) {

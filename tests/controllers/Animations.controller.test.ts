@@ -438,6 +438,51 @@ describe('AnimationsController – playback', () => {
         expect(ctl.speed).toBe(2);
     });
 
+    it('setSpineSpeed paces one spine against the layout speed, leaving the others on it', () => {
+        const hero = createFakeSpine();
+        const villain = createFakeSpine();
+        const ctl = new AnimationsController(asSpineMap({ hero, villain }));
+
+        ctl.setSpineSpeed('hero', 2);
+
+        expect(hero.state.timeScale).toBe(2);
+        expect(ctl.getSpineSpeed('hero')).toBe(2);
+        expect(ctl.getSpineSpeed('villain')).toBe(1);
+
+        // the layout-wide speed moves both — the paced spine stays twice as fast as the rest
+        ctl.speed = 0.5;
+
+        expect(hero.state.timeScale).toBe(1);
+        expect(villain.state.timeScale).toBe(0.5);
+    });
+
+    it('play keeps a spine on its own speed instead of the layout speed', async () => {
+        const hero = createFakeSpine({ animations: [{ name: 'a', duration: 1 }] });
+        const ctl = new AnimationsController(asSpineMap({ hero }));
+        ctl.registerSpine('hero', hero as never);
+        ctl.setSpineSpeed('hero', 2);
+
+        const played = ctl.play('hero', 'a');
+
+        expect(hero.state.timeScale).toBe(2);
+
+        // and it resolves at the pace it is running at: a 1s animation at 2x is done in 500ms
+        await vi.advanceTimersByTimeAsync(500);
+        await expect(played).resolves.toBeUndefined();
+    });
+
+    it('setSpineSpeed hands a spine back to the layout pace when given 1', () => {
+        const hero = createFakeSpine();
+        const ctl = new AnimationsController(asSpineMap({ hero }));
+
+        ctl.setSpineSpeed('hero', 2);
+        ctl.setSpineSpeed('hero', 1);
+        ctl.speed = 0.5;
+
+        expect(ctl.getSpineSpeed('hero')).toBe(1);
+        expect(hero.state.timeScale).toBe(0.5);
+    });
+
     it('pauseBySpineID sets timeScale to 0 on the target spine', () => {
         const hero = createFakeSpine();
         const ctl = new AnimationsController(asSpineMap({ hero }));

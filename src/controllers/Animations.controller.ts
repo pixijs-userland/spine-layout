@@ -30,6 +30,14 @@ export class AnimationsController {
     private triggeredFX: Map<SpineID, Map<AnimationName, Set<string>>> = new Map();
     #eventsListeners: EventsListeners = new Map();
     #speed = 1;
+    /**
+     * How fast single spines run compared with the rest of the layout — a multiplier on
+     * {@link speed}, `1` for everything not in here (see {@link setSpineSpeed}). Kept here
+     * rather than left on the spine because every {@link play} re-applies the layout's speed
+     * to the spine it plays on, so a `timeScale` set from the outside would be overwritten by
+     * the next animation.
+     */
+    #spineSpeeds: Map<SpineID, number> = new Map();
 
     constructor(private spines: Map<SpineID, Spine>) { }
 
@@ -402,7 +410,7 @@ export class AnimationsController {
         const playTrack = this.allocateTrack(spineID, spine, animation);
 
         spine.state.setAnimation(playTrack, animation, loop);
-        spine.state.timeScale = this.#speed;
+        spine.state.timeScale = this.timeScaleFor(spineID);
 
         if (!playSolo) {
             if (loop) this.addLoopingAnimation(spineID, animation, playTrack);
@@ -612,13 +620,53 @@ export class AnimationsController {
 
     set speed(value: number) {
         this.#speed = value;
-        this.spines.forEach((spine) => {
-            spine.state.timeScale = value;
+        this.spines.forEach((spine, spineID) => {
+            // a spine given a pace of its own keeps it, measured against the new layout
+            // speed — that pace says how it runs compared with everything else, so moving
+            // the layout moves it too
+            spine.state.timeScale = this.timeScaleFor(spineID);
         });
     }
 
     get speed(): number {
         return this.#speed;
+    }
+
+    /**
+     * Runs one spine faster or slower than the rest of the layout — what a game needs when a
+     * single skeleton has to speed up on its own (reels on a fast spin setting) while
+     * everything around it keeps playing as authored.
+     *
+     * `value` is a multiplier on the layout-wide {@link speed}, not a replacement for it: `2`
+     * is twice whatever the layout is running at, so moving {@link speed} still moves this
+     * spine with it. `1` hands the spine back to the layout's own pace.
+     *
+     * Applied at once and re-applied by every {@link play} on that spine, so it holds across
+     * the animations that follow instead of lasting only until the next one starts. It is the
+     * *spine's* scale, so a `play()` on it also resolves at the pace it is running at.
+     */
+    setSpineSpeed(spineID: SpineID, value: number) {
+        const spine = this.spines.get(spineID);
+
+        if (!spine) {
+            console.error(`Spine ${spineID} not found`);
+            return;
+        }
+
+        if (value === 1) this.#spineSpeeds.delete(spineID);
+        else this.#spineSpeeds.set(spineID, value);
+
+        spine.state.timeScale = this.timeScaleFor(spineID);
+    }
+
+    /** How fast a spine runs compared with the rest of the layout — `1` unless it was given a pace. */
+    getSpineSpeed(spineID: SpineID): number {
+        return this.#spineSpeeds.get(spineID) ?? 1;
+    }
+
+    /** The `timeScale` a spine actually runs on: the layout's speed at that spine's own pace. */
+    private timeScaleFor(spineID: SpineID): number {
+        return this.#speed * this.getSpineSpeed(spineID);
     }
 
     // ─── Track management (private) ──────────────────────────────────────────────
@@ -732,5 +780,6 @@ export class AnimationsController {
         this.stopAllTriggeredFX();
         this.#eventsListeners.clear();
         this.#speed = 1;
+        this.#spineSpeeds.clear();
     }
 }
