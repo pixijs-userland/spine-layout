@@ -71,6 +71,15 @@ export type TextsJsonBitmapTextEntry = TextsJsonEntryBase & {
     offset?: { x: number; y: number };
     maxWidth?: number;
     /**
+     * Tallest the value may render, in pixels — the vertical twin of {@link maxWidth}.
+     * Text past it is scaled down uniformly, and where both are set the tighter of the
+     * two decides, so the text fits the box on whichever side runs out first. `0` or
+     * absent leaves the height unconstrained.
+     *
+     * Mostly for multi-line values, whose height is what grows as lines are added.
+     */
+    maxHeight?: number;
+    /**
      * Distance between the baselines of a multi-line value. Optional, and normally left
      * out: without it the advance is measured off the glyphs themselves, because the
      * `lineHeight` our fonts declare in their header is in a different unit from their

@@ -15,11 +15,11 @@ export class TextsController {
         { interval: ReturnType<typeof setInterval>; resolve: () => void }
     > = new Map();
     /**
-     * Position compensation currently applied by {@link applyMaxWidth}, keyed by registration
+     * Position compensation currently applied by {@link applyMaxSize}, keyed by registration
      * key. Kept separate from the node position so the configured/`setOffset` offset stays the
      * base the compensation is added to, rather than being overwritten by it.
      */
-    #maxWidthShift: Map<string, { x: number; y: number }> = new Map();
+    #maxSizeShift: Map<string, { x: number; y: number }> = new Map();
 
     /**
      * @param spines Live spine registry.
@@ -176,7 +176,7 @@ export class TextsController {
                     if (emit && target.text !== text) this.emitChange(key, previous, text);
                     target.text = text;
                     // the number is unchanged but the prefix/suffix around it may not be
-                    this.applyMaxWidth(key, target);
+                    this.applyMaxSize(key, target);
                     return;
                 }
 
@@ -197,7 +197,7 @@ export class TextsController {
                         if (direction < 0 && value <= end) value = end;
 
                         target.text = `${prefix}${value}${suffix}`;
-                        this.applyMaxWidth(key, target);
+                        this.applyMaxSize(key, target);
 
                         if (value === end) {
                             clearInterval(runner);
@@ -216,7 +216,7 @@ export class TextsController {
         if (emit && next !== previous) this.emitChange(key, previous, next);
 
         target.text = next;
-        this.applyMaxWidth(key, target);
+        this.applyMaxSize(key, target);
     }
 
     /**
@@ -246,7 +246,7 @@ export class TextsController {
         keys.forEach((key) => {
             const text = this.texts.get(key)!;
             // the offset is the base position; any max-width compensation rides on top of it
-            const shift = this.#maxWidthShift.get(key);
+            const shift = this.#maxSizeShift.get(key);
             text.x = offset.x + (shift?.x ?? 0);
             text.y = offset.y + (shift?.y ?? 0);
         });
@@ -254,15 +254,28 @@ export class TextsController {
 
     /** Constrains a text node to a max pixel width by scaling it down uniformly when it overflows. */
     setMaxWidth(boneName: string, maxWidth: number) {
+        this.setMaxBound(boneName, 'maxWidth', maxWidth);
+    }
+
+    /**
+     * Constrains a text node to a max pixel height, the same way {@link setMaxWidth} constrains
+     * its width. With both set the tighter one decides — see {@link applyMaxSize}.
+     */
+    setMaxHeight(boneName: string, maxHeight: number) {
+        this.setMaxBound(boneName, 'maxHeight', maxHeight);
+    }
+
+    /** Records one of the two size bounds on the settings entry and re-fits the node to it. */
+    private setMaxBound(boneName: string, bound: 'maxWidth' | 'maxHeight', value: number) {
         this.resolveKeys(boneName).forEach((key) => {
             const meta = this.#meta.get(key);
             const entry = meta?.spineID
                 ? this.#textSettings?.[meta.spineID]?.[meta.textKey]
                 : undefined;
-            if (entry?.type === 'bitmapText') (entry as TextsJsonBitmapTextEntry).maxWidth = maxWidth;
+            if (entry?.type === 'bitmapText') (entry as TextsJsonBitmapTextEntry)[bound] = value;
 
             const text = this.texts.get(key);
-            if (text) this.applyMaxWidth(key, text);
+            if (text) this.applyMaxSize(key, text);
         });
     }
 
@@ -292,7 +305,7 @@ export class TextsController {
 
         this.texts.set(key, newText);
         // the fresh node carries neither the old scale nor its compensation
-        this.#maxWidthShift.delete(key);
+        this.#maxSizeShift.delete(key);
     }
 
     /** Applies a partial Pixi.js `TextStyle` to the named text node. */
@@ -413,7 +426,7 @@ export class TextsController {
     add(slot: SlotData, spine: Spine, textKey: string, spineID?: string): string {
         const key = this.configKey(spineID, textKey);
         const { type, value, ...rest } = this.mergedEntry(spineID, textKey) ?? {};
-        const { offset, maxWidth } = rest as Omit<
+        const { offset, maxWidth, maxHeight } = rest as Omit<
             TextsJsonBitmapTextEntry,
             'type' | 'uppercase' | 'value'
         >;
@@ -428,6 +441,8 @@ export class TextsController {
         this.setOne(key, value ?? '', false, 0, false);
 
         if (offset) this.setOffset(key, offset);
+        // height first, so the single fit that follows sees both bounds at once
+        this.setMaxHeight(key, maxHeight ?? 0);
         this.setMaxWidth(key, maxWidth ?? 0);
 
         const wrapper = new Container();
@@ -443,15 +458,20 @@ export class TextsController {
             r.resolve();
         });
         this.#textRunners.clear();
-        this.#maxWidthShift.clear();
+        this.#maxSizeShift.clear();
         this.texts.clear();
         this.#meta.clear();
         this.#textSettings = undefined;
     }
 
     /**
-     * Constrains a node to `maxWidth` by scaling it down, keeping its glyphs centred on the
-     * spot the full-size text occupied.
+     * Constrains a node to `maxWidth` and `maxHeight` by scaling it down, keeping its glyphs
+     * centred on the spot the full-size text occupied.
+     *
+     * Scaling is uniform — one factor for both axes, since text squashed on one of them stops
+     * being the typeface the artist chose — so where both bounds are set the tighter of the
+     * two wins and the text fits the box on whichever side runs out first. Either may be left
+     * unset, which is what a text constrained on only one axis does.
      *
      * Scaling shrinks a node towards its own origin, so text whose glyphs are not centred on
      * that origin travels as it scales — for bitmap text that is the norm rather than the
@@ -459,7 +479,7 @@ export class TextsController {
      * compensation moves the node back by whatever the glyph centre lost, so scale 1 stays
      * exactly where it is today and every smaller scale stays centred on it.
      */
-    private applyMaxWidth(boneName: string, text: Text | BitmapText) {
+    private applyMaxSize(boneName: string, text: Text | BitmapText) {
         const entry = this.settingsFor(boneName);
         if (entry?.type !== 'bitmapText') return;
 
@@ -467,22 +487,30 @@ export class TextsController {
         // centring compensation is read off the same layout
         this.applyLineSpacing(entry as TextsJsonBitmapTextEntry, text);
 
-        const { maxWidth } = entry as TextsJsonBitmapTextEntry;
+        const { maxWidth, maxHeight } = entry as TextsJsonBitmapTextEntry;
 
         // undo the previous pass before measuring, so the text is sized at full scale — and so
-        // clearing `maxWidth` (the editor can, live) puts the text back rather than stranding it
+        // clearing a bound (the editor can, live) puts the text back rather than stranding it
         // at whatever scale and compensation the last constrained value left behind
-        const applied = this.#maxWidthShift.get(boneName);
+        const applied = this.#maxSizeShift.get(boneName);
         if (applied) {
             text.x -= applied.x;
             text.y -= applied.y;
-            this.#maxWidthShift.delete(boneName);
+            this.#maxSizeShift.delete(boneName);
         }
-        if (applied || maxWidth) text.scale.set(1);
+        if (applied || maxWidth || maxHeight) text.scale.set(1);
 
-        if (!maxWidth || text.width <= maxWidth) return;
+        // Measured at full size, which the reset above guarantees — and only for a bound that
+        // is actually set: measuring a bitmap text means laying its glyphs out, so a node with
+        // no bounds must not pay for it.
+        const overflows = [
+            maxWidth && text.width > maxWidth ? maxWidth / text.width : undefined,
+            maxHeight ? this.heightOverflow(text, maxHeight) : undefined,
+        ].filter((value): value is number => value !== undefined);
 
-        const scale = maxWidth / text.width;
+        if (!overflows.length) return;
+
+        const scale = Math.min(...overflows);
         text.scale.set(scale);
 
         const centre = text instanceof BitmapText ? this.glyphCentre(text) : undefined;
@@ -493,7 +521,7 @@ export class TextsController {
         text.x += shift.x;
         text.y += shift.y;
         // recorded even when it is zero: its presence marks the scale as ours to undo
-        this.#maxWidthShift.set(boneName, shift);
+        this.#maxSizeShift.set(boneName, shift);
     }
 
     /**
@@ -574,6 +602,19 @@ export class TextsController {
     }
 
     /**
+     * How far past `maxHeight` a node renders, as the factor that would bring it back —
+     * `undefined` when it fits, or when there are no glyphs to measure.
+     *
+     * The height comes off the glyphs rather than the node, because `BitmapText.height` cannot
+     * answer this for our fonts (see {@link glyphHeight}).
+     */
+    private heightOverflow(text: Text | BitmapText, maxHeight: number): number | undefined {
+        const height = text instanceof BitmapText ? this.glyphHeight(text) : text.height;
+
+        return height && height > maxHeight ? maxHeight / height : undefined;
+    }
+
+    /**
      * Local-space centre of a bitmap text's rendered glyphs — `undefined` when it has none
      * (empty string, or characters missing from the font).
      *
@@ -587,6 +628,63 @@ export class TextsController {
      * font units, offset by the anchor, then scaled by `fontSize / <font size>`.
      */
     private glyphCentre(text: BitmapText): { x: number; y: number } | undefined {
+        const box = this.glyphBox(text);
+        if (!box) return undefined;
+
+        const { minX, maxX, minY, maxY, layout } = box;
+
+        return {
+            x: ((minX + maxX) / 2 - text.anchor.x * layout.width) * layout.scale,
+            y:
+                ((minY + maxY) / 2 - text.anchor.y * (layout.height + layout.offsetY)) *
+                layout.scale,
+        };
+    }
+
+    /**
+     * How tall a bitmap text's glyphs actually render, in pixels.
+     *
+     * `BitmapText.height` is the *line box* — `layout.height`, the per-line advance summed —
+     * and our fonts declare that in a different unit from their glyph rectangles, so it
+     * reports a fraction of what is on screen (13 units a line against glyphs ~380 tall).
+     * A height bound measured against it would never trip. This measures the ink instead,
+     * which is what `maxHeight` is asking about, and matches `maxWidth` — whose `text.width`
+     * comes from `xAdvance`, already in glyph units.
+     *
+     * `undefined` when there are no glyphs to measure, which leaves the bound unenforced
+     * rather than collapsing the node to nothing.
+     */
+    private glyphHeight(text: BitmapText): number | undefined {
+        const box = this.glyphBox(text);
+
+        return box && (box.maxY - box.minY) * box.layout.scale;
+    }
+
+    /**
+     * The bounding box of a bitmap text's rendered glyphs, in font units, plus the layout it
+     * was measured against — `undefined` when it has none (empty string, or characters
+     * missing from the font).
+     *
+     * `BitmapText.anchor` centres the node on the font's line box (`lineHeight`/`base` from
+     * the `.fnt`), not on its glyph rectangles. Our fonts are exported with the two in
+     * different units — e.g. `size=10 lineHeight=13 base=10` against glyphs ~334 units tall —
+     * so the anchor shifts the text by a handful of units while the glyphs sit hundreds of
+     * units below the origin, leaving it effectively unanchored vertically.
+     *
+     * Mirrors the glyph placement of pixi's bitmap text render pipe: the layout is measured in
+     * font units, offset by the anchor, then scaled by `fontSize / <font size>`.
+     */
+    private glyphBox(
+        text: BitmapText,
+    ):
+        | {
+              minX: number;
+              maxX: number;
+              minY: number;
+              maxY: number;
+              layout: ReturnType<typeof BitmapFontManager.getLayout>;
+          }
+        | undefined {
         const style = text.style;
         const font = BitmapFontManager.getFont(text.text, style);
         const layout = BitmapFontManager.getLayout(text.text, style);
@@ -626,11 +724,6 @@ export class TextsController {
 
         if (minX > maxX) return undefined;
 
-        return {
-            x: ((minX + maxX) / 2 - text.anchor.x * layout.width) * layout.scale,
-            y:
-                ((minY + maxY) / 2 - text.anchor.y * (layout.height + layout.offsetY)) *
-                layout.scale,
-        };
+        return { minX, maxX, minY, maxY, layout };
     }
 }

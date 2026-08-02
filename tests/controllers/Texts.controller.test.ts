@@ -403,13 +403,76 @@ describe('TextsController – attach / settings / clear', () => {
         ctl.settings = { hero: { a: { type: 'bitmapText', value: '' } } };
         ctl.add(slot as never, spine as never, 'a', 'hero');
 
-        // Stub the node width so applyMaxWidth doesn't trigger BitmapText canvas measurement.
+        // Stub the node width so applyMaxSize doesn't trigger BitmapText canvas measurement.
         Object.defineProperty(ctl.getInstances().get('a'), 'width', { get: () => 0 });
 
         ctl.setMaxWidth('a', 100);
         expect(
             (ctl.settings?.hero?.a as { type: string; maxWidth?: number }).maxWidth,
         ).toBe(100);
+    });
+
+    it('scales bitmap text down to maxHeight, and lets the tighter bound decide', () => {
+        // Same font shape as the max-width case: the glyph rects are in a different unit from
+        // the declared lineHeight, so the height has to be measured off the glyphs (300 tall)
+        // rather than off BitmapText.height (the 13-unit line box).
+        const glyph = {
+            id: 48,
+            xOffset: 0,
+            yOffset: 20,
+            xAdvance: 100,
+            kerning: {},
+            texture: { orig: { width: 100, height: 300 } },
+        };
+        Cache.set('fake-bitmap', {
+            chars: { '0': glyph },
+            lineHeight: 13,
+            baseLineOffset: 3,
+            baseMeasurementFontSize: 10,
+            fontMetrics: { fontSize: 10, ascent: 0, descent: 0 },
+        } as never);
+
+        const slot = { name: 'text_a' } as FakeSlot;
+        const spine = createFakeSpine({ slots: [slot] });
+        const ctl = new TextsController(asSpineMap({ hero: spine }));
+        ctl.settings = {
+            hero: {
+                a: {
+                    type: 'bitmapText',
+                    fontFamily: 'fake',
+                    fontSize: 10,
+                    letterSpacing: 0,
+                    offset: { x: 0, y: -100 },
+                    // '000' renders 300 wide and its glyphs 300 tall, so a 150 bound halves it
+                    maxHeight: 150,
+                    value: '000',
+                },
+            },
+        };
+        ctl.add(slot as never, spine as never, 'a', 'hero');
+        const node = ctl.getInstances().get('a') as BitmapText;
+
+        // halved by height alone, and centred the same way the width bound centres it
+        expect(node.scale.y).toBeCloseTo(0.5);
+        expect(node.y).toBeCloseTo(-17.5);
+
+        // a width bound that bites harder takes over — scaling is uniform, so the tighter wins
+        ctl.setMaxWidth('a', 75);
+        expect((ctl.settings?.hero?.a as { maxWidth?: number }).maxWidth).toBe(75);
+        expect(node.scale.y).toBeCloseTo(0.25);
+        expect(node.y).toBeCloseTo(23.75);
+
+        // dropping the height bound leaves the width one still holding it
+        ctl.setMaxHeight('a', 0);
+        expect((ctl.settings?.hero?.a as { maxHeight?: number }).maxHeight).toBe(0);
+        expect(node.scale.y).toBeCloseTo(0.25);
+
+        // and with neither, full size and the configured offset are back
+        ctl.setMaxWidth('a', 0);
+        expect(node.scale.y).toBe(1);
+        expect(node.y).toBeCloseTo(-100);
+
+        Cache.remove('fake-bitmap');
     });
 
     it('loadSettings picks up the texts.json shortcut alias from Assets when present', () => {
