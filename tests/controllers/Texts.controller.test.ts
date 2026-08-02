@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Assets, BitmapFontManager, BitmapText, Cache, Container, Text } from 'pixi.js';
 import { TextsController } from '../../src/controllers/Texts.controller';
+import type { TextsJsonBitmapTextEntry } from '../../src/config/types';
 import {
     asSpineMap,
     createFakeSpine,
@@ -631,6 +632,77 @@ describe('TextsController – attach / settings / clear', () => {
         ctl.set('a', '000 000');
         ctl.setMaxWidth('a', 0);
         expect(node.style.wordWrap).toBe(false);
+
+        Cache.remove('fake-bitmap');
+    });
+
+    it('aligns bitmap lines from the entry, centring the one that does not say', () => {
+        // One 100-wide glyph per character, spaces included, so every width below is a
+        // character count: '0 0 0000' wraps into a 300-wide line over a 400-wide one.
+        const glyph = {
+            id: 48,
+            xOffset: 0,
+            yOffset: 20,
+            xAdvance: 100,
+            kerning: {},
+            texture: { orig: { width: 100, height: 300 } },
+        };
+        Cache.set('fake-bitmap', {
+            chars: { '0': glyph, ' ': { ...glyph, id: 32, texture: undefined } },
+            lineHeight: 13,
+            baseLineOffset: 3,
+            baseMeasurementFontSize: 10,
+            fontMetrics: { fontSize: 10, ascent: 0, descent: 0 },
+        } as never);
+
+        const slot = { name: 'text_a' } as FakeSlot;
+        const spine = createFakeSpine({ slots: [slot] });
+        const ctl = new TextsController(asSpineMap({ hero: spine }));
+        ctl.settings = {
+            hero: {
+                a: {
+                    type: 'bitmapText',
+                    fontFamily: 'fake',
+                    fontSize: 10,
+                    letterSpacing: 0,
+                    wordWrap: true,
+                    maxWidth: 500,
+                    value: '0 0 0000',
+                },
+            },
+        };
+        ctl.add(slot as never, spine as never, 'a', 'hero');
+        const node = ctl.getInstances().get('a') as BitmapText;
+        const entry = ctl.settings!.hero.a as TextsJsonBitmapTextEntry;
+
+        // where the two glyphs of the short line land. The spaces around them are laid out
+        // and shifted too, but carry no texture to see.
+        const shortLine = () => {
+            const [line] = BitmapFontManager.getLayout(node.text, node.style).lines;
+            return line.charPositions.filter((_, index) => line.chars[index] !== ' ');
+        };
+
+        // an entry that does not say is centred, to match the anchor: the short line is
+        // inset by half of what it lacks of the long one
+        expect(node.style.align).toBe('center');
+        expect(shortLine()).toEqual([50, 250]);
+
+        // and one that says is taken at its word — re-applied the way the editor does it,
+        // by writing the entry and re-fitting the node
+        entry.align = 'left';
+        ctl.setMaxWidth('a', 500);
+        expect(node.style.align).toBe('left');
+        expect(shortLine()).toEqual([0, 200]);
+
+        entry.align = 'right';
+        ctl.setMaxWidth('a', 500);
+        expect(shortLine()).toEqual([100, 300]);
+
+        // justify puts the 100 the short line lacks into the space between its words rather
+        // than into a margin, so it reaches the long line's width from the same left edge
+        entry.align = 'justify';
+        ctl.setMaxWidth('a', 500);
+        expect(shortLine()).toEqual([0, 300]);
 
         Cache.remove('fake-bitmap');
     });

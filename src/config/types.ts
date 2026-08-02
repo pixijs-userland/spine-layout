@@ -109,6 +109,11 @@ export type TextsJsonBitmapTextEntry = TextsJsonEntryBase & {
      * to match the anchor that centres the node on its bone — a left-aligned block under
      * a centred anchor reads as a mistake. No effect on single-line text, whose one line
      * is the whole block however it is aligned.
+     *
+     * `justify` widens the spaces of every line but the last until it reaches the widest
+     * line of the block — the same alignment, on the same terms, that a `text` entry's
+     * `justify` gives. It follows that a value needs more than one line, and spaces on
+     * them to widen, before it looks any different from `left`.
      */
     align?: 'left' | 'center' | 'right' | 'justify';
 };

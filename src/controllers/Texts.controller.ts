@@ -411,6 +411,8 @@ export class TextsController {
                 const width = this.wrapWidth(entry as TextsJsonBitmapTextEntry);
                 style.wordWrap = width > 0;
                 if (width > 0) style.wordWrapWidth = width;
+                // and the same default a registered node gets — see applyAlign
+                style.align ??= 'center';
             }
             text.style = style as Partial<Text['style']>;
         }
@@ -491,11 +493,13 @@ export class TextsController {
         const entry = this.settingsFor(boneName);
         if (entry?.type !== 'bitmapText') return;
 
-        // both before the measuring below: the wrap width decides where the lines break,
-        // the spacing decides how tall they stack, and the centring compensation is read
-        // off the same layout the two of them produce
+        // all three before the measuring below: the wrap width decides where the lines
+        // break, the spacing decides how tall they stack, the alignment decides where along
+        // the block each one sits, and the centring compensation is read off the layout the
+        // three of them produce
         this.applyWrapWidth(entry as TextsJsonBitmapTextEntry, text);
         this.applyLineSpacing(entry as TextsJsonBitmapTextEntry, text);
+        this.applyAlign(entry as TextsJsonBitmapTextEntry, text);
 
         const { maxWidth, maxHeight } = entry as TextsJsonBitmapTextEntry;
 
@@ -605,12 +609,30 @@ export class TextsController {
         if (lineHeight && text.style.lineHeight !== lineHeight) {
             text.style.lineHeight = lineHeight;
         }
+    }
 
-        // Centred unless the entry says otherwise: the node is anchored at its middle, so
-        // lines ragged down one side hang off-centre from the bone they belong to. Safe as
-        // a default because multi-line bitmap text had no working appearance to preserve —
-        // until the spacing above, the lines were drawn on top of one another.
-        if (!entry.align) text.style.align = 'center';
+    /**
+     * Lines a bitmap value's lines up against each other — the entry's `align`, or `center`
+     * for one that does not say.
+     *
+     * Centred by default because the node is anchored at its middle, so lines left ragged
+     * down one side hang off-centre from the bone they belong to. Safe as a default because
+     * multi-line bitmap text had no working appearance to preserve: until
+     * {@link applyLineSpacing} gave it an advance, its lines were drawn on top of one
+     * another.
+     *
+     * Applied whatever the value currently reads, rather than only to text that has lines to
+     * align: a single line is laid out identically under every setting (pixi aligns each line
+     * against the widest in the block, and the widest is the only one), so there is nothing to
+     * spend a measurement deciding, and the style is then already right for the moment the
+     * value grows a second line.
+     */
+    private applyAlign(entry: TextsJsonBitmapTextEntry, text: Text | BitmapText) {
+        if (!(text instanceof BitmapText)) return;
+
+        const align = entry.align ?? 'center';
+
+        if (text.style.align !== align) text.style.align = align;
     }
 
     /**
