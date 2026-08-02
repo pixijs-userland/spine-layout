@@ -70,6 +70,24 @@ export type TextsJsonBitmapTextEntry = TextsJsonEntryBase & {
     type: 'bitmapText';
     offset?: { x: number; y: number };
     maxWidth?: number;
+    /**
+     * Distance between the baselines of a multi-line value. Optional, and normally left
+     * out: without it the advance is measured off the glyphs themselves, because the
+     * `lineHeight` our fonts declare in their header is in a different unit from their
+     * glyph rectangles and lays the lines on top of each other. Set it to overrule that
+     * measurement for one field — a number here is always used as written.
+     *
+     * Already forwarded to the Pixi style like every other entry key; only the type was
+     * missing, which left the one escape hatch from the measurement undeclarable.
+     */
+    lineHeight?: number;
+    /**
+     * How the lines of a multi-line value sit against each other. Defaults to `center`,
+     * to match the anchor that centres the node on its bone — a left-aligned block under
+     * a centred anchor reads as a mistake. No effect on single-line text, whose one line
+     * is the whole block however it is aligned.
+     */
+    align?: 'left' | 'center' | 'right' | 'justify';
 };
 
 export type TextsJsonEntry = TextsJsonTextEntry | TextsJsonBitmapTextEntry;

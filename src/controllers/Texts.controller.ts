@@ -463,6 +463,10 @@ export class TextsController {
         const entry = this.settingsFor(boneName);
         if (entry?.type !== 'bitmapText') return;
 
+        // before the measuring below: it decides how tall the text is, and the
+        // centring compensation is read off the same layout
+        this.applyLineSpacing(entry as TextsJsonBitmapTextEntry, text);
+
         const { maxWidth } = entry as TextsJsonBitmapTextEntry;
 
         // undo the previous pass before measuring, so the text is sized at full scale — and so
@@ -490,6 +494,83 @@ export class TextsController {
         text.y += shift.y;
         // recorded even when it is zero: its presence marks the scale as ours to undo
         this.#maxWidthShift.set(boneName, shift);
+    }
+
+    /**
+     * Gives multi-line bitmap text a line advance its glyphs actually fit in.
+     *
+     * Pixi spaces lines by the `lineHeight` in the font's own header, and our fonts are
+     * exported with that header in a different unit from the glyph rectangles — `green.fnt`
+     * declares `size=10 lineHeight=13` over glyphs ~380 units tall (the same mismatch
+     * {@link glyphCentre} exists to undo). Thirteen units of advance against a 380-unit
+     * glyph does not read as tight leading: the second line lands on top of the first, and
+     * a two-line message renders as one illegible smear.
+     *
+     * So the advance is measured off the glyphs instead — see {@link glyphLineHeight} — and
+     * handed back as `style.lineHeight`, which the layout uses in preference to the font's.
+     *
+     * Only ever for text that has a line to break: single-line text is laid out identically
+     * either way, and leaving its `lineHeight` alone keeps every existing field rendering
+     * exactly as it does today. An entry that sets its own `lineHeight` is left to it — a
+     * number written down in `texts.json` is a decision, not a default to improve on.
+     */
+    private applyLineSpacing(entry: TextsJsonBitmapTextEntry, text: Text | BitmapText) {
+        if (!(text instanceof BitmapText) || entry.lineHeight) return;
+
+        if (!text.text.includes('\n')) {
+            // back to the font's own spacing, for a field that no longer wraps
+            if (text.style.lineHeight) text.style.lineHeight = 0;
+            return;
+        }
+
+        const lineHeight = this.glyphLineHeight(text);
+
+        if (lineHeight && text.style.lineHeight !== lineHeight) {
+            text.style.lineHeight = lineHeight;
+        }
+
+        // Centred unless the entry says otherwise: the node is anchored at its middle, so
+        // lines ragged down one side hang off-centre from the bone they belong to. Safe as
+        // a default because multi-line bitmap text had no working appearance to preserve —
+        // until the spacing above, the lines were drawn on top of one another.
+        if (!entry.align) text.style.align = 'center';
+    }
+
+    /**
+     * How tall one line of this text's glyphs actually is, in the units `style.lineHeight`
+     * is given in — the ink extent of the characters in use, from the highest top to the
+     * lowest bottom, so ascenders and descenders on neighbouring lines meet rather than
+     * overlap.
+     *
+     * Measured from the characters the text actually contains rather than the whole font:
+     * the advance then suits the message being shown, and a font carrying one outsized
+     * glyph does not space out every line that has nothing to do with it.
+     *
+     * `undefined` when there are no glyphs to measure (empty text, or characters the font
+     * does not carry), which leaves the font's own spacing in place.
+     */
+    private glyphLineHeight(text: BitmapText): number | undefined {
+        const font = BitmapFontManager.getFont(text.text, text.style);
+        const layout = BitmapFontManager.getLayout(text.text, text.style);
+
+        let top = Infinity;
+        let bottom = -Infinity;
+
+        layout.lines.forEach((line) =>
+            line.chars.forEach((character) => {
+                const char = font.chars[character];
+                if (!char?.texture) return;
+
+                top = Math.min(top, char.yOffset);
+                bottom = Math.max(bottom, char.yOffset + char.texture.orig.height);
+            }),
+        );
+
+        if (top > bottom) return undefined;
+
+        // the layout takes `style.lineHeight` in display units and divides it back into
+        // font units by this same scale, so the measurement is converted on the way out
+        return (bottom - top) * layout.scale;
     }
 
     /**
