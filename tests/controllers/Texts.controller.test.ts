@@ -707,6 +707,173 @@ describe('TextsController – attach / settings / clear', () => {
         Cache.remove('fake-bitmap');
     });
 
+    it('hands a bitmap node to the browser fonts, sized and placed where its glyphs were', () => {
+        // The same font shape as above — a 300-unit tall glyph under a 13-unit line box — and
+        // a space, which is what pixi lands on for a character the font has no picture of.
+        const glyph = {
+            id: 48,
+            xOffset: 0,
+            yOffset: 20,
+            xAdvance: 100,
+            kerning: {},
+            texture: { orig: { width: 100, height: 300 } },
+        };
+        Cache.set('fake-bitmap', {
+            chars: { '0': glyph, ' ': { ...glyph, id: 32, texture: undefined } },
+            lineHeight: 13,
+            baseLineOffset: 3,
+            baseMeasurementFontSize: 10,
+            fontMetrics: { fontSize: 10, ascent: 0, descent: 0 },
+        } as never);
+
+        const slot = { name: 'text_a' } as FakeSlot;
+        const spine = createFakeSpine({ slots: [slot] });
+        const ctl = new TextsController(asSpineMap({ hero: spine }));
+        ctl.settings = {
+            hero: {
+                a: {
+                    type: 'bitmapText',
+                    fontFamily: 'fake',
+                    fontSize: 10,
+                    letterSpacing: -6,
+                    offset: { x: 0, y: -100 },
+                    value: '0',
+                },
+            },
+        };
+        ctl.add(slot as never, spine as never, 'a', 'hero');
+
+        ctl.useSystemFont('a', { fontFamily: 'sans-serif', fill: 0xffffff });
+        const node = ctl.getInstances().get('a') as Text;
+
+        expect(node).toBeInstanceOf(Text);
+
+        // the caller's style, and a size measured off the 300-unit glyphs being replaced —
+        // the entry's own `fontSize` of 10 is in the bitmap font's units and means nothing here
+        expect(node.style.fontFamily).toBe('sans-serif');
+        expect(node.style.fontSize).toBeCloseTo(375);
+        // and its `letterSpacing` of -6 is in those units too, so it is left behind
+        expect(node.style.letterSpacing).toBe(0);
+
+        // stood where the bitmap ink actually was — 165 below the origin, which the bitmap
+        // node's own anchor never took it back to, and 3 to the right of it, which is how far
+        // the tightened letter spacing pulled the advance box in from the glyph
+        expect(node.x).toBeCloseTo(3);
+        expect(node.y).toBeCloseTo(65);
+
+        // the value it was handed over for, which the atlas has nothing to draw
+        ctl.set('a', '残高');
+        expect(node.text).toBe('残高');
+
+        // a second hand-over is a no-op: it is a browser-drawn node already, and the glyphs
+        // that would have sized it are gone
+        ctl.useSystemFont('a', { fontFamily: 'serif' });
+        expect(ctl.getInstances().get('a')).toBe(node);
+        expect(node.style.fontFamily).toBe('sans-serif');
+
+        Cache.remove('fake-bitmap');
+    });
+
+    it('sizes a hand-over against a stand-in digit when the value has no glyphs left', () => {
+        const glyph = {
+            id: 48,
+            xOffset: 0,
+            yOffset: 20,
+            xAdvance: 100,
+            kerning: {},
+            texture: { orig: { width: 100, height: 300 } },
+        };
+        Cache.set('fake-bitmap', {
+            chars: { '0': glyph, ' ': { ...glyph, id: 32, texture: undefined } },
+            lineHeight: 13,
+            baseLineOffset: 3,
+            baseMeasurementFontSize: 10,
+            fontMetrics: { fontSize: 10, ascent: 0, descent: 0 },
+        } as never);
+
+        const slot = { name: 'text_a' } as FakeSlot;
+        const spine = createFakeSpine({ slots: [slot] });
+        const ctl = new TextsController(asSpineMap({ hero: spine }));
+        ctl.settings = {
+            hero: {
+                a: {
+                    type: 'bitmapText',
+                    fontFamily: 'fake',
+                    fontSize: 10,
+                    offset: { x: 0, y: -100 },
+                    value: '0',
+                },
+            },
+        };
+        ctl.add(slot as never, spine as never, 'a', 'hero');
+
+        // the undrawable value written first, so the node has nothing of its own left to
+        // measure — a caller is free to hand a node over in either order
+        ctl.set('a', 'バランス');
+        ctl.useSystemFont('a', {});
+        const node = ctl.getInstances().get('a') as Text;
+
+        expect(node.text).toBe('バランス');
+        expect(node.style.fontSize).toBeCloseTo(375);
+        expect(node.y).toBeCloseTo(65);
+
+        Cache.remove('fake-bitmap');
+    });
+
+    it('keeps a handed-over node wrapping and fitted to the box its entry names', () => {
+        const glyph = {
+            id: 48,
+            xOffset: 0,
+            yOffset: 20,
+            xAdvance: 100,
+            kerning: {},
+            texture: { orig: { width: 100, height: 300 } },
+        };
+        Cache.set('fake-bitmap', {
+            chars: { '0': glyph, ' ': { ...glyph, id: 32, texture: undefined } },
+            lineHeight: 13,
+            baseLineOffset: 3,
+            baseMeasurementFontSize: 10,
+            fontMetrics: { fontSize: 10, ascent: 0, descent: 0 },
+        } as never);
+
+        const slot = { name: 'text_a' } as FakeSlot;
+        const spine = createFakeSpine({ slots: [slot] });
+        const ctl = new TextsController(asSpineMap({ hero: spine }));
+        ctl.settings = {
+            hero: {
+                a: {
+                    type: 'bitmapText',
+                    fontFamily: 'fake',
+                    fontSize: 10,
+                    offset: { x: 0, y: -100 },
+                    wordWrap: true,
+                    value: '0',
+                },
+            },
+        };
+        ctl.add(slot as never, spine as never, 'a', 'hero');
+
+        ctl.useSystemFont('a', {});
+        const node = ctl.getInstances().get('a') as Text;
+
+        // a browser-drawn node measures itself through a canvas, which the node test
+        // environment has none of
+        Object.defineProperty(node, 'width', { get: () => 1000 });
+
+        ctl.setMaxWidth('a', 500);
+
+        // the box the artist sized the field to is still where its lines break and still what
+        // it is fitted to, whichever kind of node is drawing them
+        expect(node.style.wordWrap).toBe(true);
+        expect(node.style.wordWrapWidth).toBe(500);
+        expect(node.scale.x).toBeCloseTo(0.5);
+        // and the fit rides on the centring rather than replacing it
+        expect(node.y).toBeCloseTo(65);
+
+        Cache.remove('fake-bitmap');
+    });
+
     it('clear drops settings, runners, and instances', () => {
         const slot = { name: 'text_a' } as FakeSlot;
         const spine = createFakeSpine({ slots: [slot] });

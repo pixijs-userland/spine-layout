@@ -1,8 +1,29 @@
 import { Assets, BitmapFontManager, BitmapText, Container, Text } from 'pixi.js';
+import type { TextStyleOptions } from 'pixi.js';
 import type { Spine, SlotData } from '@esotericsoftware/spine-pixi-v8';
 import type { SpineID, TextsJson, TextsJsonBitmapTextEntry, TextsJsonEntry } from '../config/types';
 import { parcePointers } from '../config/parcePointers';
 import type { AnimationsController } from './Animations.controller';
+
+/**
+ * How much of an em the ink of a word covers, near enough — what turns the glyph height
+ * measured off a bitmap node into the `fontSize` a `Text` needs to stand in for it (see
+ * {@link TextsController.useSystemFont}).
+ *
+ * A rough figure on purpose. What is being matched is a *picture* of a word against a
+ * typeface the browser picks, and no ratio makes those two identical: a Latin cap or
+ * ascender fills about three quarters of its em, a Han character nearer nine tenths, and a
+ * UI label is one or the other rather than an average. Between them is close enough for a
+ * substitution to read as the label it replaces, and the entry's `maxWidth`/`maxHeight`
+ * catch whatever is left over.
+ */
+const INK_PER_EM = 0.8;
+
+/**
+ * What a bitmap node is measured against when its own value has no glyphs left to measure —
+ * a digit, which every font a game ships carries.
+ */
+const INK_PROBE = '0';
 
 export class TextsController {
     /** Text nodes keyed by their registration key (see {@link configKey}). */
@@ -20,6 +41,13 @@ export class TextsController {
      * base the compensation is added to, rather than being overwritten by it.
      */
     #maxSizeShift: Map<string, { x: number; y: number }> = new Map();
+    /**
+     * Where the bitmap glyphs a browser-drawn node replaced actually sat, keyed by
+     * registration key — see {@link useSystemFont}. Kept apart from the node position for the
+     * same reason {@link #maxSizeShift} is: the configured offset stays the base both shifts
+     * ride on, so a later `setOffset` cannot lose either of them.
+     */
+    #systemFontShift: Map<string, { x: number; y: number }> = new Map();
 
     /**
      * @param spines Live spine registry.
@@ -245,10 +273,12 @@ export class TextsController {
         }
         keys.forEach((key) => {
             const text = this.texts.get(key)!;
-            // the offset is the base position; any max-width compensation rides on top of it
+            // the offset is the base position; a substitution's centring and any max-width
+            // compensation ride on top of it
+            const centring = this.#systemFontShift.get(key);
             const shift = this.#maxSizeShift.get(key);
-            text.x = offset.x + (shift?.x ?? 0);
-            text.y = offset.y + (shift?.y ?? 0);
+            text.x = offset.x + (centring?.x ?? 0) + (shift?.x ?? 0);
+            text.y = offset.y + (centring?.y ?? 0) + (shift?.y ?? 0);
         });
     }
 
@@ -304,8 +334,95 @@ export class TextsController {
         parent.addChild(newText);
 
         this.texts.set(key, newText);
-        // the fresh node carries neither the old scale nor its compensation
+        // the fresh node carries neither the old scale nor its compensation, and the centring
+        // that stood a substitution where bitmap glyphs were belongs to the node that is gone
         this.#maxSizeShift.delete(key);
+        this.#systemFontShift.delete(key);
+    }
+
+    /**
+     * Hands a text node to the browser's own fonts: the `BitmapText` is swapped for a `Text`,
+     * sized and placed to stand where its glyphs stood.
+     *
+     * For a value the game's bitmap font holds no pictures of — a script its atlas was never
+     * generated over. A `BitmapText` draws *nothing* for a character it has no glyph for, so
+     * the choice is between the artist's lettering and the words being on screen at all; this
+     * is how a caller takes the words. Everything else about the node is kept: its place, the
+     * size it renders at, the box it is fitted to.
+     *
+     * The `style` is the caller's — the family to fall through, the fill, whatever it wants a
+     * substitution to look like. The *size* is not: it is measured off the glyphs being
+     * replaced, so the standing-in word comes out about as big as the drawn one it stands for
+     * (see {@link INK_PER_EM}), which no caller could work out for itself.
+     *
+     * A node that is already a `Text` is left alone. It renders through the browser already,
+     * and the bitmap glyphs that would have sized it are gone.
+     */
+    useSystemFont(boneName: string, style: TextStyleOptions = {}) {
+        this.resolveKeys(boneName).forEach((key) => this.useSystemFontOne(key, style));
+    }
+
+    private useSystemFontOne(key: string, style: TextStyleOptions) {
+        const bitmap = this.texts.get(key);
+        if (!(bitmap instanceof BitmapText)) return;
+
+        // measured first, while there are still glyphs to measure
+        const ink = this.measureInk(bitmap);
+        const entry = this.settingsFor(key) as TextsJsonBitmapTextEntry | undefined;
+
+        this.setTextTypeOne(key, 'text');
+
+        const text = this.texts.get(key);
+        if (!text) return;
+
+        // Built rather than copied from the entry: its `fontSize` and `letterSpacing` are in
+        // the units of a bitmap font's own header — a `fontSize` of 0.8 against glyphs 324
+        // units tall — and mean nothing to a `Text`, which takes both in pixels. The
+        // alignment is the one key that carries, and it has to be set here because
+        // `applyAlign` only speaks to bitmap nodes.
+        text.style = {
+            align: entry?.align ?? 'center',
+            ...style,
+            // a node with nothing measurable keeps pixi's default size, which is at least a
+            // word on screen to be seen and fixed
+            ...(ink && { fontSize: ink.height / INK_PER_EM }),
+        };
+
+        // Where the bitmap glyphs sat, which is not where the node sits: our fonts anchor a
+        // bitmap node on a line box authored in a different unit from its glyphs, leaving the
+        // glyphs hundreds of units below the origin (see {@link glyphBox}) — which is what the
+        // hand-authored offsets in `texts.json` were written against. A `Text` centres on its
+        // origin properly, so it has to be moved to the spot the ink it replaces occupied.
+        this.#systemFontShift.set(key, ink?.centre ?? { x: 0, y: 0 });
+        this.setOffset(key, entry?.offset ?? { x: 0, y: 0 });
+        this.applyMaxSize(key, text);
+    }
+
+    /**
+     * How tall a bitmap node's glyphs render and where they sit, for a substitution that has
+     * to match them — measured against {@link INK_PROBE} when the node's own value has
+     * nothing to measure, which is the case whenever the caller has already written the
+     * undrawable string into it.
+     */
+    private measureInk(
+        text: BitmapText,
+    ): { height: number; centre: { x: number; y: number } } | undefined {
+        const measure = () => {
+            const height = this.glyphHeight(text);
+            const centre = this.glyphCentre(text);
+
+            return height !== undefined && centre !== undefined ? { height, centre } : undefined;
+        };
+
+        const measured = measure();
+        if (measured) return measured;
+
+        const previous = text.text;
+        text.text = INK_PROBE;
+        const probed = measure();
+        text.text = previous;
+
+        return probed;
     }
 
     /** Applies a partial Pixi.js `TextStyle` to the named text node. */
@@ -469,6 +586,7 @@ export class TextsController {
         });
         this.#textRunners.clear();
         this.#maxSizeShift.clear();
+        this.#systemFontShift.clear();
         this.texts.clear();
         this.#meta.clear();
         this.#textSettings = undefined;
@@ -567,10 +685,14 @@ export class TextsController {
      * With no `maxWidth` the wrap is switched off rather than left on pixi's 100: an entry
      * that never says how wide it is has not asked for lines a hundred pixels long, and text
      * running past its bone is a plainer thing to see and fix than text minced into a column.
+     *
+     * Applies to a `Text` node as much as a bitmap one, because a bitmap entry whose node has
+     * been handed to the browser's fonts ({@link useSystemFont}) is still that entry: the box
+     * the artist sized the field to is where its lines have to break, whichever kind of node
+     * is drawing them. An entry authored as `text` never reaches here — {@link applyMaxSize}
+     * turns back before it — and keeps wrapping at its own `wordWrapWidth`.
      */
     private applyWrapWidth(entry: TextsJsonBitmapTextEntry, text: Text | BitmapText) {
-        if (!(text instanceof BitmapText)) return;
-
         const width = this.wrapWidth(entry);
 
         text.style.wordWrap = width > 0;
