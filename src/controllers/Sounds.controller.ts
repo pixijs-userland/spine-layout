@@ -1,6 +1,14 @@
 import { Howl, type HowlOptions, Howler } from 'howler';
 import type { AssetSrc, AssetsManifest, UnresolvedAsset } from 'pixi.js';
 
+/**
+ * Two places asking for the same FX this close together mean one event, heard twice: the
+ * animations of several spines fire the same named event on the same frame. Howler happily
+ * starts a second sound id over the first, and identical waveforms in phase read as one
+ * sound at double the volume. Play the first, drop the rest of the burst.
+ */
+const DUPLICATE_FX_WINDOW_MS = 50;
+
 export type SoundSettings = {
     debug?: boolean;
     musicMuted: boolean;
@@ -25,6 +33,8 @@ export class Sounds {
     private sounds: Map<string, Howl> = new Map();
     private fxSounds: Map<string, Howl> = new Map();
     private musicSounds: Map<string, Howl> = new Map();
+    /** When each FX request was last honoured, keyed by request — see DUPLICATE_FX_WINDOW_MS */
+    private lastFXPlayedAt: Map<string, number> = new Map();
     private activeMusic: string | null = null;
     private onActivationCallbacks: (() => void)[] = [];
     private onReadyCallbacks: (() => void)[] = [];
@@ -138,6 +148,22 @@ export class Sounds {
             return;
         }
 
+        // Keyed by the request rather than the resolved sound: a set of variants asked for
+        // twice at once picks two different files, and those stack just as loudly.
+        const requestKey = Array.isArray(fx) ? fx.join('|') : fx;
+        const now = Date.now();
+        const lastPlayedAt = this.lastFXPlayedAt.get(requestKey);
+
+        if (lastPlayedAt !== undefined && now - lastPlayedAt < DUPLICATE_FX_WINDOW_MS) {
+            if (this.settings.debug) {
+                console.log('🎶 Skip duplicate FX', requestKey);
+            }
+
+            return;
+        }
+
+        this.lastFXPlayedAt.set(requestKey, now);
+
         const randomFromArray = Array.isArray(fx) ? fx[Math.floor(Math.random() * fx.length)] : fx;
         const sound = randomFromArray;
         const fxInstance = this.fxSounds.get(sound);
@@ -171,6 +197,10 @@ export class Sounds {
 
     stopFX(fx: string) {
         const fxInstance = this.fxSounds.get(fx);
+
+        // A stop is deliberate, so whatever follows it is a new sound rather than the tail of
+        // a burst: let it through even if it lands inside the duplicate window.
+        this.lastFXPlayedAt.delete(fx);
 
         if (fxInstance) {
             if (this.settings.debug) {

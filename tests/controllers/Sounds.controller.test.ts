@@ -40,7 +40,14 @@ function makeManifest(aliases: string[]): AssetsManifest {
 let fakeHowl: FakeHowl;
 let visibilityHandler: (() => void) | undefined;
 
+/** Step past the window in which a repeated FX request counts as one burst and is dropped. */
+function passDuplicateWindow() {
+    vi.advanceTimersByTime(50);
+}
+
 beforeEach(() => {
+    // Sounds dates each FX request to drop duplicates, so the tests own the clock.
+    vi.useFakeTimers();
     fakeHowl = makeFakeHowl();
     vi.mocked(Howl).mockClear();
     // Regular function (not arrow) so it can be called with `new`.
@@ -69,6 +76,7 @@ beforeEach(() => {
 
 afterEach(() => {
     vi.restoreAllMocks();
+    vi.useRealTimers();
 });
 
 // ─── Construction ─────────────────────────────────────────────────────────────
@@ -227,6 +235,7 @@ describe('Sounds – playFX', () => {
         s.onUserInteraction();
         await s.playFX('coin');
         const callsBefore = vi.mocked(Howl).mock.calls.length;
+        passDuplicateWindow();
         await s.playFX('coin');
         expect(vi.mocked(Howl).mock.calls.length).toBe(callsBefore);
         expect(fakeHowl.play).toHaveBeenCalledOnce();
@@ -241,6 +250,7 @@ describe('Sounds – playFX', () => {
         await s.playFX('spin', true);
         fakeHowl.playing.mockReturnValue(true);
         fakeHowl.play.mockClear();
+        passDuplicateWindow();
 
         // a looping FX re-fires on every cycle of its animation — it must not stack
         await s.playFX('spin', true);
@@ -257,6 +267,7 @@ describe('Sounds – playFX', () => {
         await s.playFX('spin', true);
         fakeHowl.playing.mockReturnValue(false);
         fakeHowl.play.mockClear();
+        passDuplicateWindow();
 
         await s.playFX('spin', true);
 
@@ -281,6 +292,80 @@ describe('Sounds – playFX', () => {
         s.onUserInteraction();
         await s.playFX(['sfx_a', 'sfx_b']);
         expect(Howl).toHaveBeenCalledOnce();
+    });
+});
+
+// ─── Duplicate FX ─────────────────────────────────────────────────────────────
+
+describe('Sounds – duplicate fx', () => {
+    it('plays the same fx once when several places ask for it at the same moment', async () => {
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+        const s = new Sounds();
+        s.init(makeManifest(['coin']));
+        s.onUserInteraction();
+
+        // three spines firing the same animation event on one frame: one coin, not one at
+        // triple volume
+        await s.playFX('coin');
+        await s.playFX('coin');
+        await s.playFX('coin');
+
+        expect(Howl).toHaveBeenCalledOnce();
+        expect(fakeHowl.play).not.toHaveBeenCalled();
+    });
+
+    it('plays again once the window has passed', async () => {
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+        const s = new Sounds();
+        s.init(makeManifest(['coin']));
+        s.onUserInteraction();
+
+        await s.playFX('coin');
+        vi.advanceTimersByTime(49);
+        await s.playFX('coin');
+        expect(fakeHowl.play).not.toHaveBeenCalled();
+
+        vi.advanceTimersByTime(1);
+        await s.playFX('coin');
+        expect(fakeHowl.play).toHaveBeenCalledOnce();
+    });
+
+    it('drops a duplicate request for the same set of variants', async () => {
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+        const s = new Sounds();
+        s.init(makeManifest(['sfx_a', 'sfx_b']));
+        s.onUserInteraction();
+
+        // two different random picks stack just as loudly as the same one twice
+        await s.playFX(['sfx_a', 'sfx_b']);
+        await s.playFX(['sfx_a', 'sfx_b']);
+
+        expect(Howl).toHaveBeenCalledOnce();
+    });
+
+    it('keeps different fx independent', async () => {
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+        const s = new Sounds();
+        s.init(makeManifest(['coin', 'thud']));
+        s.onUserInteraction();
+
+        await s.playFX('coin');
+        await s.playFX('thud');
+
+        expect(Howl).toHaveBeenCalledTimes(2);
+    });
+
+    it('lets an fx replay right after it was stopped', async () => {
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+        const s = new Sounds();
+        s.init(makeManifest(['coin']));
+        s.onUserInteraction();
+
+        await s.playFX('coin');
+        s.stopFX('coin');
+        await s.playFX('coin');
+
+        expect(fakeHowl.play).toHaveBeenCalledOnce();
     });
 });
 
