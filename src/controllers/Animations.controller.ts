@@ -157,6 +157,24 @@ export class AnimationsController {
     getAll(): string[] {
         return Array.from(this.animations.keys());
     }
+    /**
+     * Returns a map of spineID → the animation names (without modifiers) that spine holds,
+     * for each spine that has any. An animation authored in several spine files appears
+     * under each of them — which is exactly what {@link playByName} plays it on.
+     */
+    getBySpine(): Map<SpineID, string[]> {
+        const result = new Map<SpineID, string[]>();
+
+        this.spines.forEach((_, spineID) => {
+            const names: string[] = [];
+            this.animations.forEach((registry, animation) => {
+                if (registry.has(spineID)) names.push(animation);
+            });
+            if (names.length > 0) result.set(spineID, names);
+        });
+
+        return result;
+    }
     /** Returns all registered state names (from `state_<name>/` folders). */
     getStates(): string[] {
         return Array.from(this.stateAnimations.keys());

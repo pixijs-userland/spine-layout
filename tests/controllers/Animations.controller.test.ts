@@ -60,6 +60,24 @@ describe('AnimationsController – registration & getters', () => {
         expect(ctl.getEvents()).toEqual(['click']);
     });
 
+    it('groups animations by the spine that holds them via getBySpine, listing shared ones under each', () => {
+        const hero = makeHero();
+        const prop = createFakeSpine({ animations: [{ name: 'misc/wave' }, { name: 'spin_loop' }] });
+        const mute = createFakeSpine({ animations: [] });
+        const ctl = new AnimationsController(asSpineMap({ hero, prop, mute }));
+        ctl.registerSpine('hero', hero as never);
+        ctl.registerSpine('prop', prop as never);
+        ctl.registerSpine('mute', mute as never);
+
+        const bySpine = ctl.getBySpine();
+
+        expect([...bySpine.keys()]).toEqual(['hero', 'prop']);
+        expect(bySpine.get('hero')!.sort()).toEqual(
+            ['event_click/jump', 'misc/wave', 'state_idle/blink', 'state_idle/breathe'].sort(),
+        );
+        expect(bySpine.get('prop')!.sort()).toEqual(['misc/wave', 'spin'].sort());
+    });
+
     it('warns when state_/event_ animation has no name segment after the slash prefix', () => {
         const hero = createFakeSpine({ animations: [{ name: 'state_' }] });
         const ctl = new AnimationsController(asSpineMap({ hero }));

@@ -27,6 +27,16 @@ Returns all registered animation names (without modifiers).
 
 ---
 
+### getBySpine
+
+```ts
+getBySpine(): Map<string, string[]>
+```
+
+Returns a map of spineID → the animation names (without modifiers) that spine holds, for each spine that has any. An animation authored in several spine files appears under each of them.
+
+---
+
 ### getStates
 
 ```ts
