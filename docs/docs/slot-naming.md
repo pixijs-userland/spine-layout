@@ -5,11 +5,11 @@ sidebar_position: 3
 
 The scene is assembled by scanning slot names. No code changes are needed when the Spine file uses the right prefixes:
 
-| Prefix         | Effect                                                                       |
-| -------------- | ---------------------------------------------------------------------------- |
-| `spine_<id>`   | Attach the child spine with that ID into this slot                           |
+| Prefix         | Effect                                                                                                      |
+| -------------- | ----------------------------------------------------------------------------------------------------------- |
+| `spine_<id>`   | Attach the child spine with that ID into this slot                                                          |
 | `text_<key>`   | Create a text node here (configured via `settings/texts.json`); fires `<key>_change` when its value changes |
-| `button_<key>` | Create an invisible interactive sprite; fires `<key>_click/hover/...` events |
+| `button_<key>` | Create an invisible interactive sprite; fires `<key>_click/hover/...` events                                |
 
 ## Text change events
 
