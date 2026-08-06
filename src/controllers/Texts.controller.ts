@@ -100,6 +100,19 @@ export class TextsController {
         return key ? this.texts.get(key)?.text : undefined;
     }
 
+    /**
+     * Whether the loaded export carries a text node under this name — an exact registration key
+     * or a bare slot text key, the same two things {@link set} accepts.
+     *
+     * For a caller whose field is the game's to ship rather than the engine's to require: a game
+     * that authored the slot gets the presentation written against it, and one that did not is
+     * left alone. {@link set} logs an error for a name it cannot find, which is right for a
+     * misspelt key and wrong for a field this game simply does not have.
+     */
+    has(boneName: string): boolean {
+        return this.resolveKeys(boneName).length > 0;
+    }
+
     // ─── Registration key resolution (private) ─────────────────────────────────────
 
     /**
@@ -156,6 +169,25 @@ export class TextsController {
             if (meta.textKey === name) keys.push(key);
         });
         return keys;
+    }
+
+    /**
+     * Puts a value in a text node without announcing it — the write {@link set} makes, minus the
+     * `<textKey>_change` event.
+     *
+     * For a value that is not news: a field being put into the state it should have opened in,
+     * before anything has looked at it. Registration seeds the configured `value` this way (see
+     * {@link add}), and a caller correcting that value at startup is doing the same thing — an
+     * export that animates its field on `_change` would otherwise play that animation over a
+     * change the player was never shown the before of.
+     *
+     * Never for a value the game has arrived at. Those are changes, and the export is entitled to
+     * hear about them.
+     */
+    async seed(boneName: string, text: string) {
+        await Promise.all(
+            this.resolveKeys(boneName).map((key) => this.setOne(key, text, false, 0, false)),
+        );
     }
 
     /**
