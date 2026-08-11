@@ -252,6 +252,21 @@ describe('AnimationsController – playback', () => {
         expect(enemy.__setAnimationCalls).toEqual([{ track: 0, name: 'misc/wave', loop: false }]);
     });
 
+    it('playByName leaves the other spines alone when given one to play on', async () => {
+        const hero = makeHero();
+        const enemy = makeHero();
+        const ctl = new AnimationsController(asSpineMap({ hero, enemy }));
+        ctl.registerSpine('hero', hero as never);
+        ctl.registerSpine('enemy', enemy as never);
+
+        const promise = ctl.playByName('misc/wave', false, 'hero');
+        await vi.runAllTimersAsync();
+        await promise;
+
+        expect(hero.__setAnimationCalls).toEqual([{ track: 0, name: 'misc/wave', loop: false }]);
+        expect(enemy.__setAnimationCalls).toEqual([]);
+    });
+
     it('play gives animations that pose different things a track each', async () => {
         const hero = createFakeSpine({
             animations: [

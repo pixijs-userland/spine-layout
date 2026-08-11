@@ -304,11 +304,16 @@ export class AnimationsController {
         await Promise.all(promises);
     }
 
-    /** Plays the named animation on every spine that has it. Pass `playSolo=true` to stop all other animations first. */
-    async playByName(animationName: string, playSolo = false) {
+    /**
+     * Plays the named animation on every spine that has it. Pass `playSolo=true` to stop all
+     * other animations first, and `onSpineID` to play it on that one file alone — the same
+     * animation authored in several files is otherwise indivisible from the outside.
+     */
+    async playByName(animationName: string, playSolo = false, onSpineID?: SpineID) {
         const promises: Promise<void>[] = [];
 
         this.animations.get(animationName)?.forEach((animations, spineID) => {
+            if (onSpineID !== undefined && spineID !== onSpineID) return;
             animations.forEach(async (animation) => {
                 promises.push(this.play(spineID, animation, playSolo));
                 log.add(LOG.PLAY_ANIMATION, spineID, `${animationName} -> ${animation}`);
