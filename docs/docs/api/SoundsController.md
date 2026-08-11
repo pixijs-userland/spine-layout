@@ -1,6 +1,6 @@
 ---
 title: Sounds
-sidebar_position: 7
+sidebar_position: 8
 ---
 
 Standalone audio controller built on [Howler.js](https://howlerjs.com/). Manages two categories of audio — **FX** (one-shots) and **Music** (looping tracks) — with a browser user-interaction gate and automatic tab-visibility muting.

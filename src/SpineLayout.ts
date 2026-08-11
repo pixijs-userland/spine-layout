@@ -24,6 +24,7 @@ import { SkinsController } from './controllers/Skins.controller';
 import { TextsController } from './controllers/Texts.controller';
 import { SceneController } from './controllers/Scene.controller';
 import { SpineController } from './controllers/Spine.controller';
+import { PointerController } from './controllers/Pointer.controller';
 import { sounds } from './controllers/Sounds.controller';
 
 export class SpineLayout extends Container {
@@ -35,6 +36,7 @@ export class SpineLayout extends Container {
     #texts: TextsController;
     #spine: SpineController;
     #scene: SceneController;
+    #pointer: PointerController;
 
     constructor(private options?: SpineLayoutOptions) {
         super();
@@ -55,6 +57,7 @@ export class SpineLayout extends Container {
             this.#spine,
             options,
         );
+        this.#pointer = new PointerController(this.#spines, this);
 
         if (options?.manifest) {
             this.createInstancesFromManifest(options.manifest);
@@ -84,6 +87,9 @@ export class SpineLayout extends Container {
     }
     get spine(): SpineController {
         return this.#spine;
+    }
+    get pointer(): PointerController {
+        return this.#pointer;
     }
 
     set textSettings(settings: TextsJson) {
@@ -303,6 +309,7 @@ export class SpineLayout extends Container {
         this.#scene.attachTexts();
         this.#scene.activateButtonBones();
         this.#scene.syncSlotObjectsWithDrawOrder();
+        this.#pointer.attach();
     }
 
     // ─── Lifecycle ───────────────────────────────────────────────────────────────
@@ -312,6 +319,7 @@ export class SpineLayout extends Container {
         this.#animations.clear();
         this.#skins.clear();
         this.#scene.clear();
+        this.#pointer.clear();
 
         this.#spines.forEach((spine) => spine.destroy());
         this.#spines.clear();

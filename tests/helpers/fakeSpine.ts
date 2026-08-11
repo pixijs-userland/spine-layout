@@ -12,14 +12,39 @@ export type FakeAnimation = {
      */
     poses?: string[];
 };
-export type FakeBone = { name: string; worldX?: number; worldY?: number; parent?: string };
+export type FakeBone = {
+    name: string;
+    worldX?: number;
+    worldY?: number;
+    parent?: string;
+    /** The bone's setup position in its parent's space — where an unposed bone sits. */
+    setupX?: number;
+    setupY?: number;
+};
 export type FakeSlot = {
     name: string;
     attachment?: unknown;
     boneName?: string;
 };
 
-export type FakeSkeletonBone = { data: { name: string }; parent: FakeSkeletonBone | null };
+/**
+ * A live skeleton bone, as the controllers read one: its data (name and setup pose), its
+ * parent link, and the pose that gets written while animating.
+ *
+ * `worldToParent` mirrors the runtime for an unrotated, unscaled parent — it subtracts the
+ * parent's world position — which is all the bone maths under test needs.
+ */
+export type FakeSkeletonBone = {
+    data: { name: string; setupPose: { x: number; y: number } };
+    parent: FakeSkeletonBone | null;
+    pose: {
+        x: number;
+        y: number;
+        worldX: number;
+        worldY: number;
+        worldToParent: (point: { x: number; y: number }) => { x: number; y: number };
+    };
+};
 export type FakeSkeletonSlot = { data: { name: string }; bone: FakeSkeletonBone };
 export type FakeSkin = { name: string };
 
@@ -67,6 +92,12 @@ export type FakeSpine = Container & {
     };
     skeleton: {
         slots: FakeSkeletonSlot[];
+        bones: FakeSkeletonBone[];
+        /** Where the skeleton itself sits, and how it is scaled — spine-pixi runs it y-down. */
+        x: number;
+        y: number;
+        scaleX: number;
+        scaleY: number;
         drawOrder: { appliedPose: Array<{ data: { name: string } }> };
         data: {
             slots: FakeSlot[];
@@ -87,6 +118,8 @@ export type FakeSpine = Container & {
     addSlotObject: (name: string, child: Container) => void;
     getSlotObject: (slot: string | { data: { name: string } }) => Container | undefined;
     update: (dt: number) => void;
+    /** Called by the runtime once the animations are applied, before the world transforms. */
+    beforeUpdateWorldTransforms: (spine: unknown) => void;
     __setAnimationCalls: Array<{ track: number; name: string; loop: boolean }>;
     __listeners: FakeSpineEventListener[];
     __slotChildren: Map<string, Container[]>;
@@ -185,20 +218,48 @@ export function createFakeSpine(options: FakeSpineOptions = {}): FakeSpine {
 
     // Mirror the runtime skeleton: bones carry parent links and every slot hangs
     // from a bone (a detached placeholder when the fixture doesn't specify one).
+    const makeSkeletonBone = (bone: FakeBone): FakeSkeletonBone => {
+        const skeletonBone: FakeSkeletonBone = {
+            data: {
+                name: bone.name,
+                setupPose: { x: bone.setupX ?? 0, y: bone.setupY ?? 0 },
+            },
+            parent: null,
+            pose: {
+                x: bone.setupX ?? 0,
+                y: bone.setupY ?? 0,
+                worldX: bone.worldX ?? 0,
+                worldY: bone.worldY ?? 0,
+                worldToParent: (point) => {
+                    const parent = skeletonBone.parent;
+                    if (parent) {
+                        point.x -= parent.pose.worldX;
+                        point.y -= parent.pose.worldY;
+                    }
+                    return point;
+                },
+            },
+        };
+        return skeletonBone;
+    };
     const skeletonBones = new Map<string, FakeSkeletonBone>(
-        bones.map((b) => [b.name, { data: { name: b.name }, parent: null }]),
+        bones.map((b) => [b.name, makeSkeletonBone(b)]),
     );
     bones.forEach((b) => {
         if (b.parent) skeletonBones.get(b.name)!.parent = skeletonBones.get(b.parent) ?? null;
     });
     const skeletonSlotBone = (s: FakeSlot): FakeSkeletonBone =>
-        (s.boneName && skeletonBones.get(s.boneName)) || {
-            data: { name: s.boneName ?? '' },
-            parent: null,
-        };
+        (s.boneName && skeletonBones.get(s.boneName)) ||
+        makeSkeletonBone({ name: s.boneName ?? '' });
 
     spine.skeleton = {
         slots: slots.map((s) => ({ data: { name: s.name }, bone: skeletonSlotBone(s) })),
+        bones: [...skeletonBones.values()],
+        x: 0,
+        y: 0,
+        scaleX: 1,
+        // spine-pixi sets `Skeleton.yDown`, which lands on the skeleton as a negative scaleY.
+        scaleY: -1,
         drawOrder: { appliedPose: slots.map((s) => ({ data: { name: s.name } })) },
         data: {
             slots,
@@ -231,6 +292,9 @@ export function createFakeSpine(options: FakeSpineOptions = {}): FakeSpine {
     spine.update = () => {
         spine.__worldTransformUpdates++;
     };
+
+    // The runtime's own hook is a no-op until something chains onto it.
+    spine.beforeUpdateWorldTransforms = () => { };
 
     spine.addSlotObject = (name, child) => {
         const list = spine.__slotChildren.get(name) ?? [];
