@@ -139,18 +139,21 @@ export class Sounds {
         // triggered by the init animation (which runs before the first user
         // interaction) should start playing immediately in a muted state — the
         // first interaction then unmutes them via `onUserInteraction` -> `unmute`.
-        if (
-            !fx ||
-            (Array.isArray(fx) && fx.length === 0) ||
-            !this.initialized ||
-            !this.hasSounds(fx)
-        ) {
+        if (!fx || (Array.isArray(fx) && fx.length === 0) || !this.initialized) {
+            return;
+        }
+
+        if (!this.hasSounds(fx)) {
+            if (this.settings.debug) {
+                console.warn(`🎶 No sound registered for "${this.requestKey(fx)}"`);
+            }
+
             return;
         }
 
         // Keyed by the request rather than the resolved sound: a set of variants asked for
         // twice at once picks two different files, and those stack just as loudly.
-        const requestKey = Array.isArray(fx) ? fx.join('|') : fx;
+        const requestKey = this.requestKey(fx);
         const now = Date.now();
         const lastPlayedAt = this.lastFXPlayedAt.get(requestKey);
 
@@ -411,19 +414,42 @@ export class Sounds {
         }
     }
 
+    private requestKey(fx: string | string[]): string {
+        return Array.isArray(fx) ? fx.join('|') : fx;
+    }
+
+    /**
+     * Spine events name a sound by its bare file name (`multiplier`), but that bare alias is not
+     * guaranteed to reach the manifest: assetpack's `filterUniqueNames` silently drops any alias
+     * claimed by more than one asset, across every bundle. A `multiplier.mp3` sound and a
+     * `multiplier.fnt` font knock each other's shortcut out, and the sound then resolves to
+     * nothing while every uncontested name keeps working. The bundle-qualified alias
+     * (`sounds/multiplier`) can only ever be claimed by the sound, so ask for that first.
+     *
+     * Both forms are set to the same sources by `extractSoundNames`, and only the sounds bundle
+     * is read into `soundNames`, so preferring one over the other cannot pick a different file.
+     */
+    private resolveSoundKey(soundName: string): string | null {
+        const bundle = this.settings.prefix || 'sounds';
+
+        return [`${bundle}/${soundName}`, soundName].find((key) => this.soundNames.has(key)) ?? null;
+    }
+
     private hasSounds(fx: string | string[]): boolean {
         const names = Array.isArray(fx) ? fx : [fx];
-        return names.some((name) => this.soundNames.has(name));
+        return names.some((name) => this.resolveSoundKey(name) !== null);
     }
 
     private getSoundName(soundName: string): string[] {
-        const key = this.settings.prefix ? `${this.settings.prefix}/${soundName}` : soundName;
-        const soundData = this.soundNames.get(key);
+        const key = this.resolveSoundKey(soundName);
+        const soundData = key === null ? undefined : this.soundNames.get(key);
 
         if (!soundData) {
             if (this.settings.debug) {
                 const availableSounds = Array.from(this.soundNames.keys()).join(', ');
-                console.error(`Sound not found: "${key}". Available sounds: [${availableSounds}]`);
+                console.error(
+                    `Sound not found: "${soundName}". Available sounds: [${availableSounds}]`,
+                );
             }
             return [];
         }
