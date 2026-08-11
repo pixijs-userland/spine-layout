@@ -8,7 +8,7 @@ Full documentation: [userland.pixijs.io/spine-layout](https://userland.pixijs.io
 
 ## Architecture
 
-`SpineLayout` is a Pixi.js `Container` that acts as a facade over five specialized controllers:
+`SpineLayout` is a Pixi.js `Container` that acts as a facade over six specialized controllers:
 
 ```
 SpineLayout (Container)
@@ -16,7 +16,8 @@ SpineLayout (Container)
 ├── SkinsController       — skin switching across spines
 ├── SpineController       — bone/slot queries, global positions, cloning
 ├── TextsController       — dynamic text rendering & number animation
-└── SceneController       — hierarchical composition (nest spines, attach texts/buttons)
+├── SceneController       — hierarchical composition (nest spines, attach texts/buttons)
+└── PointerController     — bones that follow the mouse or finger
 ```
 
 All spines are stored in a central `Map<SpineID, Spine>` registry and each controller operates against that registry.
@@ -57,6 +58,36 @@ The scene is assembled by scanning slot names. No code changes are needed when t
 | `spine_<id>`   | Attach the child spine with that ID into this slot                           |
 | `text_<key>`   | Create a text node here (configured via `settings/texts.json`)               |
 | `button_<key>` | Create an invisible interactive sprite; fires `<key>_click/hover/...` events |
+
+Names also carry modifiers — suffixes that change what a bone or slot does:
+
+| Suffix           | Effect                                                                  |
+| ---------------- | ----------------------------------------------------------------------- |
+| `_followPointer` | The **bone** tracks the pointer; on a slot, the bone it hangs from does |
+
+---
+
+## Bones that follow the pointer
+
+Name a bone `<name>_followPointer` and it sits wherever the pointer is — the mouse on desktop,
+the finger being dragged on a touch screen — carrying everything hanging from it: attachments,
+nested spines, text nodes. No code is needed; naming the bone is the whole setup.
+
+```
+crosshair_followPointer   ← bone: sits under the pointer
+  spine_wand              ← nested spine under that bone: comes along
+glow_followPointer        ← slot: moves the bone it hangs from
+```
+
+Typical uses are an IK target (the arm aims where the mouse is), a crosshair, or a parallax
+layer that drifts only part of the way:
+
+```typescript
+layout.pointer.strength = 0.2; // every follow bone travels a fifth of the way
+layout.pointer.setStrength('clouds_followPointer', 0.05); // this one barely at all
+layout.pointer.setPosition(x, y); // drive it from a gamepad instead of a pointer
+layout.pointer.enabled = false; // bones back to their setup position
+```
 
 ---
 

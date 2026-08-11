@@ -11,4 +11,5 @@ export const LOG = {
     EVENT: `⚡ Play event`,
     ANIMATIONS: `⚡ Animations added`,
     ADD_SLOT_CHILD: `🧩 Add slot child`,
+    FOLLOW_POINTER: `🖱️ Bones following pointer`,
 };

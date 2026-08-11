@@ -11,6 +11,12 @@ export const parcePointers = {
     mod: {
         next: '_next',
         loop: '_loop',
+        /**
+         * Suffix marking a bone — or a slot, which moves the bone it hangs from — as
+         * following the pointer: `crosshair_followPointer` sits under the mouse, or under
+         * the finger on a touch screen. See {@link PointerController}.
+         */
+        followPointer: '_followPointer',
     },
     sound: {
         /**

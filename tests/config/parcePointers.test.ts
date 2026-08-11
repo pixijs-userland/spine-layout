@@ -21,6 +21,7 @@ describe('parcePointers', () => {
         expect(parcePointers.mod).toEqual({
             next: '_next',
             loop: '_loop',
+            followPointer: '_followPointer',
         });
     });
 });
