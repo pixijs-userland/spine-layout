@@ -110,6 +110,10 @@ Text nodes are positioned inside Spine bone slots. Configuration lives in `setti
 }
 ```
 
+A node sits centred on its bone — the middle of the value, not the corner of a line box —
+measured off the glyphs on every change, so it stays centred as the value grows, wraps, or is
+scaled down to fit `maxWidth`/`maxHeight`. Add an `offset` to move it off the bone on purpose.
+
 Updating text with optional number animation:
 
 ```typescript

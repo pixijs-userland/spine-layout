@@ -9,6 +9,34 @@ import {
     type FakeSlot,
 } from '../helpers/fakeSpine';
 
+/**
+ * Installs a stand-in for the fonts our games ship, under the family `fake`.
+ *
+ * Its point is the mismatch every measurement in the controller exists to work around: a line
+ * box of `size=10 lineHeight=13 base=10` declared over glyph rectangles 300 units tall, which
+ * leaves the glyphs hanging far below the origin `BitmapText.anchor` centres on. One 100-wide
+ * glyph per character, so a width in these tests reads as a character count, and a space that
+ * lays out but draws nothing — what pixi lands on for a character the font has no picture of.
+ */
+function installFakeFont() {
+    const glyph = {
+        id: 48,
+        xOffset: 0,
+        yOffset: 20,
+        xAdvance: 100,
+        kerning: {},
+        texture: { orig: { width: 100, height: 300 } },
+    };
+
+    Cache.set('fake-bitmap', {
+        chars: { '0': glyph, ' ': { ...glyph, id: 32, texture: undefined } },
+        lineHeight: 13,
+        baseLineOffset: 3,
+        baseMeasurementFontSize: 10,
+        fontMetrics: { fontSize: 10, ascent: 0, descent: 0 },
+    } as never);
+}
+
 describe('TextsController – queries', () => {
     it('getBySpine returns slot text keys per spine (stripping text_ prefix), omitting spines without text slots', () => {
         const hero = createFakeSpine({
@@ -23,10 +51,16 @@ describe('TextsController – queries', () => {
     });
 
     it('getInstances and getBitmapInstances expose stored text nodes', () => {
+        installFakeFont();
         const ctl = new TextsController(new Map());
         const slot = { name: 'text_a' } as FakeSlot;
         const spine = createFakeSpine({ slots: [slot] });
-        ctl.settings = { hero: { a: { type: 'text', value: 'hi' }, b: { type: 'bitmapText', value: 'hey' } } };
+        ctl.settings = {
+            hero: {
+                a: { type: 'text', value: 'hi' },
+                b: { type: 'bitmapText', fontFamily: 'fake', fontSize: 10, value: '0' },
+            },
+        };
         ctl.add(slot as never, spine as never, 'a', 'hero');
 
         expect(ctl.getInstances().get('a')).toBeInstanceOf(Text);
@@ -35,6 +69,8 @@ describe('TextsController – queries', () => {
         const slotB = { name: 'text_b' } as FakeSlot;
         ctl.add(slotB as never, spine as never, 'b', 'hero');
         expect(ctl.getBitmapInstances().get('b')).toBeInstanceOf(BitmapText);
+
+        Cache.remove('fake-bitmap');
     });
 
     it('getVal returns the current text value', () => {
@@ -326,6 +362,10 @@ describe('TextsController – change events', () => {
 });
 
 describe('TextsController – attach / settings / clear', () => {
+    afterEach(() => {
+        if (Cache.has('fake-bitmap')) Cache.remove('fake-bitmap');
+    });
+
     it('add creates a wrapper Container and attaches via addSlotObject', () => {
         const slot = { name: 'text_a' } as FakeSlot;
         const spine = createFakeSpine({ slots: [slot] });
@@ -340,17 +380,19 @@ describe('TextsController – attach / settings / clear', () => {
         expect(ctl.getVal('a')).toBe('HI');
     });
 
-    it('add applies offset from bitmap settings', () => {
+    it('add applies offset from bitmap settings, measured to the middle of the value', () => {
+        installFakeFont();
         const slot = { name: 'text_a' } as FakeSlot;
         const spine = createFakeSpine({ slots: [slot] });
         const ctl = new TextsController(asSpineMap({ hero: spine }));
-        // maxWidth is omitted on purpose: maxWidth > 0 triggers BitmapText layout
-        // measurement, which needs a canvas. The recording behavior is covered separately.
         ctl.settings = {
             hero: {
                 a: {
                     type: 'bitmapText',
-                    value: 'hi',
+                    fontFamily: 'fake',
+                    fontSize: 10,
+                    letterSpacing: 0,
+                    value: '0',
                     offset: { x: 3, y: 4 },
                 },
             },
@@ -358,8 +400,58 @@ describe('TextsController – attach / settings / clear', () => {
 
         ctl.add(slot as never, spine as never, 'a', 'hero');
         const node = ctl.getInstances().get('a') as BitmapText;
+
+        // the offset says where the glyphs go, not where the node's line box goes: the one
+        // glyph spans y 23…323 in font units, so the node hangs 165 above the offset to leave
+        // the middle of it on the point the offset names
         expect(node.x).toBe(3);
-        expect(node.y).toBe(4);
+        expect(node.y).toBe(4 - 165);
+    });
+
+    it('centres a bitmap value on its bone, horizontally and vertically', () => {
+        // A second glyph, narrower and shorter than the digit and sitting low, so the middle of
+        // '0.' is off-centre on *both* axes — an anchor of 0.5 alone leaves it there.
+        installFakeFont();
+        const font = Cache.get('fake-bitmap') as { chars: Record<string, unknown> };
+        font.chars['.'] = {
+            id: 46,
+            xOffset: 10,
+            yOffset: 260,
+            xAdvance: 40,
+            kerning: {},
+            texture: { orig: { width: 20, height: 60 } },
+        };
+
+        const slot = { name: 'text_a' } as FakeSlot;
+        const spine = createFakeSpine({ slots: [slot] });
+        const ctl = new TextsController(asSpineMap({ hero: spine }));
+        ctl.settings = {
+            hero: {
+                a: {
+                    type: 'bitmapText',
+                    fontFamily: 'fake',
+                    fontSize: 10,
+                    letterSpacing: 0,
+                    value: '0.',
+                },
+            },
+        };
+        ctl.add(slot as never, spine as never, 'a', 'hero');
+        const node = ctl.getInstances().get('a') as BitmapText;
+
+        // Where the ink lands, mirroring pixi's render pipe: the anchor pulls the block back by
+        // half the *advance* width (140) and half the line box (13 + 3), then the node position
+        // is added. Both axes come out symmetric about the bone, which is the whole point.
+        const ink = () => {
+            const left = node.x - 0.5 * 140;
+            const top = node.y - 0.5 * 16;
+            return { left: left + 0, right: left + 130, top: top + 23, bottom: top + 323 };
+        };
+
+        expect(ink().left).toBeCloseTo(-ink().right);
+        expect(ink().top).toBeCloseTo(-ink().bottom);
+        expect(node.x).toBeCloseTo(5);
+        expect(node.y).toBeCloseTo(-165);
     });
 
     it('addTextToSlot adds the text container to the matched slot', () => {
@@ -404,7 +496,8 @@ describe('TextsController – attach / settings / clear', () => {
         ctl.settings = { hero: { a: { type: 'bitmapText', value: '' } } };
         ctl.add(slot as never, spine as never, 'a', 'hero');
 
-        // Stub the node width so applyMaxSize doesn't trigger BitmapText canvas measurement.
+        // Stub the node width so the fit doesn't trigger BitmapText canvas measurement. The
+        // empty value spares it the glyph measurement, which would need a font.
         Object.defineProperty(ctl.getInstances().get('a'), 'width', { get: () => 0 });
 
         ctl.setMaxWidth('a', 100);
@@ -417,21 +510,7 @@ describe('TextsController – attach / settings / clear', () => {
         // Same font shape as the max-width case: the glyph rects are in a different unit from
         // the declared lineHeight, so the height has to be measured off the glyphs (300 tall)
         // rather than off BitmapText.height (the 13-unit line box).
-        const glyph = {
-            id: 48,
-            xOffset: 0,
-            yOffset: 20,
-            xAdvance: 100,
-            kerning: {},
-            texture: { orig: { width: 100, height: 300 } },
-        };
-        Cache.set('fake-bitmap', {
-            chars: { '0': glyph },
-            lineHeight: 13,
-            baseLineOffset: 3,
-            baseMeasurementFontSize: 10,
-            fontMetrics: { fontSize: 10, ascent: 0, descent: 0 },
-        } as never);
+        installFakeFont();
 
         const slot = { name: 'text_a' } as FakeSlot;
         const spine = createFakeSpine({ slots: [slot] });
@@ -453,27 +532,26 @@ describe('TextsController – attach / settings / clear', () => {
         ctl.add(slot as never, spine as never, 'a', 'hero');
         const node = ctl.getInstances().get('a') as BitmapText;
 
-        // halved by height alone, and centred the same way the width bound centres it
+        // halved by height alone, and still centred: at half size the glyphs sit half as far
+        // below the origin, so half of the 165 is enough to bring them back to the offset
         expect(node.scale.y).toBeCloseTo(0.5);
-        expect(node.y).toBeCloseTo(-17.5);
+        expect(node.y).toBeCloseTo(-100 - 82.5);
 
         // a width bound that bites harder takes over — scaling is uniform, so the tighter wins
         ctl.setMaxWidth('a', 75);
         expect((ctl.settings?.hero?.a as { maxWidth?: number }).maxWidth).toBe(75);
         expect(node.scale.y).toBeCloseTo(0.25);
-        expect(node.y).toBeCloseTo(23.75);
+        expect(node.y).toBeCloseTo(-100 - 41.25);
 
         // dropping the height bound leaves the width one still holding it
         ctl.setMaxHeight('a', 0);
         expect((ctl.settings?.hero?.a as { maxHeight?: number }).maxHeight).toBe(0);
         expect(node.scale.y).toBeCloseTo(0.25);
 
-        // and with neither, full size and the configured offset are back
+        // and with neither, full size and the full centring are back
         ctl.setMaxWidth('a', 0);
         expect(node.scale.y).toBe(1);
-        expect(node.y).toBeCloseTo(-100);
-
-        Cache.remove('fake-bitmap');
+        expect(node.y).toBeCloseTo(-100 - 165);
     });
 
     it('loadSettings picks up the texts.json shortcut alias from Assets when present', () => {
@@ -510,21 +588,7 @@ describe('TextsController – attach / settings / clear', () => {
         // Mimics our exported fonts, where `lineHeight`/`base` are authored in different units
         // than the glyph rects (`size=10 lineHeight=13 base=10` against a 300-unit tall glyph),
         // so BitmapText.anchor leaves the glyphs hanging below the origin.
-        const glyph = {
-            id: 48,
-            xOffset: 0,
-            yOffset: 20,
-            xAdvance: 100,
-            kerning: {},
-            texture: { orig: { width: 100, height: 300 } },
-        };
-        Cache.set('fake-bitmap', {
-            chars: { '0': glyph },
-            lineHeight: 13,
-            baseLineOffset: 3,
-            baseMeasurementFontSize: 10,
-            fontMetrics: { fontSize: 10, ascent: 0, descent: 0 },
-        } as never);
+        installFakeFont();
 
         const slot = { name: 'text_a' } as FakeSlot;
         const spine = createFakeSpine({ slots: [slot] });
@@ -547,49 +611,34 @@ describe('TextsController – attach / settings / clear', () => {
         const node = ctl.getInstances().get('a') as BitmapText;
 
         // glyph box spans y 23…323, its centre 165 below the origin the node scales towards;
-        // halving the node would take that centre to 82.5, so it is pushed back down by 82.5
+        // halved, that centre is only 82.5 below it, so half the lift is what it takes to leave
+        // the glyphs on the offset
         expect(node.scale.y).toBeCloseTo(0.5);
         expect(node.x).toBeCloseTo(0);
-        expect(node.y).toBeCloseTo(-17.5);
+        expect(node.y).toBeCloseTo(-100 - 82.5);
 
-        // a value that fits drops the scale and the compensation with it
+        // a value that fits drops the scale, and the centring grows back to full size with it
         ctl.set('a', '0');
         expect(node.scale.y).toBe(1);
-        expect(node.y).toBe(-100);
+        expect(node.y).toBe(-100 - 165);
 
-        // and setOffset stays the base the compensation rides on
+        // and setOffset stays the base the centring rides on
         ctl.set('a', '000');
         ctl.setOffset('a', { x: 5, y: -50 });
-        expect(node.y).toBeCloseTo(32.5);
+        expect(node.y).toBeCloseTo(-50 - 82.5);
         expect(node.x).toBeCloseTo(5);
 
         // clearing maxWidth — which the editor can do live — restores full size and position
         ctl.setMaxWidth('a', 0);
         expect(node.scale.y).toBe(1);
-        expect(node.y).toBeCloseTo(-50);
+        expect(node.y).toBeCloseTo(-50 - 165);
         expect(node.x).toBeCloseTo(5);
-
-        Cache.remove('fake-bitmap');
     });
 
     it('wraps bitmap text at maxWidth rather than pixi default width', () => {
         // One 100-wide glyph per character, so '000 000' is 700 wide laid out on one line and
         // the space at 350 is the only place it can break.
-        const glyph = {
-            id: 48,
-            xOffset: 0,
-            yOffset: 20,
-            xAdvance: 100,
-            kerning: {},
-            texture: { orig: { width: 100, height: 300 } },
-        };
-        Cache.set('fake-bitmap', {
-            chars: { '0': glyph, ' ': { ...glyph, id: 32, texture: undefined } },
-            lineHeight: 13,
-            baseLineOffset: 3,
-            baseMeasurementFontSize: 10,
-            fontMetrics: { fontSize: 10, ascent: 0, descent: 0 },
-        } as never);
+        installFakeFont();
 
         const slot = { name: 'text_a' } as FakeSlot;
         const spine = createFakeSpine({ slots: [slot] });
@@ -632,28 +681,12 @@ describe('TextsController – attach / settings / clear', () => {
         ctl.set('a', '000 000');
         ctl.setMaxWidth('a', 0);
         expect(node.style.wordWrap).toBe(false);
-
-        Cache.remove('fake-bitmap');
     });
 
     it('aligns bitmap lines from the entry, centring the one that does not say', () => {
         // One 100-wide glyph per character, spaces included, so every width below is a
         // character count: '0 0 0000' wraps into a 300-wide line over a 400-wide one.
-        const glyph = {
-            id: 48,
-            xOffset: 0,
-            yOffset: 20,
-            xAdvance: 100,
-            kerning: {},
-            texture: { orig: { width: 100, height: 300 } },
-        };
-        Cache.set('fake-bitmap', {
-            chars: { '0': glyph, ' ': { ...glyph, id: 32, texture: undefined } },
-            lineHeight: 13,
-            baseLineOffset: 3,
-            baseMeasurementFontSize: 10,
-            fontMetrics: { fontSize: 10, ascent: 0, descent: 0 },
-        } as never);
+        installFakeFont();
 
         const slot = { name: 'text_a' } as FakeSlot;
         const spine = createFakeSpine({ slots: [slot] });
@@ -703,28 +736,12 @@ describe('TextsController – attach / settings / clear', () => {
         entry.align = 'justify';
         ctl.setMaxWidth('a', 500);
         expect(shortLine()).toEqual([0, 300]);
-
-        Cache.remove('fake-bitmap');
     });
 
     it('hands a bitmap node to the browser fonts, sized and placed where its glyphs were', () => {
         // The same font shape as above — a 300-unit tall glyph under a 13-unit line box — and
         // a space, which is what pixi lands on for a character the font has no picture of.
-        const glyph = {
-            id: 48,
-            xOffset: 0,
-            yOffset: 20,
-            xAdvance: 100,
-            kerning: {},
-            texture: { orig: { width: 100, height: 300 } },
-        };
-        Cache.set('fake-bitmap', {
-            chars: { '0': glyph, ' ': { ...glyph, id: 32, texture: undefined } },
-            lineHeight: 13,
-            baseLineOffset: 3,
-            baseMeasurementFontSize: 10,
-            fontMetrics: { fontSize: 10, ascent: 0, descent: 0 },
-        } as never);
+        installFakeFont();
 
         const slot = { name: 'text_a' } as FakeSlot;
         const spine = createFakeSpine({ slots: [slot] });
@@ -755,11 +772,10 @@ describe('TextsController – attach / settings / clear', () => {
         // and its `letterSpacing` of -6 is in those units too, so it is left behind
         expect(node.style.letterSpacing).toBe(0);
 
-        // stood where the bitmap ink actually was — 165 below the origin, which the bitmap
-        // node's own anchor never took it back to, and 3 to the right of it, which is how far
-        // the tightened letter spacing pulled the advance box in from the glyph
-        expect(node.x).toBeCloseTo(3);
-        expect(node.y).toBeCloseTo(65);
+        // left standing on its offset, which is where the bitmap glyphs were: the substitution
+        // needs no shift of its own, because `Text.anchor` centres on the glyphs it draws
+        expect(node.x).toBeCloseTo(0);
+        expect(node.y).toBeCloseTo(-100);
 
         // the value it was handed over for, which the atlas has nothing to draw
         ctl.set('a', '残高');
@@ -770,26 +786,10 @@ describe('TextsController – attach / settings / clear', () => {
         ctl.useSystemFont('a', { fontFamily: 'serif' });
         expect(ctl.getInstances().get('a')).toBe(node);
         expect(node.style.fontFamily).toBe('sans-serif');
-
-        Cache.remove('fake-bitmap');
     });
 
     it('sizes a hand-over against a stand-in digit when the value has no glyphs left', () => {
-        const glyph = {
-            id: 48,
-            xOffset: 0,
-            yOffset: 20,
-            xAdvance: 100,
-            kerning: {},
-            texture: { orig: { width: 100, height: 300 } },
-        };
-        Cache.set('fake-bitmap', {
-            chars: { '0': glyph, ' ': { ...glyph, id: 32, texture: undefined } },
-            lineHeight: 13,
-            baseLineOffset: 3,
-            baseMeasurementFontSize: 10,
-            fontMetrics: { fontSize: 10, ascent: 0, descent: 0 },
-        } as never);
+        installFakeFont();
 
         const slot = { name: 'text_a' } as FakeSlot;
         const spine = createFakeSpine({ slots: [slot] });
@@ -815,27 +815,11 @@ describe('TextsController – attach / settings / clear', () => {
 
         expect(node.text).toBe('バランス');
         expect(node.style.fontSize).toBeCloseTo(375);
-        expect(node.y).toBeCloseTo(65);
-
-        Cache.remove('fake-bitmap');
+        expect(node.y).toBeCloseTo(-100);
     });
 
     it('keeps a handed-over node wrapping and fitted to the box its entry names', () => {
-        const glyph = {
-            id: 48,
-            xOffset: 0,
-            yOffset: 20,
-            xAdvance: 100,
-            kerning: {},
-            texture: { orig: { width: 100, height: 300 } },
-        };
-        Cache.set('fake-bitmap', {
-            chars: { '0': glyph, ' ': { ...glyph, id: 32, texture: undefined } },
-            lineHeight: 13,
-            baseLineOffset: 3,
-            baseMeasurementFontSize: 10,
-            fontMetrics: { fontSize: 10, ascent: 0, descent: 0 },
-        } as never);
+        installFakeFont();
 
         const slot = { name: 'text_a' } as FakeSlot;
         const spine = createFakeSpine({ slots: [slot] });
@@ -868,10 +852,8 @@ describe('TextsController – attach / settings / clear', () => {
         expect(node.style.wordWrap).toBe(true);
         expect(node.style.wordWrapWidth).toBe(500);
         expect(node.scale.x).toBeCloseTo(0.5);
-        // and the fit rides on the centring rather than replacing it
-        expect(node.y).toBeCloseTo(65);
-
-        Cache.remove('fake-bitmap');
+        // and it scales towards its own centre, so the fit does not move it off its offset
+        expect(node.y).toBeCloseTo(-100);
     });
 
     it('clear drops settings, runners, and instances', () => {

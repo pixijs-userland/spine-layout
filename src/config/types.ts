@@ -73,6 +73,15 @@ export type TextsJsonTextEntry = TextsJsonEntryBase & {
 
 export type TextsJsonBitmapTextEntry = TextsJsonEntryBase & {
     type: 'bitmapText';
+    /**
+     * How far from its bone the value is drawn, in pixels — absent or `{ x: 0, y: 0 }` puts it
+     * dead on the bone.
+     *
+     * It names where the *middle of the value* goes, both across and down, whatever the value
+     * says and however many lines it takes: the runtime measures the glyphs and places the node
+     * so their middle lands here. Nothing needs to be written down to centre a field, and a
+     * number written here is the artist moving a centred field off its bone on purpose.
+     */
     offset?: { x: number; y: number };
     /**
      * Widest the value may render, in pixels. Text past it is scaled down uniformly, and

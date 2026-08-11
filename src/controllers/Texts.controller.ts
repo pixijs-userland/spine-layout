@@ -25,6 +25,9 @@ const INK_PER_EM = 0.8;
  */
 const INK_PROBE = '0';
 
+/** No shift at all — the common "nothing to compensate" case, shared rather than allocated. */
+const ORIGIN = { x: 0, y: 0 } as const;
+
 export class TextsController {
     /** Text nodes keyed by their registration key (see {@link configKey}). */
     private texts: Map<SpineID, Text | BitmapText> = new Map();
@@ -36,18 +39,22 @@ export class TextsController {
         { interval: ReturnType<typeof setInterval>; resolve: () => void }
     > = new Map();
     /**
-     * Position compensation currently applied by {@link applyMaxSize}, keyed by registration
-     * key. Kept separate from the node position so the configured/`setOffset` offset stays the
-     * base the compensation is added to, rather than being overwritten by it.
+     * Where each node sits relative to its bone before centring, keyed by registration key —
+     * the entry's `offset`, or whatever {@link setOffset} last wrote.
+     *
+     * Kept apart from the node position because {@link #centring} is added on top of it: a
+     * later `setOffset` has to replace the offset without losing the centring, and a later
+     * value change has to replace the centring without losing the offset.
      */
-    #maxSizeShift: Map<string, { x: number; y: number }> = new Map();
+    #offset: Map<string, { x: number; y: number }> = new Map();
     /**
-     * Where the bitmap glyphs a browser-drawn node replaced actually sat, keyed by
-     * registration key — see {@link useSystemFont}. Kept apart from the node position for the
-     * same reason {@link #maxSizeShift} is: the configured offset stays the base both shifts
-     * ride on, so a later `setOffset` cannot lose either of them.
+     * What each node is moved by to bring the middle of its glyphs onto its bone, keyed by
+     * registration key — see {@link fit}.
+     *
+     * Recomputed on every value, style and scale change, because all three move the glyphs.
+     * Zero for a browser-drawn node, which centres itself on its own origin.
      */
-    #systemFontShift: Map<string, { x: number; y: number }> = new Map();
+    #centring: Map<string, { x: number; y: number }> = new Map();
 
     /**
      * @param spines Live spine registry.
@@ -236,7 +243,7 @@ export class TextsController {
                     if (emit && target.text !== text) this.emitChange(key, previous, text);
                     target.text = text;
                     // the number is unchanged but the prefix/suffix around it may not be
-                    this.applyMaxSize(key, target);
+                    this.fit(key, target);
                     return;
                 }
 
@@ -257,7 +264,7 @@ export class TextsController {
                         if (direction < 0 && value <= end) value = end;
 
                         target.text = `${prefix}${value}${suffix}`;
-                        this.applyMaxSize(key, target);
+                        this.fit(key, target);
 
                         if (value === end) {
                             clearInterval(runner);
@@ -276,7 +283,7 @@ export class TextsController {
         if (emit && next !== previous) this.emitChange(key, previous, next);
 
         target.text = next;
-        this.applyMaxSize(key, target);
+        this.fit(key, target);
     }
 
     /**
@@ -296,7 +303,13 @@ export class TextsController {
         this.animations.playEvent(`${meta.textKey}_change`, meta.spineID, { from, to });
     }
 
-    /** Moves a text node by the given pixel offset relative to its bone position. */
+    /**
+     * Moves a text node by the given pixel offset relative to its bone position.
+     *
+     * The offset names where the *middle of the value* goes, not where some corner of the
+     * node's line box goes — `{ x: 0, y: 0 }` puts the text dead on its bone. See
+     * {@link fit} for what that takes.
+     */
     setOffset(boneName: string, offset: { x: number; y: number }) {
         const keys = this.resolveKeys(boneName);
         if (keys.length === 0) {
@@ -304,14 +317,27 @@ export class TextsController {
             return;
         }
         keys.forEach((key) => {
-            const text = this.texts.get(key)!;
-            // the offset is the base position; a substitution's centring and any max-width
-            // compensation ride on top of it
-            const centring = this.#systemFontShift.get(key);
-            const shift = this.#maxSizeShift.get(key);
-            text.x = offset.x + (centring?.x ?? 0) + (shift?.x ?? 0);
-            text.y = offset.y + (centring?.y ?? 0) + (shift?.y ?? 0);
+            // copied, not held: the editor writes these entries in place, and the base
+            // position must not change under us between one fit and the next
+            this.#offset.set(key, { x: offset.x, y: offset.y });
+            this.place(key);
         });
+    }
+
+    /**
+     * Puts a node where its offset and its centring together say it belongs — the offset
+     * measured from the bone, the centring bringing the middle of the glyphs onto the point
+     * the offset names rather than leaving it somewhere below.
+     */
+    private place(key: string) {
+        const text = this.texts.get(key);
+        if (!text) return;
+
+        const offset = this.#offset.get(key) ?? ORIGIN;
+        const centring = this.#centring.get(key) ?? ORIGIN;
+
+        text.x = offset.x + centring.x;
+        text.y = offset.y + centring.y;
     }
 
     /** Constrains a text node to a max pixel width by scaling it down uniformly when it overflows. */
@@ -321,7 +347,7 @@ export class TextsController {
 
     /**
      * Constrains a text node to a max pixel height, the same way {@link setMaxWidth} constrains
-     * its width. With both set the tighter one decides — see {@link applyMaxSize}.
+     * its width. With both set the tighter one decides — see {@link fit}.
      */
     setMaxHeight(boneName: string, maxHeight: number) {
         this.setMaxBound(boneName, 'maxHeight', maxHeight);
@@ -337,7 +363,7 @@ export class TextsController {
             if (entry?.type === 'bitmapText') (entry as TextsJsonBitmapTextEntry)[bound] = value;
 
             const text = this.texts.get(key);
-            if (text) this.applyMaxSize(key, text);
+            if (text) this.fit(key, text);
         });
     }
 
@@ -366,15 +392,15 @@ export class TextsController {
         parent.addChild(newText);
 
         this.texts.set(key, newText);
-        // the fresh node carries neither the old scale nor its compensation, and the centring
-        // that stood a substitution where bitmap glyphs were belongs to the node that is gone
-        this.#maxSizeShift.delete(key);
-        this.#systemFontShift.delete(key);
+        // the fresh node carries neither the old scale nor a centring measured off glyphs that
+        // are gone; where it sits is still the entry's offset, which the swap has not touched
+        this.#centring.delete(key);
+        this.place(key);
     }
 
     /**
      * Hands a text node to the browser's own fonts: the `BitmapText` is swapped for a `Text`,
-     * sized and placed to stand where its glyphs stood.
+     * sized to stand where its glyphs stood.
      *
      * For a value the game's bitmap font holds no pictures of — a script its atlas was never
      * generated over. A `BitmapText` draws *nothing* for a character it has no glyph for, so
@@ -399,7 +425,7 @@ export class TextsController {
         if (!(bitmap instanceof BitmapText)) return;
 
         // measured first, while there are still glyphs to measure
-        const ink = this.measureInk(bitmap);
+        const height = this.inkHeight(bitmap);
         const entry = this.settingsFor(key) as TextsJsonBitmapTextEntry | undefined;
 
         this.setTextTypeOne(key, 'text');
@@ -417,44 +443,30 @@ export class TextsController {
             ...style,
             // a node with nothing measurable keeps pixi's default size, which is at least a
             // word on screen to be seen and fixed
-            ...(ink && { fontSize: ink.height / INK_PER_EM }),
+            ...(height && { fontSize: height / INK_PER_EM }),
         };
 
-        // Where the bitmap glyphs sat, which is not where the node sits: our fonts anchor a
-        // bitmap node on a line box authored in a different unit from its glyphs, leaving the
-        // glyphs hundreds of units below the origin (see {@link glyphBox}) — which is what the
-        // hand-authored offsets in `texts.json` were written against. A `Text` centres on its
-        // origin properly, so it has to be moved to the spot the ink it replaces occupied.
-        this.#systemFontShift.set(key, ink?.centre ?? { x: 0, y: 0 });
-        this.setOffset(key, entry?.offset ?? { x: 0, y: 0 });
-        this.applyMaxSize(key, text);
+        // The node stays exactly where it was, which is now the right answer for either kind:
+        // the bitmap glyphs were centred on the bone, and a `Text` centres itself on the same
+        // point. All the fit has left to do is drop the bitmap centring and re-apply the box.
+        this.fit(key, text);
     }
 
     /**
-     * How tall a bitmap node's glyphs render and where they sit, for a substitution that has
-     * to match them — measured against {@link INK_PROBE} when the node's own value has
-     * nothing to measure, which is the case whenever the caller has already written the
-     * undrawable string into it.
+     * How tall a bitmap node's glyphs render, for a substitution that has to match them —
+     * measured against {@link INK_PROBE} when the node's own value has nothing to measure,
+     * which is the case whenever the caller has already written the undrawable string into it.
      */
-    private measureInk(
-        text: BitmapText,
-    ): { height: number; centre: { x: number; y: number } } | undefined {
-        const measure = () => {
-            const height = this.glyphHeight(text);
-            const centre = this.glyphCentre(text);
-
-            return height !== undefined && centre !== undefined ? { height, centre } : undefined;
-        };
-
-        const measured = measure();
-        if (measured) return measured;
+    private inkHeight(text: BitmapText): number | undefined {
+        const measured = this.glyphInk(text);
+        if (measured) return measured.height;
 
         const previous = text.text;
         text.text = INK_PROBE;
-        const probed = measure();
+        const probed = this.glyphInk(text);
         text.text = previous;
 
-        return probed;
+        return probed?.height;
     }
 
     /** Applies a partial Pixi.js `TextStyle` to the named text node. */
@@ -595,11 +607,13 @@ export class TextsController {
 
         this.texts.set(key, text);
         this.#meta.set(key, { spineID, textKey });
+        // before the value, so the first fit centres the node on the spot it will keep rather
+        // than on its bone and then again on the offset
+        this.setOffset(key, offset ?? ORIGIN);
         this.setStyle(key, rest);
         // registration seeds the configured value — not a change, so no `_change` event
         this.setOne(key, value ?? '', false, 0, false);
 
-        if (offset) this.setOffset(key, offset);
         // height first, so the single fit that follows sees both bounds at once
         this.setMaxHeight(key, maxHeight ?? 0);
         this.setMaxWidth(key, maxWidth ?? 0);
@@ -617,75 +631,76 @@ export class TextsController {
             r.resolve();
         });
         this.#textRunners.clear();
-        this.#maxSizeShift.clear();
-        this.#systemFontShift.clear();
+        this.#offset.clear();
+        this.#centring.clear();
         this.texts.clear();
         this.#meta.clear();
         this.#textSettings = undefined;
     }
 
     /**
-     * Constrains a node to `maxWidth` and `maxHeight` by scaling it down, keeping its glyphs
-     * centred on the spot the full-size text occupied.
+     * Lays a bitmap-configured node out against its entry — where its lines break, how they
+     * are spaced and aligned, the scale that keeps it inside `maxWidth`/`maxHeight`, and the
+     * shift that leaves the middle of its glyphs on its bone.
+     *
+     * **The centring is why this runs on every value change.** A bitmap node is created with
+     * `anchor` 0.5, which ought to be the whole of it, but `BitmapText.anchor` centres the node
+     * on the font's *line box* rather than on its glyphs — and our fonts declare that box in a
+     * different unit from their glyph rectangles (`size=10 lineHeight=13` against glyphs ~380
+     * units tall), so the anchor moves the node by a handful of units while the glyphs sit
+     * hundreds of units below the origin. Anchored on paper, unanchored on screen. So the
+     * glyphs are measured instead (see {@link glyphInk}) and the node is moved by whatever
+     * their middle is out by — which no fixed offset could stand in for, because the amount
+     * depends on the value, on which characters of the font it uses, and on how many lines it
+     * wraps to.
      *
      * Scaling is uniform — one factor for both axes, since text squashed on one of them stops
-     * being the typeface the artist chose — so where both bounds are set the tighter of the
-     * two wins and the text fits the box on whichever side runs out first. Either may be left
-     * unset, which is what a text constrained on only one axis does.
-     *
-     * Scaling shrinks a node towards its own origin, so text whose glyphs are not centred on
-     * that origin travels as it scales — for bitmap text that is the norm rather than the
-     * exception (see {@link glyphCentre}), and the text visibly creeps away from its bone. The
-     * compensation moves the node back by whatever the glyph centre lost, so scale 1 stays
-     * exactly where it is today and every smaller scale stays centred on it.
+     * being the typeface the artist chose — so where both bounds are set the tighter of the two
+     * wins and the text fits the box on whichever side runs out first. Either may be left
+     * unset, which is what a text constrained on only one axis does. The scale multiplies the
+     * centring rather than fighting it: glyphs at half size sit half as far from the origin, so
+     * the shift that brings them back halves with them and the value stays on its bone at every
+     * size it is fitted to.
      */
-    private applyMaxSize(boneName: string, text: Text | BitmapText) {
-        const entry = this.settingsFor(boneName);
-        if (entry?.type !== 'bitmapText') return;
+    private fit(key: string, text: Text | BitmapText) {
+        const settings = this.settingsFor(key);
+        if (settings?.type !== 'bitmapText') return;
+        const entry = settings as TextsJsonBitmapTextEntry;
 
         // all three before the measuring below: the wrap width decides where the lines
         // break, the spacing decides how tall they stack, the alignment decides where along
-        // the block each one sits, and the centring compensation is read off the layout the
-        // three of them produce
-        this.applyWrapWidth(entry as TextsJsonBitmapTextEntry, text);
-        this.applyLineSpacing(entry as TextsJsonBitmapTextEntry, text);
-        this.applyAlign(entry as TextsJsonBitmapTextEntry, text);
+        // the block each one sits, and both the fit and the centring are read off the layout
+        // the three of them produce
+        this.applyWrapWidth(entry, text);
+        this.applyLineSpacing(entry, text);
+        this.applyAlign(entry, text);
 
-        const { maxWidth, maxHeight } = entry as TextsJsonBitmapTextEntry;
-
-        // undo the previous pass before measuring, so the text is sized at full scale — and so
+        // Undone before anything is measured, so a bound is judged against the text at full
+        // size rather than against the scale the last value happened to leave behind — and so
         // clearing a bound (the editor can, live) puts the text back rather than stranding it
-        // at whatever scale and compensation the last constrained value left behind
-        const applied = this.#maxSizeShift.get(boneName);
-        if (applied) {
-            text.x -= applied.x;
-            text.y -= applied.y;
-            this.#maxSizeShift.delete(boneName);
-        }
-        if (applied || maxWidth || maxHeight) text.scale.set(1);
+        // at whatever the last constrained value fitted to.
+        text.scale.set(1);
 
-        // Measured at full size, which the reset above guarantees — and only for a bound that
-        // is actually set: measuring a bitmap text means laying its glyphs out, so a node with
-        // no bounds must not pay for it.
+        const ink = text instanceof BitmapText ? this.glyphInk(text) : undefined;
+        const { maxWidth, maxHeight } = entry;
+
+        // only for a bound that is actually set: asking a node how wide it is means laying it
+        // out, and a node with no bounds must not pay for it
         const overflows = [
             maxWidth && text.width > maxWidth ? maxWidth / text.width : undefined,
-            maxHeight ? this.heightOverflow(text, maxHeight) : undefined,
+            maxHeight ? this.heightOverflow(text, maxHeight, ink?.height) : undefined,
         ].filter((value): value is number => value !== undefined);
 
-        if (!overflows.length) return;
+        const scale = overflows.length ? Math.min(...overflows) : 1;
+        if (scale !== 1) text.scale.set(scale);
 
-        const scale = Math.min(...overflows);
-        text.scale.set(scale);
-
-        const centre = text instanceof BitmapText ? this.glyphCentre(text) : undefined;
-        const shift = centre
-            ? { x: centre.x * (1 - scale), y: centre.y * (1 - scale) }
-            : { x: 0, y: 0 };
-
-        text.x += shift.x;
-        text.y += shift.y;
-        // recorded even when it is zero: its presence marks the scale as ours to undo
-        this.#maxSizeShift.set(boneName, shift);
+        // A browser-drawn node needs none of this: `Text.anchor` centres on the glyphs it
+        // actually drew, so it sits on its bone already and stays there as it scales.
+        this.#centring.set(
+            key,
+            ink ? { x: -ink.centre.x * scale, y: -ink.centre.y * scale } : ORIGIN,
+        );
+        this.place(key);
     }
 
     /**
@@ -710,9 +725,9 @@ export class TextsController {
      * line of its own, which is not wrapping so much as shredding.
      *
      * Wrapping at `maxWidth` instead makes the two knobs one behaviour: the value fills the
-     * box the artist drew, and the scaling in {@link applyMaxSize} only steps in when even a
-     * wrapped line will not fit it — a single word longer than the whole box, which no line
-     * break can rescue.
+     * box the artist drew, and the scaling in {@link fit} only steps in when even a wrapped
+     * line will not fit it — a single word longer than the whole box, which no line break can
+     * rescue.
      *
      * With no `maxWidth` the wrap is switched off rather than left on pixi's 100: an entry
      * that never says how wide it is has not asked for lines a hundred pixels long, and text
@@ -721,8 +736,8 @@ export class TextsController {
      * Applies to a `Text` node as much as a bitmap one, because a bitmap entry whose node has
      * been handed to the browser's fonts ({@link useSystemFont}) is still that entry: the box
      * the artist sized the field to is where its lines have to break, whichever kind of node
-     * is drawing them. An entry authored as `text` never reaches here — {@link applyMaxSize}
-     * turns back before it — and keeps wrapping at its own `wordWrapWidth`.
+     * is drawing them. An entry authored as `text` never reaches here — {@link fit} turns back
+     * before it — and keeps wrapping at its own `wordWrapWidth`.
      */
     private applyWrapWidth(entry: TextsJsonBitmapTextEntry, text: Text | BitmapText) {
         const width = this.wrapWidth(entry);
@@ -737,7 +752,7 @@ export class TextsController {
      * Pixi spaces lines by the `lineHeight` in the font's own header, and our fonts are
      * exported with that header in a different unit from the glyph rectangles — `green.fnt`
      * declares `size=10 lineHeight=13` over glyphs ~380 units tall (the same mismatch
-     * {@link glyphCentre} exists to undo). Thirteen units of advance against a 380-unit
+     * {@link glyphInk} exists to measure around). Thirteen units of advance against a 380-unit
      * glyph does not read as tight leading: the second line lands on top of the first, and
      * a two-line message renders as one illegible smear.
      *
@@ -850,61 +865,60 @@ export class TextsController {
 
     /**
      * How far past `maxHeight` a node renders, as the factor that would bring it back —
-     * `undefined` when it fits, or when there are no glyphs to measure.
+     * `undefined` when it fits, or when there is nothing to measure.
      *
-     * The height comes off the glyphs rather than the node, because `BitmapText.height` cannot
-     * answer this for our fonts (see {@link glyphHeight}).
+     * For a bitmap node the height is the one already measured off its glyphs, because
+     * `BitmapText.height` cannot answer this for our fonts (see {@link glyphInk}). A
+     * browser-drawn one is asked for its own, which is the ink it drew.
      */
-    private heightOverflow(text: Text | BitmapText, maxHeight: number): number | undefined {
-        const height = text instanceof BitmapText ? this.glyphHeight(text) : text.height;
+    private heightOverflow(
+        text: Text | BitmapText,
+        maxHeight: number,
+        inkHeight: number | undefined,
+    ): number | undefined {
+        const height = text instanceof BitmapText ? inkHeight : text.height;
 
         return height && height > maxHeight ? maxHeight / height : undefined;
     }
 
     /**
-     * Local-space centre of a bitmap text's rendered glyphs — `undefined` when it has none
-     * (empty string, or characters missing from the font).
+     * How tall a bitmap text's glyphs actually render and where their middle sits in the node's
+     * own space — `undefined` when there are none to measure (empty value, or characters the
+     * font has no picture of).
      *
-     * `BitmapText.anchor` centres the node on the font's *line box* (`lineHeight`/`base` from
-     * the `.fnt`), not on its glyph rectangles. Our fonts are exported with the two in
-     * different units — e.g. `size=10 lineHeight=13 base=10` against glyphs ~334 units tall —
-     * so the anchor shifts the text by a handful of units while the glyphs sit hundreds of
-     * units below the origin, leaving it effectively unanchored vertically.
+     * Both come off the glyph rectangles rather than off the node, because for our fonts the
+     * node can answer neither. `BitmapText.height` is the *line box* — `layout.height`, the
+     * per-line advance summed — declared in a different unit from the rectangles, so it reports
+     * a fraction of what is on screen (13 units a line against glyphs ~380 tall) and a
+     * `maxHeight` measured against it would never trip. `BitmapText.anchor` centres on that
+     * same line box, which leaves the glyphs hundreds of units below the origin. The width
+     * needs no such help: `text.width` comes from `xAdvance`, already in glyph units.
      *
      * Mirrors the glyph placement of pixi's bitmap text render pipe: the layout is measured in
      * font units, offset by the anchor, then scaled by `fontSize / <font size>`.
      */
-    private glyphCentre(text: BitmapText): { x: number; y: number } | undefined {
+    private glyphInk(
+        text: BitmapText,
+    ): { height: number; centre: { x: number; y: number } } | undefined {
+        // answered without measuring, and without asking pixi for the font: a value with no
+        // characters has no ink wherever it is drawn, and a family whose `.fnt` never loaded
+        // would have pixi rasterise one from the browser's own fonts to say so
+        if (!text.text) return undefined;
+
         const box = this.glyphBox(text);
         if (!box) return undefined;
 
         const { minX, maxX, minY, maxY, layout } = box;
 
         return {
-            x: ((minX + maxX) / 2 - text.anchor.x * layout.width) * layout.scale,
-            y:
-                ((minY + maxY) / 2 - text.anchor.y * (layout.height + layout.offsetY)) *
-                layout.scale,
+            height: (maxY - minY) * layout.scale,
+            centre: {
+                x: ((minX + maxX) / 2 - text.anchor.x * layout.width) * layout.scale,
+                y:
+                    ((minY + maxY) / 2 - text.anchor.y * (layout.height + layout.offsetY)) *
+                    layout.scale,
+            },
         };
-    }
-
-    /**
-     * How tall a bitmap text's glyphs actually render, in pixels.
-     *
-     * `BitmapText.height` is the *line box* — `layout.height`, the per-line advance summed —
-     * and our fonts declare that in a different unit from their glyph rectangles, so it
-     * reports a fraction of what is on screen (13 units a line against glyphs ~380 tall).
-     * A height bound measured against it would never trip. This measures the ink instead,
-     * which is what `maxHeight` is asking about, and matches `maxWidth` — whose `text.width`
-     * comes from `xAdvance`, already in glyph units.
-     *
-     * `undefined` when there are no glyphs to measure, which leaves the bound unenforced
-     * rather than collapsing the node to nothing.
-     */
-    private glyphHeight(text: BitmapText): number | undefined {
-        const box = this.glyphBox(text);
-
-        return box && (box.maxY - box.minY) * box.layout.scale;
     }
 
     /**
