@@ -380,6 +380,38 @@ export class AnimationsController {
     }
 
     /**
+     * Puts a spine back to its setup pose before a track is taken over, in the one case Spine
+     * cannot undo the animation being replaced.
+     *
+     * A replaced animation is given one last apply, in which every property it posed and its
+     * replacement does not is driven back to the setup pose. That is what makes an animation
+     * which only *fades a slot out* safe to replace with one that never mentions that slot —
+     * a symbol's `inactive`, which takes the sharp art's alpha to zero, replaced by its `idle`,
+     * which only re-attaches the art.
+     *
+     * An entry replaced in the same frame it was set never gets that apply. Three entries then
+     * sit in one mix chain, and the middle one is mixed out against the pose standing on the
+     * skeleton rather than against the setup pose, which leaves it applied: the symbol's art is
+     * attached, at the alpha `inactive` left it on, and the cell is empty until something poses
+     * that alpha again.
+     *
+     * Two poses in one frame is not a caller's mistake to avoid. The win presentation re-poses
+     * the board on a timer and a press of the spin button poses it back to `idle`, and the two
+     * land in the same frame whenever the press falls on the wrong moment — so the unapplied
+     * entry is dropped and the pose put back here instead, which is what Spine's own undo pass
+     * would have left behind. The tracks that are still live re-apply over it on the next
+     * update, before anything is drawn.
+     */
+    private undoUnappliedEntry(spine: Spine, track: number) {
+        // every apply stamps `nextTrackLast`, so -1 is an entry that has not had one
+        if (spine.state.tracks[track]?.nextTrackLast !== -1) return;
+
+        spine.state.clearTrack(track);
+        spine.skeleton.setupPoseBones();
+        spine.skeleton.setupPoseSlots();
+    }
+
+    /**
      * Stops whatever holds a track, so a superseded entry stops applying its pose.
      *
      * Routed through {@link stop} rather than a bare `clearTrack` so the animation also
@@ -432,6 +464,7 @@ export class AnimationsController {
 
         const playTrack = this.allocateTrack(spineID, spine, animation);
 
+        this.undoUnappliedEntry(spine, playTrack);
         spine.state.setAnimation(playTrack, animation, loop);
         spine.state.timeScale = this.timeScaleFor(spineID);
 
@@ -484,6 +517,7 @@ export class AnimationsController {
 
         const playTrack = this.allocateTrack(spineID, spine, animation);
 
+        this.undoUnappliedEntry(spine, playTrack);
         spine.state.setAnimation(playTrack, animation, loop);
         // the entry just set, not track 0 — allocation picks the track from what the
         // animation poses, so it is only track 0 when nothing else claims those properties
