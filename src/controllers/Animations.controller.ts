@@ -401,10 +401,21 @@ export class AnimationsController {
      * entry is dropped and the pose put back here instead, which is what Spine's own undo pass
      * would have left behind. The tracks that are still live re-apply over it on the next
      * update, before anything is drawn.
+     *
+     * An unapplied entry replaced by *its own animation* is left alone: Spine's `setAnimation`
+     * drops such an entry itself instead of mixing from it, and an entry that never applied
+     * left nothing on the skeleton to undo. The reset here would wipe poses set from outside
+     * the animation state, which no live track re-applies. That is how a payline placed by
+     * hand ended up drawn from the skeleton origin — the middle of the screen: in a hidden tab
+     * the ticker never applies `show`, while the win loop, on wall-clock timers, keeps
+     * replaying it, and each replay snapped the point bones back to the setup pose.
      */
-    private undoUnappliedEntry(spine: Spine, track: number) {
+    private undoUnappliedEntry(spine: Spine, track: number, animation: string) {
+        const entry = spine.state.tracks[track];
+
         // every apply stamps `nextTrackLast`, so -1 is an entry that has not had one
-        if (spine.state.tracks[track]?.nextTrackLast !== -1) return;
+        if (!entry || entry.nextTrackLast !== -1) return;
+        if (entry.animation?.name === animation) return;
 
         spine.state.clearTrack(track);
         spine.skeleton.setupPoseBones();
@@ -464,7 +475,7 @@ export class AnimationsController {
 
         const playTrack = this.allocateTrack(spineID, spine, animation);
 
-        this.undoUnappliedEntry(spine, playTrack);
+        this.undoUnappliedEntry(spine, playTrack, animation);
         spine.state.setAnimation(playTrack, animation, loop);
         spine.state.timeScale = this.timeScaleFor(spineID);
 
@@ -517,7 +528,7 @@ export class AnimationsController {
 
         const playTrack = this.allocateTrack(spineID, spine, animation);
 
-        this.undoUnappliedEntry(spine, playTrack);
+        this.undoUnappliedEntry(spine, playTrack, animation);
         spine.state.setAnimation(playTrack, animation, loop);
         // the entry just set, not track 0 — allocation picks the track from what the
         // animation poses, so it is only track 0 when nothing else claims those properties

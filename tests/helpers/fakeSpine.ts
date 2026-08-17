@@ -67,6 +67,11 @@ export type FakeTrackEntry = {
     animationEnd: number;
     timeScale: number;
     loop: boolean;
+    /**
+     * -1 until the runtime's `AnimationState.apply` stamps it — the fake never applies,
+     * so a test that needs an entry to count as applied stamps it by hand.
+     */
+    nextTrackLast: number;
 };
 
 export type FakeSpine = Container & {
@@ -189,6 +194,7 @@ export function createFakeSpine(options: FakeSpineOptions = {}): FakeSpine {
                 animationEnd: animData?.duration ?? 0,
                 timeScale: 1,
                 loop,
+                nextTrackLast: -1,
             };
             tracks[track] = entry;
             return entry;

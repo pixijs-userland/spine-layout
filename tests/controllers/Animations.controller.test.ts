@@ -4,6 +4,16 @@ vi.mock('../../src/controllers/Sounds.controller', () => ({
     sounds: { playFX: vi.fn(), stopFX: vi.fn(), playMusic: vi.fn() },
 }));
 
+import {
+    Animation,
+    AnimationState,
+    AnimationStateData,
+    BoneData,
+    RotateTimeline,
+    Skeleton,
+    SkeletonData,
+    type Spine,
+} from '@esotericsoftware/spine-pixi-v8';
 import { AnimationsController } from '../../src/controllers/Animations.controller';
 import { sounds } from '../../src/controllers/Sounds.controller';
 import { asSpineMap, createFakeSpine, type FakeSpine } from '../helpers/fakeSpine';
@@ -225,6 +235,122 @@ describe('AnimationsController – track allocation', () => {
         expect(spine.__setAnimationCalls.map((c) => c.track)).toEqual([0, 0]);
 
         await vi.runAllTimersAsync();
+    });
+});
+
+describe('AnimationsController – never-applied entries', () => {
+    // A hidden tab freezes the ticker, so an entry is set but never applied
+    // (`nextTrackLast` stays -1) while the game keeps flowing on wall-clock
+    // timers. The fake never applies anything, which models exactly that.
+
+    beforeEach(() => vi.useFakeTimers());
+    afterEach(() => vi.useRealTimers());
+
+    it('leaves the pose alone when the same animation replays over its never-applied entry', async () => {
+        // the payline case: point bones are posed by hand after cloning, then the win
+        // loop replays `show` on a timer — a setup-pose reset here wiped the points
+        // and the line drew from the skeleton origin, the middle of the screen
+        const payline = createFakeSpine({
+            animations: [{ name: 'show', duration: 1, poses: ['slot:glow'] }],
+        });
+        const ctl = new AnimationsController(asSpineMap({ payline }));
+        ctl.registerSpine('payline', payline as never);
+
+        void ctl.play('payline', 'show', true);
+        await vi.advanceTimersByTimeAsync(1000); // resolves on wall-clock; no frame applied
+
+        void ctl.play('payline', 'show', true); // the win loop's replay
+
+        expect(payline.__bonesSetupPoseCount).toBe(0);
+        expect(payline.__setupPoseCount).toBe(0);
+        // the entry is handed to Spine untouched — setAnimation drops a
+        // never-applied entry itself instead of mixing from it
+        expect(payline.__clearTrackCalls).toEqual([]);
+        expect(payline.__setAnimationCalls).toEqual([
+            { track: 0, name: 'show', loop: false },
+            { track: 0, name: 'show', loop: false },
+        ]);
+    });
+
+    it('still drops a never-applied entry replaced by a different animation and undoes its pose', async () => {
+        const board = createFakeSpine({
+            animations: [
+                { name: 'inactive', duration: 1, poses: ['slot:symbol'] },
+                { name: 'idle', duration: 1, poses: ['slot:symbol'] },
+            ],
+        });
+        const ctl = new AnimationsController(asSpineMap({ board }));
+        ctl.registerSpine('board', board as never);
+
+        void ctl.play('board', 'inactive');
+        void ctl.play('board', 'idle'); // same frame — `inactive` never applied
+
+        expect(board.__clearTrackCalls).toEqual([0]);
+        expect(board.__bonesSetupPoseCount).toBe(1);
+        expect(board.__setupPoseCount).toBe(1);
+        expect(board.state.tracks[0]?.animation.name).toBe('idle');
+
+        await vi.runAllTimersAsync();
+    });
+
+    it('leaves an applied entry to Spine own mixing', async () => {
+        const board = createFakeSpine({
+            animations: [
+                { name: 'inactive', duration: 1, poses: ['slot:symbol'] },
+                { name: 'idle', duration: 1, poses: ['slot:symbol'] },
+            ],
+        });
+        const ctl = new AnimationsController(asSpineMap({ board }));
+        ctl.registerSpine('board', board as never);
+
+        void ctl.play('board', 'inactive');
+        board.state.tracks[0]!.nextTrackLast = 0; // a frame ran; the entry applied
+
+        void ctl.play('board', 'idle');
+
+        expect(board.__clearTrackCalls).toEqual([]);
+        expect(board.__bonesSetupPoseCount).toBe(0);
+        expect(board.__setupPoseCount).toBe(0);
+        expect(board.state.tracks[0]?.animation.name).toBe('idle');
+
+        await vi.runAllTimersAsync();
+    });
+
+    /**
+     * The payline scenario against the real runtime: a skeleton whose `show` keys only the
+     * root, with a point bone posed by hand the way `placePoints` does it. The runtime is
+     * what guarantees the safety of skipping the undo — `setAnimation` drops a never-applied
+     * entry replaced by its own animation instead of mixing from it — so that contract is
+     * pinned here against runtime upgrades.
+     */
+    it('a hand-posed bone survives a replay that lands before any frame is applied', async () => {
+        const data = new SkeletonData();
+        const root = new BoneData(0, 'root', null);
+        data.bones.push(root, new BoneData(1, 'point1', root));
+
+        const rotate = new RotateTimeline(1, 0, 0);
+        rotate.setFrame(0, 0, 45);
+        data.animations.push(new Animation('show', [rotate], 1));
+
+        const spine = {
+            skeleton: new Skeleton(data),
+            state: new AnimationState(new AnimationStateData(data)),
+        } as unknown as Spine;
+
+        const ctl = new AnimationsController(new Map([['payline', spine]]));
+        ctl.registerSpine('payline', spine);
+
+        const point = spine.skeleton.findBone('point1')!;
+        point.pose.setPosition(400, 300);
+
+        void ctl.play('payline', 'show', true); // the tab goes hidden: nothing applies
+        await vi.advanceTimersByTimeAsync(1000); // the win loop moves on regardless
+        void ctl.play('payline', 'show', true); // the replay
+
+        spine.state.apply(spine.skeleton); // the tab is visible again: first frame
+
+        expect(point.pose.x).toBe(400);
+        expect(point.pose.y).toBe(300);
     });
 });
 
