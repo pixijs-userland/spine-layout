@@ -34,9 +34,20 @@ export type SoundSettings = {
      * 'assets/<theme>' when each theme has its own manifest). Defaults to 'assets'.
      */
     assetBase?: string;
+    /**
+     * The game's authored mix: how loud each kind of sound is meant to be relative to the
+     * other, with `soundsVolumes` naming per-sound exceptions. The player never touches these.
+     */
     musicVolume: number; // 0 to 1
     fxVolume: number; // 0 to 1
     soundsVolumes?: { [key: string]: number };
+    /**
+     * The player's dials, 0 to 1. Every music volume is scaled by `musicLevel` and every FX
+     * volume — the per-sound exceptions included — by `fxLevel`, so turning a dial moves the
+     * whole mix without flattening it.
+     */
+    musicLevel: number;
+    fxLevel: number;
 };
 
 export class Sounds {
@@ -62,6 +73,8 @@ export class Sounds {
             debug: false,
             musicVolume: 0.8,
             fxVolume: 0.8,
+            musicLevel: 1,
+            fxLevel: 1,
             ...settings,
         };
 
@@ -249,8 +262,11 @@ export class Sounds {
             console.log('🎶 Play FX', sound);
         }
 
-        const volume = this.settings.soundsVolumes?.[sound] ?? this.settings.fxVolume;
-        const newInstance = this.addAndPlay(sound, { loop, volume, mute: this.settings.fxMuted });
+        const newInstance = this.addAndPlay(sound, {
+            loop,
+            volume: this.fxVolumeOf(sound),
+            mute: this.settings.fxMuted,
+        });
 
         if (!newInstance) {
             if (this.settings.debug) {
@@ -308,7 +324,7 @@ export class Sounds {
         // resolved must leave the current music playing. Only other music stops music.
         const newInstance = this.addAndPlay(music, {
             loop: true,
-            volume: this.settings.musicVolume,
+            volume: this.settings.musicVolume * this.settings.musicLevel,
             mute: this.settings.musicMuted,
         });
 
@@ -421,8 +437,14 @@ export class Sounds {
         if (this.settings.musicMuted) this.muteMusic();
         else this.unmuteMusic();
 
-        this.musicSounds.forEach((sound) => sound.volume(this.settings.musicVolume));
-        this.fxSounds.forEach((sound) => sound.volume(this.settings.fxVolume));
+        this.musicSounds.forEach((sound) =>
+            sound.volume(this.settings.musicVolume * this.settings.musicLevel),
+        );
+        this.fxSounds.forEach((sound, name) => sound.volume(this.fxVolumeOf(name)));
+    }
+
+    private fxVolumeOf(sound: string): number {
+        return (this.settings.soundsVolumes?.[sound] ?? this.settings.fxVolume) * this.settings.fxLevel;
     }
 
     mute() {

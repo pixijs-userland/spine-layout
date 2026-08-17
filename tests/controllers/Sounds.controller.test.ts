@@ -491,6 +491,52 @@ describe('Sounds – updateSettings', () => {
     });
 });
 
+// ─── Volume levels ───────────────────────────────────────────────────────────
+
+describe('Sounds – volume levels', () => {
+    it('scales a new fx by the authored volume times fxLevel', async () => {
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+        const s = new Sounds({ fxVolume: 0.5, fxLevel: 0.5 });
+        s.init(makeManifest(['coin']));
+        s.onUserInteraction();
+        await s.playFX('coin');
+        expect(Howl).toHaveBeenCalledWith(expect.objectContaining({ volume: 0.25 }));
+    });
+
+    it('scales a per-sound override by fxLevel too', async () => {
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+        const s = new Sounds({ fxVolume: 0.5, fxLevel: 0.5, soundsVolumes: { coin: 0.1 } });
+        s.init(makeManifest(['coin']));
+        s.onUserInteraction();
+        await s.playFX('coin');
+        expect(Howl).toHaveBeenCalledWith(expect.objectContaining({ volume: 0.1 * 0.5 }));
+    });
+
+    it('scales music by musicLevel', async () => {
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+        const s = new Sounds({ musicVolume: 0.2, musicLevel: 0.5 });
+        s.init(makeManifest(['bgm']));
+        s.onUserInteraction();
+        await s.playMusic('bgm');
+        expect(Howl).toHaveBeenCalledWith(expect.objectContaining({ volume: 0.2 * 0.5 }));
+    });
+
+    it('updateSettings retunes playing sounds, per-sound overrides intact', async () => {
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+        const s = new Sounds({ fxVolume: 0.5, soundsVolumes: { coin: 0.1 } });
+        s.init(makeManifest(['coin', 'bgm']));
+        s.onUserInteraction();
+        await s.playFX('coin');
+        await s.playMusic('bgm');
+        fakeHowl.volume.mockClear();
+
+        s.updateSettings({ fxLevel: 0.5, musicLevel: 0.5 });
+
+        expect(fakeHowl.volume).toHaveBeenCalledWith(0.1 * 0.5);
+        expect(fakeHowl.volume).toHaveBeenCalledWith(0.8 * 0.5);
+    });
+});
+
 // ─── Visibility change ────────────────────────────────────────────────────────
 
 describe('Sounds – visibility change', () => {
