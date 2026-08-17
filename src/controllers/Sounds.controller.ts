@@ -9,6 +9,19 @@ import type { AssetSrc, AssetsManifest, UnresolvedAsset } from 'pixi.js';
  */
 const DUPLICATE_FX_WINDOW_MS = 50;
 
+/**
+ * The name a spine event would ask for, from any of the aliases the manifest lists a sound under.
+ *
+ * One file arrives as four of them — `sounds/spin.mp3`, `sounds/spin`, `spin.mp3`, `spin` — and
+ * animations name the last. Reducing every alias to it is what keeps a preload from fetching the
+ * same file four times, and what makes the instance it leaves behind the one the first `playFX`
+ * finds. Bundle-qualified aliases are reduced too, since the bare one is dropped from the manifest
+ * wherever a font or a texture has claimed it (see {@link Sounds.resolveSoundKey}).
+ */
+function bareName(alias: string): string {
+    return alias.slice(alias.lastIndexOf('/') + 1).replace(/\.[^.]+$/, '');
+}
+
 export type SoundSettings = {
     debug?: boolean;
     musicMuted: boolean;
@@ -75,6 +88,57 @@ export class Sounds {
 
         this.playSounds();
         this.fireReadyCallbacks();
+    }
+
+    /**
+     * Fetches every sound the manifest named, in the background.
+     *
+     * Without this a sound is fetched the moment it is first asked for, which is the moment it
+     * was meant to be heard: the reels of the first spin are already turning while the sound of
+     * them is still on the wire. Called once the game is playable, this pays for all of them at a
+     * time when nothing is waiting.
+     *
+     * Nothing waits on it either. Each file is its own request, the promise is there to be
+     * watched rather than awaited, and one that will not load resolves like the rest — a sound is
+     * not worth failing a game over. Anything asked for while its file is still coming is queued
+     * by Howler and plays on arrival, so a preload that is still running changes nothing about
+     * what the player hears.
+     */
+    preload(): Promise<void> {
+        const names = new Set<string>();
+
+        this.soundNames.forEach((_source, alias) => names.add(bareName(alias)));
+
+        const loading = [...names]
+            .filter((name) => !this.sounds.has(name))
+            .map((name) => this.warm(name));
+
+        if (this.settings.debug) {
+            console.log(`🎶 Preloading ${loading.length} sounds`);
+        }
+
+        return Promise.all(loading).then(() => undefined);
+    }
+
+    private warm(name: string): Promise<void> {
+        const src = this.getSoundName(name);
+
+        if (src.length === 0) return Promise.resolve();
+
+        const sound = new Howl({ src, preload: true, autoplay: false });
+
+        this.sounds.set(name, sound);
+
+        return new Promise((resolve) => {
+            sound.once('load', () => resolve());
+            sound.once('loaderror', (_id, error) => {
+                if (this.settings.debug) {
+                    console.warn(`🎶 Could not preload "${name}"`, error);
+                }
+
+                resolve();
+            });
+        });
     }
 
     private extractSoundNames(pixiManifest: AssetsManifest) {
@@ -274,12 +338,18 @@ export class Sounds {
     }
 
     private addAndPlay(soundName: string, settings: Partial<HowlOptions>): Howl | null {
-        if (this.sounds.has(soundName)) {
-            const sound = this.sounds.get(soundName)!;
+        const existing = this.sounds.get(soundName);
 
-            sound.play();
+        if (existing) {
+            // A sound made earlier carries whatever it was made with, and `preload` makes them
+            // with nothing at all. How it plays is the caller's to say, every time.
+            if (settings.loop !== undefined) existing.loop(settings.loop);
+            if (settings.volume !== undefined) existing.volume(settings.volume);
+            if (settings.mute !== undefined) existing.mute(settings.mute);
 
-            return sound;
+            existing.play();
+
+            return existing;
         }
 
         const soundSources = this.getSoundName(soundName);
