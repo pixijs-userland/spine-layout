@@ -949,6 +949,23 @@ describe('AnimationsController – animation-triggered FX', () => {
         await vi.runAllTimersAsync();
     });
 
+    it('routes an event with music anywhere in its name to the music channel', async () => {
+        const hero = makeSpineWithFX();
+        const ctl = new AnimationsController(asSpineMap({ hero }));
+        ctl.registerSpine('hero', hero as never);
+
+        void ctl.play('hero', 'a');
+        hero.triggerEvent('fs_music_loop', 'a');
+
+        expect(soundsMock.playMusic).toHaveBeenCalledWith('fs_music');
+        expect(soundsMock.playFX).not.toHaveBeenCalled();
+
+        ctl.stop('hero', 'a');
+
+        expect(soundsMock.stopFX).not.toHaveBeenCalled();
+        await vi.runAllTimersAsync();
+    });
+
     it('keeps an FX playing while another running animation also triggered it', async () => {
         const hero = makeSpineWithFX();
         const ctl = new AnimationsController(asSpineMap({ hero }));

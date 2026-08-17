@@ -65,17 +65,18 @@ export class AnimationsController {
                     }
                 }
 
-                // `_loop` marks a *looping* sound, not a music track: only the music pointer
-                // (`music_loop`, `music2`) reaches the music channel, which keeps playing until
-                // another track replaces it. Everything else is FX owned by the animation that
-                // fired it — including looping FX like `spin_loop`, which would otherwise loop
-                // on forever after its animation stops.
+                // Any event with `music` in its name is a music track: it loops on the music
+                // channel until another track replaces it, so it needs no `_loop` modifier.
+                // The suffix is still stripped so older events (`fs_music_loop`) resolve to
+                // their file (`fs_music`). Everything else is FX owned by the animation that
+                // fired it, where `_loop` marks a looping FX (`spin_loop`) that would
+                // otherwise loop on forever after its animation stops.
                 const looping = event.data.name.endsWith(parcePointers.mod.loop);
                 const sound = looping
                     ? event.data.name.slice(0, -parcePointers.mod.loop.length)
                     : event.data.name;
 
-                if (sound.startsWith(parcePointers.sound.music)) {
+                if (sound.includes(parcePointers.sound.music)) {
                     sounds.playMusic(sound);
                 } else {
                     sounds.playFX(sound, looping);
