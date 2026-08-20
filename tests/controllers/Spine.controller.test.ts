@@ -43,6 +43,7 @@ const makeRegion = (overrides: Partial<{
     height: number;
     degrees: number;
     rotate: boolean;
+    resolution: number;
 }> = {}) => {
     const attachment = new RegionAttachment(overrides.name ?? 'a', 'p');
     // The Spine controller reads region.x/y/width/height/degrees + region.texture.texture
@@ -56,7 +57,11 @@ const makeRegion = (overrides: Partial<{
                 height: overrides.height ?? 20,
                 degrees: overrides.degrees ?? 0,
                 rotate: overrides.rotate ?? false,
-                texture: { texture: { source: { __mark: 'pageTex' } } },
+                texture: {
+                    texture: {
+                        source: { __mark: 'pageTex', resolution: overrides.resolution ?? 1 },
+                    },
+                },
             },
         ],
     };
@@ -203,6 +208,41 @@ describe('SpineController', () => {
         expect((tex as unknown as { rotate: number }).rotate).toBe(2);
     });
 
+    it('getSlotTexture scales a reduced page from its own pixels into logical units', () => {
+        // A `@0.5x` page: the region is measured in its 95x94 pixels, the frame in the source's
+        // logical 190x188, so an unscaled frame would sample half-way into the atlas.
+        const region = makeRegion({ x: 57, y: 43, width: 1, height: 1, resolution: 0.5 });
+        const hero = createFakeSpine({ slots: [{ name: 'icon', attachment: region }] });
+        const ctl = new SpineController(asSpineMap({ hero }), new AnimationsController(new Map()));
+
+        expect(ctl.getSlotTexture('hero', 'icon')?.frame).toMatchObject({
+            x: 114,
+            y: 86,
+            width: 2,
+            height: 2,
+        });
+    });
+
+    it('getSlotTexture scales a rotated frame off a reduced page too', () => {
+        const region = makeRegion({
+            x: 5,
+            y: 6,
+            width: 30,
+            height: 40,
+            degrees: 90,
+            resolution: 0.5,
+        });
+        const hero = createFakeSpine({ slots: [{ name: 'icon', attachment: region }] });
+        const ctl = new SpineController(asSpineMap({ hero }), new AnimationsController(new Map()));
+
+        expect(ctl.getSlotTexture('hero', 'icon')?.frame).toMatchObject({
+            x: 10,
+            y: 12,
+            width: 80,
+            height: 60,
+        });
+    });
+
     it('getSlotTexture accepts MeshAttachment instances', () => {
         const mesh = new MeshAttachment('m', 'p');
         (mesh as unknown as { sequence: unknown }).sequence = {
@@ -214,7 +254,7 @@ describe('SpineController', () => {
                     height: 4,
                     degrees: 0,
                     rotate: false,
-                    texture: { texture: { source: {} } },
+                    texture: { texture: { source: { resolution: 1 } } },
                 },
             ],
         };

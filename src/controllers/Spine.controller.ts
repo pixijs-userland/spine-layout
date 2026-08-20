@@ -188,12 +188,31 @@ export class SpineController {
 
         const region = rawRegion as TextureAtlasRegion & { rotate: boolean };
         const pageTex: Texture = region.texture.texture;
-        const frame = new Rectangle(region.x, region.y, region.width, region.height);
-        let sub = new Texture({ source: pageTex.source, frame }) as Texture & { rotate: number };
+
+        // A region is measured in the atlas page's own pixels; a `Texture` frame is measured in
+        // its source's *logical* size, which is `pixelWidth / resolution`. The two are the same
+        // thing on a full-size page and a factor of two apart on a `@0.5x` one, where an unscaled
+        // frame lands at half the position and half the size — a 1px hit area comes out as a
+        // block of whatever art sits a quarter of the way into the atlas.
+        const { resolution } = pageTex.source;
+        const frame = (width: number, height: number) =>
+            new Rectangle(
+                region.x / resolution,
+                region.y / resolution,
+                width / resolution,
+                height / resolution,
+            );
+
+        let sub = new Texture({
+            source: pageTex.source,
+            frame: frame(region.width, region.height),
+        }) as Texture & { rotate: number };
 
         if (region.degrees === 90 || region.rotate === true) {
-            const rotatedFrame = new Rectangle(region.x, region.y, region.height, region.width);
-            sub = new Texture({ source: pageTex.source, frame: rotatedFrame }) as typeof sub;
+            sub = new Texture({
+                source: pageTex.source,
+                frame: frame(region.height, region.width),
+            }) as typeof sub;
             sub.rotate = 2;
         }
 
