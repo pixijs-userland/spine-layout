@@ -42,6 +42,20 @@ export type SoundSettings = {
     fxVolume: number; // 0 to 1
     soundsVolumes?: { [key: string]: number };
     /**
+     * Sound IDs that stand for a set of files, one of them picked at random per play.
+     *
+     * An animation names a single sound — the reel's `stop` event — and the game says which
+     * files that name may reach, so the reels land on a different sound each time without the
+     * skeleton being re-exported. The ID stays the only name anything else needs: `stopFX(id)`
+     * stops whichever variant is playing, and one `soundsVolumes` entry against the ID mixes
+     * the whole set.
+     *
+     * A variant the manifest does not have is dropped rather than picked, so a list written
+     * ahead of the files plays the ones that arrived instead of falling silent on every third
+     * stop.
+     */
+    soundVariants?: Record<string, string[]>;
+    /**
      * The player's dials, 0 to 1. Every music volume is scaled by `musicLevel` and every FX
      * volume — the per-sound exceptions included — by `fxLevel`, so turning a dial moves the
      * whole mix without flattening it.
@@ -220,7 +234,9 @@ export class Sounds {
             return;
         }
 
-        if (!this.hasSounds(fx)) {
+        const candidates = this.candidatesFor(fx);
+
+        if (candidates.length === 0) {
             if (this.settings.debug) {
                 console.warn(`🎶 No sound registered for "${this.requestKey(fx)}"`);
             }
@@ -244,16 +260,16 @@ export class Sounds {
 
         this.lastFXPlayedAt.set(requestKey, now);
 
-        const randomFromArray = Array.isArray(fx) ? fx[Math.floor(Math.random() * fx.length)] : fx;
-        const sound = randomFromArray;
+        // A looping FX re-fires every cycle of a looping animation. `Howl.play()` would start a
+        // *second*, overlapping sound id each time (and only the newest would be
+        // audible-but-doubled), so let the running loop carry on instead. Asked across a set of
+        // variants, the second would be a different file looping on over the first.
+        if (loop && candidates.some((name) => this.fxSounds.get(name)?.playing())) return;
+
+        const sound = candidates[Math.floor(Math.random() * candidates.length)];
         const fxInstance = this.fxSounds.get(sound);
 
         if (fxInstance) {
-            // A looping FX re-fires every cycle of a looping animation. `Howl.play()` would
-            // start a *second*, overlapping sound id each time (and only the newest would be
-            // audible-but-doubled), so let the running loop carry on instead.
-            if (loop && fxInstance.playing()) return;
-
             fxInstance.play();
             return;
         }
@@ -279,19 +295,23 @@ export class Sounds {
     }
 
     stopFX(fx: string) {
-        const fxInstance = this.fxSounds.get(fx);
-
         // A stop is deliberate, so whatever follows it is a new sound rather than the tail of
         // a burst: let it through even if it lands inside the duplicate window.
         this.lastFXPlayedAt.delete(fx);
 
-        if (fxInstance) {
+        // Every file the name can reach, not just the name itself: a `stopFX('stop')` is the
+        // inverse of the `playFX('stop')` that may well have started `stop_2`.
+        new Set([fx, ...this.variantsOf(fx)]).forEach((name) => {
+            const fxInstance = this.fxSounds.get(name);
+
+            if (!fxInstance) return;
+
             if (this.settings.debug) {
-                console.log('🎶 Stop FX', fx);
+                console.log('🎶 Stop FX', name);
             }
 
             fxInstance.stop();
-        }
+        });
     }
 
     playMusic(music: string) {
@@ -444,7 +464,10 @@ export class Sounds {
     }
 
     private fxVolumeOf(sound: string): number {
-        return (this.settings.soundsVolumes?.[sound] ?? this.settings.fxVolume) * this.settings.fxLevel;
+        const volumes = this.settings.soundsVolumes ?? {};
+        const authored = volumes[sound] ?? volumes[this.groupOf(sound)] ?? this.settings.fxVolume;
+
+        return authored * this.settings.fxLevel;
     }
 
     mute() {
@@ -527,9 +550,25 @@ export class Sounds {
         return [`${bundle}/${soundName}`, soundName].find((key) => this.soundNames.has(key)) ?? null;
     }
 
-    private hasSounds(fx: string | string[]): boolean {
-        const names = Array.isArray(fx) ? fx : [fx];
-        return names.some((name) => this.resolveSoundKey(name) !== null);
+    /** The files a request may play: its variants resolved, minus anything the manifest lacks. */
+    private candidatesFor(fx: string | string[]): string[] {
+        const requested = Array.isArray(fx) ? fx : [fx];
+
+        return requested
+            .flatMap((name) => this.variantsOf(name))
+            .filter((name) => this.resolveSoundKey(name) !== null);
+    }
+
+    /** The files a sound ID stands for — itself, unless the game named a set for it. */
+    private variantsOf(name: string): string[] {
+        return this.settings.soundVariants?.[name] ?? [name];
+    }
+
+    /** The ID a file is mixed as: the one that named it a variant, or the file itself. */
+    private groupOf(sound: string): string {
+        const variants = this.settings.soundVariants ?? {};
+
+        return Object.keys(variants).find((id) => variants[id].includes(sound)) ?? sound;
     }
 
     private getSoundName(soundName: string): string[] {

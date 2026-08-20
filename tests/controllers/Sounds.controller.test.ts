@@ -369,6 +369,129 @@ describe('Sounds – duplicate fx', () => {
     });
 });
 
+// ─── Variants ─────────────────────────────────────────────────────────────────
+
+describe('Sounds – variants', () => {
+    it('plays one of the files the sound ID stands for', async () => {
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+        vi.spyOn(Math, 'random').mockReturnValue(0.5);
+        const s = new Sounds({ soundVariants: { stop: ['stop_1', 'stop_2'] } });
+        s.init(makeManifest(['stop', 'stop_1', 'stop_2']));
+        s.onUserInteraction();
+
+        await s.playFX('stop');
+
+        expect(Howl).toHaveBeenCalledWith(
+            expect.objectContaining({ src: [expect.stringContaining('stop_2')] }),
+        );
+    });
+
+    it('picks a different file the next time', async () => {
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+        vi.spyOn(Math, 'random').mockReturnValueOnce(0).mockReturnValueOnce(0.9);
+        const s = new Sounds({ soundVariants: { stop: ['stop_1', 'stop_2'] } });
+        s.init(makeManifest(['stop_1', 'stop_2']));
+        s.onUserInteraction();
+
+        await s.playFX('stop');
+        passDuplicateWindow();
+        await s.playFX('stop');
+
+        expect(Howl).toHaveBeenCalledTimes(2);
+        expect(Howl).toHaveBeenCalledWith(
+            expect.objectContaining({ src: [expect.stringContaining('stop_1')] }),
+        );
+        expect(Howl).toHaveBeenCalledWith(
+            expect.objectContaining({ src: [expect.stringContaining('stop_2')] }),
+        );
+    });
+
+    it('skips a variant the manifest does not have', async () => {
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+        vi.spyOn(Math, 'random').mockReturnValue(0.99);
+        const s = new Sounds({ soundVariants: { stop: ['stop_1', 'stop_2', 'stop_3'] } });
+        s.init(makeManifest(['stop_1']));
+        s.onUserInteraction();
+
+        await s.playFX('stop');
+
+        expect(Howl).toHaveBeenCalledWith(
+            expect.objectContaining({ src: [expect.stringContaining('stop_1')] }),
+        );
+    });
+
+    it('plays nothing when none of the variants is in the manifest', async () => {
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+        const s = new Sounds({ soundVariants: { stop: ['stop_1', 'stop_2'] } });
+        s.init(makeManifest(['stop']));
+        s.onUserInteraction();
+
+        await s.playFX('stop');
+
+        expect(Howl).not.toHaveBeenCalled();
+    });
+
+    it('stops the variant that is playing when the ID is stopped', async () => {
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+        vi.spyOn(Math, 'random').mockReturnValue(0);
+        const s = new Sounds({ soundVariants: { stop: ['stop_1', 'stop_2'] } });
+        s.init(makeManifest(['stop_1', 'stop_2']));
+        s.onUserInteraction();
+
+        await s.playFX('stop');
+        s.stopFX('stop');
+
+        expect(fakeHowl.stop).toHaveBeenCalledOnce();
+    });
+
+    it('does not start a second variant while one is looping', async () => {
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+        vi.spyOn(Math, 'random').mockReturnValueOnce(0).mockReturnValueOnce(0.9);
+        const s = new Sounds({ soundVariants: { spin: ['spin_1', 'spin_2'] } });
+        s.init(makeManifest(['spin_1', 'spin_2']));
+        s.onUserInteraction();
+
+        await s.playFX('spin', true);
+        fakeHowl.playing.mockReturnValue(true);
+        passDuplicateWindow();
+        await s.playFX('spin', true);
+
+        expect(Howl).toHaveBeenCalledOnce();
+    });
+
+    it('mixes a variant at the volume authored for its ID', async () => {
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+        vi.spyOn(Math, 'random').mockReturnValue(0);
+        const s = new Sounds({
+            fxVolume: 0.8,
+            soundsVolumes: { stop: 0.5 },
+            soundVariants: { stop: ['stop_1', 'stop_2'] },
+        });
+        s.init(makeManifest(['stop_1', 'stop_2']));
+        s.onUserInteraction();
+
+        await s.playFX('stop');
+
+        expect(Howl).toHaveBeenCalledWith(expect.objectContaining({ volume: 0.5 }));
+    });
+
+    it('lets a variant name its own volume', async () => {
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+        vi.spyOn(Math, 'random').mockReturnValue(0);
+        const s = new Sounds({
+            fxVolume: 0.8,
+            soundsVolumes: { stop: 0.5, stop_1: 0.2 },
+            soundVariants: { stop: ['stop_1', 'stop_2'] },
+        });
+        s.init(makeManifest(['stop_1', 'stop_2']));
+        s.onUserInteraction();
+
+        await s.playFX('stop');
+
+        expect(Howl).toHaveBeenCalledWith(expect.objectContaining({ volume: 0.2 }));
+    });
+});
+
 // ─── stopFX ───────────────────────────────────────────────────────────────────
 
 describe('Sounds – stopFX', () => {

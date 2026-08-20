@@ -104,6 +104,15 @@ sounds.playFX('laser', true);              // looping FX
 sounds.playFX('laser_loop');               // the same looping FX
 ```
 
+A name listed in `soundVariants` is a set of files under one ID: the caller keeps asking for the
+ID and each play picks one of its files at random. What the manifest does not have is dropped
+rather than picked, whether it was asked for by name or reached through a variant list.
+
+```ts
+sounds.init(manifest, { soundVariants: { stop: ['stop_1', 'stop_2', 'stop_3'] } });
+sounds.playFX('stop');   // one of the three, a different one next time
+```
+
 ---
 
 ### stopFX
@@ -112,7 +121,9 @@ sounds.playFX('laser_loop');               // the same looping FX
 stopFX(fx: string): void
 ```
 
-Stops a named FX sound (useful for looping FX started with `playFX(..., true)`).
+Stops a named FX sound (useful for looping FX started with `playFX(..., true)`). An ID with
+`soundVariants` stops whichever of its files is playing, so the caller never needs to know which
+one was picked.
 
 ---
 
@@ -171,7 +182,8 @@ sounds.updateSettings({
 | `fxMuted` | `boolean` | `false` | Mute FX tracks only |
 | `musicVolume` | `number` | `0.1` | Default music volume (0–1) |
 | `fxVolume` | `number` | `0.8` | Default FX volume (0–1) |
-| `soundsVolumes` | `Record<string, number>` | — | Per-sound FX volume overrides, keyed by the prefixed asset name (e.g. `'game1/coin'`) |
+| `soundsVolumes` | `Record<string, number>` | — | Per-sound FX volume overrides, keyed by the prefixed asset name (e.g. `'game1/coin'`). An entry against a `soundVariants` ID covers every file in that set |
+| `soundVariants` | `Record<string, string[]>` | — | Sound IDs that stand for a set of files, one picked at random per play |
 | `prefix` | `string` | — | Prefix prepended to the manifest bundle name and all asset key lookups |
 | `debug` | `boolean` | `false` | Logs all operations to the console |
 
