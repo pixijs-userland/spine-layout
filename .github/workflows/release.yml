@@ -42,6 +42,7 @@ jobs:
             # The org forbids Actions from opening PRs, so we release directly:
             # consume pending changesets, publish, and push the bump back to main.
             - name: Version, publish, and push
+              id: release
               run: |
                   git config user.name "github-actions[bot]"
                   git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -55,12 +56,38 @@ jobs:
                       exit 0
                   fi
 
-                  # build + changeset publish to GitHub Packages
-                  pnpm release
-
+                  # Committed before publishing, because `changeset publish` tags whatever
+                  # HEAD is when it runs. Published first, the tag named the commit *before*
+                  # the bump — pointing at a tree whose package.json still said the old
+                  # version. `dist/` is gitignored, so there is nothing here the build adds.
                   git add -A
                   git commit -m "chore: release [skip ci]"
-                  git push origin HEAD:main
+
+                  # build + changeset publish to GitHub Packages, and tag `vX.Y.Z`
+                  pnpm release
+
+                  # --follow-tags, or the tag stays in the runner and dies with it: a plain
+                  # push carries commits only. It is what `#semver:` ranges resolve against,
+                  # so a release without it is a release nobody can name.
+                  git push --follow-tags origin HEAD:main
+
+                  echo "version=$(node -p "require('./package.json').version")" >>"$GITHUB_OUTPUT"
               env:
                   NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
                   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+            # Skipped when the step above found no pending changesets and left `version` unset.
+            - name: Publish the GitHub release
+              if: steps.release.outputs.version != ''
+              run: |
+                  # The CHANGELOG section changesets just wrote: everything from the first
+                  # `## ` heading down to the next one.
+                  awk '/^## /{ n++ } n == 1' CHANGELOG.md >notes.md
+
+                  gh release create "v${VERSION}" \
+                      --title "v${VERSION}" \
+                      --notes-file notes.md \
+                      --verify-tag
+              env:
+                  VERSION: ${{ steps.release.outputs.version }}
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
