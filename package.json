@@ -1,6 +1,6 @@
 {
     "name": "@pixijs-userland/spine-layout",
-    "version": "0.2.0",
+    "version": "0.3.0",
     "description": "Compose Pixi.js scenes from Spine skeletons with state/event-based animation",
     "license": "MIT",
     "repository": {
