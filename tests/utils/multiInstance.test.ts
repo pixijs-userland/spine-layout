@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { planMultipleInstances, type BaseSpineSlots } from '../../src/utils/multiInstance';
+import {
+    planMultipleInstances,
+    spinePointerBases,
+    type BaseSpineSlots,
+} from '../../src/utils/multiInstance';
 
 /** Mirrors the slot-reel-of-the-dead layout: a `reels` parent with named reel pointers, a single
  *  `reel` template whose repeated `spine_symbol*` slots seed a 25-strong symbol pool and
@@ -139,5 +143,33 @@ describe('planMultipleInstances', () => {
         ]);
 
         expect(groups).toEqual([]);
+    });
+});
+
+describe('spinePointerBases', () => {
+    const known = (ids: string[]) => (id: string) => ids.includes(id);
+
+    it('names the spine a plain pointer points at', () => {
+        expect(spinePointerBases('spine_bg', known(['bg']))).toEqual(['bg']);
+    });
+
+    it('names the base a numbered pointer is an instance of', () => {
+        expect(spinePointerBases('spine_reel_1', known(['reel']))).toEqual(['reel']);
+    });
+
+    it('names the template a counted pointer draws its pool from', () => {
+        expect(spinePointerBases('spine_symbol0', known(['symbol']))).toEqual(['symbol']);
+    });
+
+    it('names the sibling itself when the counted pointer is a spine of its own', () => {
+        expect(spinePointerBases('spine_symbol0', known(['symbol', 'symbol0']))).toEqual(['symbol0']);
+    });
+
+    it('names nothing for a pointer at a skeleton that was never loaded', () => {
+        expect(spinePointerBases('spine_missing', known(['bg']))).toEqual([]);
+    });
+
+    it('names nothing for a slot that is not a pointer', () => {
+        expect(spinePointerBases('text_balance', known(['balance']))).toEqual([]);
     });
 });

@@ -28,7 +28,7 @@ import {
 import { LOG } from './config/logs';
 import { log } from './utils/Log';
 import { ManifestParser, type SpineAssetData } from './utils/ManifestParser';
-import { planMultipleInstances } from './utils/multiInstance';
+import { planMultipleInstances, spinePointerBases } from './utils/multiInstance';
 import { AnimationsController } from './controllers/Animations.controller';
 import { SkinsController } from './controllers/Skins.controller';
 import { TextsController } from './controllers/Texts.controller';
@@ -37,8 +37,24 @@ import { SpineController } from './controllers/Spine.controller';
 import { PointerController } from './controllers/Pointer.controller';
 import { sounds } from './controllers/Sounds.controller';
 
+/** The spine the scene is built from, unless the options name another. */
+const DEFAULT_ROOT = 'root';
+
+/**
+ * How one loaded skeleton is turned into an instance — retained per id, so a spine the tree
+ * never asked for can still be built later ({@link SpineLayout.createInstance}), and so a
+ * template's clones are read from the skeleton rather than copied off the template.
+ */
+type SpineSource = {
+    create: () => Spine;
+    /** What the source knows about a fresh instance once it is registered: its skins. */
+    registered?: (spineID: SpineID, spine: Spine) => void;
+};
+
 export class SpineLayout extends Container {
     #spines: Map<SpineID, Spine> = new Map();
+    /** Every skeleton that was loaded, built or not, by the id it would be registered under. */
+    #sources: Map<SpineID, SpineSource> = new Map();
     /** Ids of spines created as multiple instances (e.g. `counter_1`). */
     #multipleInstanceIDs: Set<string> = new Set();
     #animations: AnimationsController;
@@ -139,47 +155,21 @@ export class SpineLayout extends Container {
     // ─── Instance creation ───────────────────────────────────────────────────────
 
     createInstancesFromManifest(manifest: AssetsManifest, folderName?: string) {
-        log.open(LOG.SPINES);
-        log.open(LOG.STATES);
-        log.open(LOG.EVENTS);
-        log.open(LOG.SPINE_EVENTS);
+        this.openRegistryLogs();
 
-        // Create a single instance for every asset first, so that parent spines exist
-        // and their slots can be scanned for multiple-instance pointers.
-        const assetByID = new Map<string, SpineAssetData>();
+        const sources = new Map<SpineID, SpineSource>();
+
         ManifestParser.getSpineAssets(manifest).forEach((asset) => {
             const spineID = asset.skel.replace(/\.[^.]+$/, '');
-            assetByID.set(spineID, asset);
-            try {
-                this.addSpineInstance(spineID, this.spineFromAsset(asset, folderName));
-            } catch (e) {
-                console.error(`[SpineLayout] Error loading spine "${spineID}":`, e);
-            }
+
+            sources.set(spineID, { create: () => this.spineFromAsset(asset, folderName) });
         });
 
-        this.multiplyInstances(
-            (baseID) => assetByID.has(baseID),
-            (baseID, instanceID) => {
-                try {
-                    this.addSpineInstance(
-                        instanceID,
-                        this.spineFromAsset(assetByID.get(baseID)!, folderName),
-                    );
-                } catch (e) {
-                    console.error(`[SpineLayout] Error loading spine instance "${instanceID}":`, e);
-                }
-            },
-        );
+        const rootID = this.build(sources);
 
-        // Registration is done — flush its tables before anything is played, so the console
-        // reads in load order (what was registered, then what `init` did with it) instead of
-        // showing `Play State [init]` above the registries it was built from.
-        log.close(LOG.SPINES);
-        log.close(LOG.STATES);
-        log.close(LOG.EVENTS);
-        log.close(LOG.SPINE_EVENTS);
+        this.closeRegistryLogs();
 
-        this.render();
+        this.render(rootID);
 
         sounds.init(manifest);
 
@@ -188,60 +178,170 @@ export class SpineLayout extends Container {
     }
 
     createInstancesFromDataArray(data: SpineInstanceData[]) {
-        log.open(LOG.SPINES);
-        log.open(LOG.STATES);
-        log.open(LOG.EVENTS);
-        log.open(LOG.SPINE_EVENTS);
+        this.openRegistryLogs();
 
-        // Create a single instance per data item first, so that parent spines exist
-        // and their slots can be scanned for multiple-instance pointers.
-        const dataByID = new Map<string, SpineInstanceData>();
+        const sources = new Map<SpineID, SpineSource>();
+
         data.forEach((item) => {
-            const spineID = item.name;
-            dataByID.set(spineID, item);
-            try {
-                this.addDataInstance(spineID, item);
-            } catch (e) {
-                console.error(`[SpineLayout] Error loading spine "${spineID}":`, e);
-            }
+            sources.set(item.name, {
+                create: () => spineFromData(item),
+                registered: (spineID, spine) => this.registerDataSkins(spineID, spine, item),
+            });
         });
 
-        this.multiplyInstances(
-            (baseID) => dataByID.has(baseID),
-            (baseID, instanceID) => {
-                try {
-                    this.addDataInstance(instanceID, dataByID.get(baseID)!);
-                } catch (e) {
-                    console.error(`[SpineLayout] Error loading spine instance "${instanceID}":`, e);
-                }
-            },
-        );
+        const rootID = this.build(sources);
 
-        log.close(LOG.SPINES);
-        log.close(LOG.STATES);
-        log.close(LOG.EVENTS);
-        log.close(LOG.SPINE_EVENTS);
+        this.closeRegistryLogs();
 
-        this.render();
+        this.render(rootID);
 
         this.#animations.playState('init');
         this.#animations.playByName('init');
     }
 
-    /** Builds a Spine from raw data, registers it under `spineID`, and registers its skins. */
-    private addDataInstance(spineID: string, data: SpineInstanceData) {
-        const spineAtlas = new TextureAtlas(data.atlasText);
+    /**
+     * Creates a spine the tree does not reach, and everything that one embeds in turn.
+     *
+     * Building starts at the root and follows the `spine_<id>` slots down, so a skeleton that
+     * was loaded but is embedded nowhere is never instanced. This is the way to one anyway: a
+     * spine positioned by the game rather than by a slot, a popup the layout never names. It is
+     * registered and wired like any other — nested children, texts, buttons — but it is given
+     * no place on screen, since nothing named one: attach it with `scene.addSlotChild()`, or
+     * `addChild()` it into the layout. Nor is anything played — the tree's `init` ran when the
+     * tree was built — so pose it with `animations.play(spineID, 'init')` if it needs it.
+     *
+     * @returns the instance, already-built ones included, or `undefined` when no skeleton by
+     * that name was loaded.
+     */
+    createInstance(spineID: SpineID): Spine | undefined {
+        const existing = this.#spines.get(spineID);
 
-        for (const page of spineAtlas.pages) {
-            const texture = data.textures[page.name];
-            if (!texture) throw new Error(`Missing texture for page: ${page.name}`);
-            page.setTexture(SpineTexture.from(texture.source));
+        if (existing) return existing;
+
+        if (!this.#sources.has(spineID)) {
+            console.error(
+                `[SpineLayout] Cannot create "${spineID}": no skeleton by that name was loaded`,
+            );
+            return undefined;
         }
 
-        const spine = spineFromSkeleton(data.skeleton, spineAtlas);
+        this.openRegistryLogs();
 
-        this.addSpineInstance(spineID, spine);
+        const built = this.multiplyInstances(this.buildTree(spineID));
 
+        this.closeRegistryLogs();
+
+        this.#texts.loadSettings();
+        this.#scene.attachBones(built);
+        this.#scene.attachTexts(built);
+        this.#scene.activateButtonBones(built);
+        this.#scene.syncSlotObjectsWithDrawOrder(built);
+        this.#pointer.attach();
+
+        return this.#spines.get(spineID);
+    }
+
+    /**
+     * Builds the scene from its root: the root spine itself, then every spine a `spine_<id>`
+     * slot beneath it asks for, down the whole tree. What no slot points at stays unbuilt.
+     *
+     * With no root to start from there is no tree either, so every loaded skeleton is built and
+     * each one nothing embedded is rooted in the layout — what the layout did before it had a
+     * root, kept for a project whose entry point is not named yet.
+     *
+     * @returns the id the scene is rooted at, or `undefined` when there was no root to build.
+     */
+    private build(sources: Map<SpineID, SpineSource>): SpineID | undefined {
+        this.#sources = sources;
+
+        const rootID = this.options?.root ?? DEFAULT_ROOT;
+
+        if (sources.has(rootID)) {
+            this.multiplyInstances(this.buildTree(rootID));
+            return rootID;
+        }
+
+        console.warn(
+            `[SpineLayout] No root spine "${rootID}" among ${[...sources.keys()].join(', ')} — ` +
+                'building every skeleton instead. Name the entry point in the layout options ' +
+                '(`{ root: "…" }`) to build only what it embeds.',
+        );
+
+        sources.forEach((_, spineID) => this.instantiate(spineID));
+        this.multiplyInstances();
+
+        return undefined;
+    }
+
+    /**
+     * Builds `rootID` and everything the tree beneath it embeds, breadth-first: a spine's slots
+     * are read once it exists, and each `spine_<id>` among them names the next spine to build.
+     *
+     * A pointer at a pool (`spine_symbol0`) builds the template it is cloned from; the clones
+     * themselves are {@link multiplyInstances}' work, once the tree is known and the parents
+     * carrying those slots are all final.
+     *
+     * Nothing already built is built again — which only comes up for a tree grown later
+     * ({@link createInstance}), where a spine that is already standing in the scene keeps its
+     * place and the newcomer pointing at it gets a copy of its own.
+     *
+     * @returns the ids built, `rootID` included.
+     */
+    private buildTree(rootID: SpineID): Set<SpineID> {
+        const built = new Set<SpineID>();
+        const queue: { spineID: SpineID; baseID: SpineID }[] = [
+            { spineID: rootID, baseID: rootID },
+        ];
+
+        while (queue.length) {
+            const { spineID, baseID } = queue.shift()!;
+
+            if (built.has(spineID)) continue;
+            built.add(spineID);
+
+            const spine = this.instantiate(spineID, baseID);
+            if (!spine) continue;
+
+            spine.state.data.skeletonData.slots.forEach((slot) => {
+                spinePointerBases(slot.name, (id) => this.#sources.has(id)).forEach((base) => {
+                    // A spine can only live in one slot, so a pointer at one that is already
+                    // embedded gets an instance of its own — under the `<child>_<parent>` name
+                    // a child shared by several parents is given anyway.
+                    const shared = !!this.#spines.get(base)?.parent;
+                    const childID = shared ? `${base}_${spineID}` : base;
+
+                    if (built.has(childID) || this.#spines.has(childID)) return;
+                    if (shared) this.#multipleInstanceIDs.add(childID);
+
+                    queue.push({ spineID: childID, baseID: base });
+                });
+            });
+        }
+
+        return built;
+    }
+
+    /** Builds one instance from its source and registers it under `spineID`. */
+    private instantiate(spineID: SpineID, baseID: SpineID = spineID): Spine | undefined {
+        const source = this.#sources.get(baseID);
+
+        if (!source) return undefined;
+
+        try {
+            const spine = source.create();
+
+            this.addSpineInstance(spineID, spine);
+            source.registered?.(spineID, spine);
+
+            return spine;
+        } catch (e) {
+            console.error(`[SpineLayout] Error loading spine "${spineID}":`, e);
+            return undefined;
+        }
+    }
+
+    /** Registers the skins a raw-data skeleton exported, and applies its default one. */
+    private registerDataSkins(spineID: SpineID, spine: Spine, data: SpineInstanceData) {
         skinsOf(data.skeleton).forEach((skin) => {
             const defaultSkin =
                 spine.skeleton.data.findSkin('default') ?? spine.skeleton.data.findSkin('basic');
@@ -263,32 +363,39 @@ export class SpineLayout extends Container {
     }
 
     /**
-     * Expands base spines that act as multiple-instance templates into their full instance
-     * set (see {@link planMultipleInstances} for the supported pointer conventions). Each
-     * planned base is removed and replaced by its instances, which are tracked in
-     * {@link #multipleInstanceIDs} and built via `spawn`.
+     * Expands spines that act as multiple-instance templates into their full instance set (see
+     * {@link planMultipleInstances} for the supported pointer conventions). Each planned base is
+     * removed and replaced by its instances, which are tracked in {@link #multipleInstanceIDs}
+     * and built from the base's own source.
      *
-     * @param hasSource whether a base id has a backing asset/data entry to clone from.
-     * @param spawn     creates and registers one instance for `(baseID, instanceID)`.
+     * @param built the ids to plan over — the spines a build just produced. Omit for the whole
+     * registry.
+     * @returns those ids as the registry now holds them: an expanded base swapped for its
+     * instances.
      */
-    private multiplyInstances(
-        hasSource: (baseID: string) => boolean,
-        spawn: (baseID: string, instanceID: string) => void,
-    ) {
-        const bases = [...this.#spines.entries()].map(([id, spine]) => ({
-            id,
-            slots: spine.state.data.skeletonData.slots.map((slot) => slot.name),
-        }));
+    private multiplyInstances(built?: Set<SpineID>): Set<SpineID> {
+        const ids = built ?? new Set(this.#spines.keys());
+        const bases = [...this.#spines.entries()]
+            .filter(([id]) => ids.has(id))
+            .map(([id, spine]) => ({
+                id,
+                slots: spine.state.data.skeletonData.slots.map((slot) => slot.name),
+            }));
 
         planMultipleInstances(bases).forEach(({ baseID, instanceIDs }) => {
-            if (!hasSource(baseID)) return;
+            if (!this.#sources.has(baseID)) return;
 
             this.removeSpineInstance(baseID);
+            ids.delete(baseID);
+
             instanceIDs.forEach((instanceID) => {
                 this.#multipleInstanceIDs.add(instanceID);
-                spawn(baseID, instanceID);
+                ids.add(instanceID);
+                this.instantiate(instanceID, baseID);
             });
         });
+
+        return ids;
     }
 
     private addSpineInstance(spineID: string, spine: Spine) {
@@ -314,13 +421,48 @@ export class SpineLayout extends Container {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     protected onSpineRegistered(_spineID: string, _spine: Spine) { }
 
-    private render() {
+    /**
+     * Registration is done — flush its tables before anything is played, so the console reads in
+     * load order (what was registered, then what `init` did with it) instead of showing
+     * `Play State [init]` above the registries it was built from.
+     */
+    private openRegistryLogs() {
+        log.open(LOG.SPINES);
+        log.open(LOG.STATES);
+        log.open(LOG.EVENTS);
+        log.open(LOG.SPINE_EVENTS);
+    }
+
+    private closeRegistryLogs() {
+        log.close(LOG.SPINES);
+        log.close(LOG.STATES);
+        log.close(LOG.EVENTS);
+        log.close(LOG.SPINE_EVENTS);
+    }
+
+    private render(rootID?: SpineID) {
         this.#texts.loadSettings();
-        this.#scene.attachBones((spine) => this.addChild(spine));
+        this.#scene.attachBones();
+        this.layoutChildren(rootID).forEach((spine) => this.addChild(spine));
         this.#scene.attachTexts();
         this.#scene.activateButtonBones();
         this.#scene.syncSlotObjectsWithDrawOrder();
         this.#pointer.attach();
+    }
+
+    /**
+     * What the layout container itself holds: the root, the one spine the scene hangs from.
+     *
+     * A spine the tree embeds is a child of the spine embedding it, not of the layout — even
+     * one whose slot `skipAttachingSpinesPatterns` held back, which is built and left for the
+     * game to place. Without a root, every spine nothing embedded is one.
+     */
+    private layoutChildren(rootID?: SpineID): Spine[] {
+        if (!rootID) return [...this.#spines.values()].filter((spine) => !spine.parent);
+
+        const root = this.#spines.get(rootID);
+
+        return root ? [root] : [];
     }
 
     // ─── Lifecycle ───────────────────────────────────────────────────────────────
@@ -334,6 +476,7 @@ export class SpineLayout extends Container {
 
         this.#spines.forEach((spine) => spine.destroy());
         this.#spines.clear();
+        this.#sources.clear();
         this.#multipleInstanceIDs.clear();
 
         this.removeChildren();
@@ -557,6 +700,19 @@ export class SpineLayout extends Container {
         }
         spine.removeSlotObject(slotOrContainer);
     }
+}
+
+/** Builds a Spine from raw data: its atlas read from the text, its pages given the textures. */
+function spineFromData(data: SpineInstanceData): Spine {
+    const atlas = new TextureAtlas(data.atlasText);
+
+    for (const page of atlas.pages) {
+        const texture = data.textures[page.name];
+        if (!texture) throw new Error(`Missing texture for page: ${page.name}`);
+        page.setTexture(SpineTexture.from(texture.source));
+    }
+
+    return spineFromSkeleton(data.skeleton, atlas);
 }
 
 /**

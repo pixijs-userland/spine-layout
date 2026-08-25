@@ -1,5 +1,33 @@
 import { parcePointers } from '../config/parcePointers';
 
+/** `spine_reel_1`: a pointer naming one numbered instance of a base. */
+const NAMED_INSTANCE = /^(.+)_\d+$/;
+/** `spine_symbol0`: a pointer naming one slot of a pool, its number running with the name. */
+const COUNTED_INSTANCE = /^(.+?)(\d+)$/;
+
+/**
+ * The spines a `spine_<pointer>` slot asks to be built: the skeleton it names outright, and —
+ * for the numbered pointers {@link planMultipleInstances} expands — the base such an instance
+ * is cloned from. A pointer at nothing that was loaded asks for nothing.
+ *
+ * This is what walking the scene from the root reads, so a skeleton reached only as a template
+ * (`symbol`, behind five `spine_symbol0`…`spine_symbol4` slots) is built like any other.
+ */
+export function spinePointerBases(slotName: string, isKnown: (id: string) => boolean): string[] {
+    const prefix = parcePointers.slot.spine;
+
+    if (!slotName.startsWith(prefix)) return [];
+
+    const pointer = slotName.slice(prefix.length);
+    const named = pointer.match(NAMED_INSTANCE)?.[1];
+    // A counted pointer that is itself a spine names that sibling rather than a pool.
+    const counted = isKnown(pointer) ? undefined : pointer.match(COUNTED_INSTANCE)?.[1];
+
+    return [...new Set([pointer, named, counted])].filter(
+        (id): id is string => !!id && isKnown(id),
+    );
+}
+
 /** A base spine and the names of the slots it declares, used to plan multiple instances. */
 export type BaseSpineSlots = {
     id: string;
@@ -66,7 +94,7 @@ export function planMultipleInstances(bases: BaseSpineSlots[]): InstanceGroup[] 
                 if (!name.startsWith(prefix)) return;
 
                 const instanceID = name.slice(prefix.length); // e.g. "reel_1"
-                const match = instanceID.match(/^(.+)_\d+$/);
+                const match = instanceID.match(NAMED_INSTANCE);
                 if (!match) return;
 
                 const baseID = match[1]; // e.g. "reel"
@@ -90,7 +118,7 @@ export function planMultipleInstances(bases: BaseSpineSlots[]): InstanceGroup[] 
                 const pointer = name.slice(prefix.length); // e.g. "symbol0"
                 if (registry.has(pointer)) return; // points at a real spine -> single attach
 
-                const match = pointer.match(/^(.+?)(\d+)$/);
+                const match = pointer.match(COUNTED_INSTANCE);
                 if (!match) return;
 
                 const baseID = match[1]; // e.g. "symbol"
