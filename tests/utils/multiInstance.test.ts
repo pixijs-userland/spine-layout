@@ -49,6 +49,50 @@ describe('planMultipleInstances', () => {
         );
     });
 
+    it('qualifies a named pointer by its carrier once the carrier has itself multiplied', () => {
+        // the migrated `spine_symbol_0` naming: the pointers are *named*, but they sit on a
+        // `reel` template that becomes five reels, so each reel needs its own five symbols
+        const groups = planMultipleInstances([
+            { id: 'reels', slots: ['spine_reel_1', 'spine_reel_2', 'spine_reel_3'] },
+            { id: 'reel', slots: ['spine_symbol_0', 'spine_symbol_1'] },
+            { id: 'symbol', slots: [] },
+        ]);
+
+        const reel = groups.find((g) => g.baseID === 'reel');
+        const symbol = groups.find((g) => g.baseID === 'symbol');
+
+        expect(reel?.instanceIDs).toEqual(['reel_1', 'reel_2', 'reel_3']);
+        expect(symbol?.instanceIDs).toEqual([
+            'symbol_0_reel_1',
+            'symbol_0_reel_2',
+            'symbol_0_reel_3',
+            'symbol_1_reel_1',
+            'symbol_1_reel_2',
+            'symbol_1_reel_3',
+        ]);
+
+        // the carriers must be final before the named children are qualified by them
+        expect(groups.findIndex((g) => g.baseID === 'reel')).toBeLessThan(
+            groups.findIndex((g) => g.baseID === 'symbol'),
+        );
+    });
+
+    it('leaves a named pointer carried by one spine unqualified', () => {
+        const groups = planMultipleInstances([
+            { id: 'reels', slots: ['spine_reel_1', 'spine_reel_2'] },
+            { id: 'reel', slots: ['spine_symbol_0'] },
+            { id: 'symbol', slots: [] },
+        ]);
+
+        // `reels` is the only carrier of spine_reel_*, so the reels keep plain ids…
+        expect(groups.find((g) => g.baseID === 'reel')?.instanceIDs).toEqual(['reel_1', 'reel_2']);
+        // …while the single symbol pointer, now on two reels, is qualified by each
+        expect(groups.find((g) => g.baseID === 'symbol')?.instanceIDs).toEqual([
+            'symbol_0_reel_1',
+            'symbol_0_reel_2',
+        ]);
+    });
+
     it('multiplies a shared plain pointer (spine_<id> on several parents) per carrying parent', () => {
         const groups = planMultipleInstances(reelOfTheDeadBases());
 

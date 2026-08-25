@@ -46,7 +46,11 @@ export type InstanceGroup = {
  * Three pointer conventions are recognised:
  *
  * 1. **Named** — `spine_<id>_<n>` (e.g. `spine_reel_1`). Each distinct pointer becomes one
- *    instance `<id>_<n>`, later auto-attached to its own slot by `SceneController`.
+ *    instance `<id>_<n>`, later auto-attached to its own slot by `SceneController`. A pointer
+ *    that several spines carry — which is what a template's own named pointers become once the
+ *    template has itself multiplied — is qualified by its carrier into `<id>_<n>_<parent>`, as
+ *    in 3 below: five reels each declaring `spine_symbol_0`…`spine_symbol_4` need 25 symbols,
+ *    not 5 shuffled between them.
  * 2. **Counted** — `spine_<id><n>` (a digit suffix with no separating underscore, e.g. a
  *    reel's `spine_symbol0`…`spine_symbol4`). The same slot names repeat across parents, so
  *    the pool size is the *total* number of matching slots across every spine; the produced
@@ -63,10 +67,9 @@ export type InstanceGroup = {
  *
  * Expansion is resolved to a fixed point so pools size correctly off parents that are
  * themselves multiplied: a reel's `spine_symbol*` slots only number 25 once the single
- * `reel` template has become five reels. A counted pool or shared child is therefore held
- * back until none of the spines carrying its slots are still pending expansion. Named
- * pointers take priority and are order-independent (each pointer is unique), so they
- * expand first each round.
+ * `reel` template has become five reels. Every expansion is therefore held back until none
+ * of the spines carrying its pointers is still pending one; named pointers go first among
+ * those that are ready.
  *
  * @returns the expansions in the order they must be applied.
  */
@@ -86,26 +89,27 @@ export function planMultipleInstances(bases: BaseSpineSlots[]): InstanceGroup[] 
         instanceIDs.forEach((instanceID) => registry.set(instanceID, slots));
     };
 
-    // Named pointers (`spine_<base>_<n>`): base id -> ordered distinct instance ids.
-    const collectNamed = (): Map<string, string[]> => {
-        const named = new Map<string, Set<string>>();
-        registry.forEach((slots) => {
+    // Named pointers (`spine_<base>_<n>`): base id -> each distinct pointer, with the spine
+    // ids carrying it.
+    const collectNamed = (): Map<string, Map<string, string[]>> => {
+        const named = new Map<string, Map<string, string[]>>();
+        registry.forEach((slots, containerID) => {
             slots.forEach((name) => {
                 if (!name.startsWith(prefix)) return;
 
-                const instanceID = name.slice(prefix.length); // e.g. "reel_1"
-                const match = instanceID.match(NAMED_INSTANCE);
+                const pointer = name.slice(prefix.length); // e.g. "reel_1"
+                const match = pointer.match(NAMED_INSTANCE);
                 if (!match) return;
 
                 const baseID = match[1]; // e.g. "reel"
                 if (!registry.has(baseID)) return; // not a known spine export
 
-                const ids = named.get(baseID) ?? new Set<string>();
-                ids.add(instanceID);
-                named.set(baseID, ids);
+                const pointers = named.get(baseID) ?? new Map<string, string[]>();
+                pointers.set(pointer, [...(pointers.get(pointer) ?? []), containerID]);
+                named.set(baseID, pointers);
             });
         });
-        return new Map([...named].map(([baseID, ids]) => [baseID, [...ids]]));
+        return named;
     };
 
     // Counted pointers (`spine_<base><n>`): base id -> the spine ids carrying each match.
@@ -154,16 +158,29 @@ export function planMultipleInstances(bases: BaseSpineSlots[]): InstanceGroup[] 
 
     for (;;) {
         const named = collectNamed();
-        if (named.size > 0) {
-            named.forEach((instanceIDs, baseID) => expand(baseID, instanceIDs));
-            continue;
-        }
-
         const counted = collectCounted();
         const shared = collectShared();
         // Only expand once every spine carrying the slots is final — i.e. not itself a
         // template that will still multiply (and thereby grow this pool / add carriers).
-        const isPending = (id: string) => counted.has(id) || shared.has(id);
+        const isPending = (id: string) =>
+            named.has(id) || shared.has(id) || (counted.get(id)?.length ?? 0) > 1;
+
+        const namedReady = [...named].filter(
+            ([, pointers]) => ![...pointers.values()].flat().some(isPending),
+        );
+
+        if (namedReady.length > 0) {
+            namedReady.forEach(([baseID, pointers]) => {
+                const instanceIDs = [...pointers].flatMap(([pointer, carriers]) =>
+                    carriers.length > 1
+                        ? carriers.map((carrierID) => `${pointer}_${carrierID}`)
+                        : [pointer],
+                );
+                expand(baseID, instanceIDs);
+            });
+            continue;
+        }
+
         const countedReady = [...counted].filter(
             ([, containers]) => containers.length > 1 && !containers.some(isPending),
         );
