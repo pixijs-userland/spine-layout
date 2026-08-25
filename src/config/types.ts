@@ -20,6 +20,15 @@ export type SpineLayoutOptions = {
     debug?: boolean;
     manifest?: AssetsManifest;
     skipAttachingSpinesPatterns?: string[];
+    /**
+     * The spine the scene is built from, `root` unless another id is named here.
+     *
+     * It is the one skeleton instanced on its own account: everything else is instanced
+     * because a `spine_<id>` slot somewhere in the tree beneath it asks for it. A skeleton
+     * that is loaded but embedded nowhere is not instanced at all — see
+     * {@link SpineLayout.createInstance} for building one anyway.
+     */
+    root?: SpineID;
 };
 
 /**

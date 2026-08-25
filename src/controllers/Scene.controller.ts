@@ -61,11 +61,18 @@ export class SceneController {
         private options?: SpineLayoutOptions,
     ) { }
 
-    /** Nests child spines into their parent slot objects (via `spine_<id>` naming) and adds root spines to the layout container. */
-    attachBones(addChildToLayout: (spine: Spine) => void) {
+    /**
+     * Nests child spines into the slot that names them, via the `spine_<id>` convention.
+     *
+     * Pass `only` to run over a subset of the registry — the spines a later
+     * {@link SpineLayout.createInstance} built — so the ones already wired are left alone.
+     * Children are looked up across the whole registry either way: a fresh spine nests into
+     * its own new children, and into nothing that already has a parent.
+     */
+    attachBones(only?: Set<SpineID>) {
         log.open(LOG.BONES);
 
-        this.spines.forEach((spine, spineID) => {
+        this.eachSpine(only, (spine, spineID) => {
             spine?.state.data.skeletonData.slots.forEach((slot) => {
                 let skip = false;
 
@@ -93,17 +100,13 @@ export class SceneController {
         });
 
         log.close(LOG.BONES);
-
-        this.spines.forEach((spine) => {
-            if (!spine.parent) addChildToLayout(spine);
-        });
     }
 
     /** Scans all spines for `text_<key>` slots and creates `Text`/`BitmapText` nodes inside them per `settings/texts.json`. */
-    attachTexts() {
+    attachTexts(only?: Set<SpineID>) {
         log.open(LOG.TEXT);
 
-        this.spines.forEach((spine, spineID) => {
+        this.eachSpine(only, (spine, spineID) => {
             spine?.state.data.skeletonData.slots.forEach((slot) => {
                 if (!slot.name.startsWith(parcePointers.slot.text)) return;
 
@@ -129,10 +132,10 @@ export class SceneController {
      * `up`, `up_out`) on every spine nested inside the button — nested spines of nested
      * spines included, since a composite button animates as a whole.
      */
-    activateButtonBones() {
+    activateButtonBones(only?: Set<SpineID>) {
         log.open(LOG.BUTTONS);
 
-        this.spines.forEach((spine, spineID) => {
+        this.eachSpine(only, (spine, spineID) => {
             // Hit areas grouped by button key: a `button_<key>` slot contributes its overlay
             // sprite, a `button_<key>` bone every slot object hanging beneath it. Both land
             // in the same group, so one key always stays one button.
@@ -210,6 +213,14 @@ export class SceneController {
         });
 
         log.close(LOG.BUTTONS);
+    }
+
+    /** Walks the registry, narrowed to the given ids when the caller passes a set. */
+    private eachSpine(only: Set<SpineID> | undefined, wire: (spine: Spine, spineID: SpineID) => void) {
+        this.spines.forEach((spine, spineID) => {
+            if (only && !only.has(spineID)) return;
+            wire(spine, spineID);
+        });
     }
 
     /** Returns the name of the nearest `button_<key>` bone the slot hangs from, if any. */
@@ -373,8 +384,8 @@ export class SceneController {
      * spine's slot-object children to match the draw order so the visually topmost object also
      * receives pointer events first.
      */
-    syncSlotObjectsWithDrawOrder() {
-        this.spines.forEach((spine) => {
+    syncSlotObjectsWithDrawOrder(only?: Set<SpineID>) {
+        this.eachSpine(only, (spine) => {
             spine.skeleton.drawOrder.appliedPose.forEach((slot) => {
                 const container = spine.getSlotObject(slot);
                 if (container?.parent === spine) {

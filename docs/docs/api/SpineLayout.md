@@ -23,7 +23,7 @@ Creates the layout and its five controllers. If `options.manifest` is provided t
 createInstancesFromManifest(manifest: AssetsManifest, folderName?: string)
 ```
 
-Parses a Pixi.js `AssetsManifest` for spine assets, creates single and multiple instances (based on `multipleInstancesPatterns`), then calls `render()` to wire the full scene.
+Parses a Pixi.js `AssetsManifest` for spine assets, builds the scene from its root — the root spine, then whatever the `spine_<id>` slots beneath it embed, down the whole tree — and wires it up. A skeleton nothing embeds is left unbuilt; see `createInstance`.
 
 ---
 
@@ -33,17 +33,19 @@ Parses a Pixi.js `AssetsManifest` for spine assets, creates single and multiple 
 createInstancesFromDataArray(data: SpineInstanceData[])
 ```
 
-Creates spine instances from raw skeleton data objects (atlas text + texture map). Used when assets are loaded outside the Pixi.js asset pipeline.
+Creates spine instances from raw skeleton data objects (atlas text + texture map), from the root down, exactly as `createInstancesFromManifest` does. Used when assets are loaded outside the Pixi.js asset pipeline.
 
 ---
 
-### createInstanceFromData
+### createInstance
 
 ```ts
-createInstanceFromData(data: SpineInstanceData, skipAttachBones?: boolean, skipMultipleInstances?: boolean)
+createInstance(spineID: SpineID): Spine | undefined
 ```
 
-Creates a single spine instance from raw data. Handles multiple-instance patterns by looking up bone counts with the `spine_<id>` prefix convention.
+Builds a spine the tree does not reach, and everything that one embeds in turn — a skeleton that was loaded but is embedded nowhere, so automatic building never got to it. The instance is registered and wired like any other (nested children, texts, buttons), but it is given no place on screen, since nothing named one: attach it with `scene.addSlotChild()`, or `addChild()` it into the layout.
+
+Returns the instance — an already-built one included — or `undefined` when no skeleton by that name was loaded.
 
 ---
 

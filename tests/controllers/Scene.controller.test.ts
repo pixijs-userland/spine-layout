@@ -57,16 +57,25 @@ describe('SceneController – attachBones', () => {
         const spineCtl = new SpineController(spines, animations);
         const scene = new SceneController(spines, texts, animations, spineCtl);
 
-        const layoutAdds: FakeSpine[] = [];
-        scene.attachBones((s) => layoutAdds.push(s as never as FakeSpine));
+        scene.attachBones();
 
         expect(parent.__slotChildren.get('spine_child')?.[0]).toBe(child);
+    });
 
-        // Only spines without a parent should be added to the layout. After attaching,
-        // child has been added into parent's slot so the layout receives only parent.
-        expect(layoutAdds.length).toBe(2);
-        expect(layoutAdds).toContain(parent);
-        expect(layoutAdds).toContain(child);
+    it('leaves the spines outside `only` alone, so a late instance wires without rewiring the rest', () => {
+        const child = createFakeSpine();
+        const parent = createFakeSpine({ slots: [{ name: 'spine_child' }] });
+        const late = createFakeSpine({ slots: [{ name: 'spine_child' }] });
+        const spines = asSpineMap({ parent, child, late });
+        const animations = new AnimationsController(spines);
+        const texts = new TextsController(spines);
+        const spineCtl = new SpineController(spines, animations);
+        const scene = new SceneController(spines, texts, animations, spineCtl);
+
+        scene.attachBones(new Set(['late']));
+
+        expect(late.__slotChildren.get('spine_child')?.[0]).toBe(child);
+        expect(parent.__slotChildren.has('spine_child')).toBe(false);
     });
 
     it('respects skipAttachingSpinesPatterns: matching child slots are not nested', () => {
@@ -80,7 +89,7 @@ describe('SceneController – attachBones', () => {
             skipAttachingSpinesPatterns: ['child'],
         });
 
-        scene.attachBones(() => {});
+        scene.attachBones();
 
         expect(parent.__slotChildren.has('spine_child')).toBe(false);
     });
@@ -101,7 +110,7 @@ describe('SceneController – attachBones', () => {
         const spineCtl = new SpineController(spines, animations);
         const scene = new SceneController(spines, texts, animations, spineCtl);
 
-        scene.attachBones(() => {});
+        scene.attachBones();
 
         expect(reel1.__slotChildren.get('spine_anticipation')?.[0]).toBe(shared1);
         expect(reel2.__slotChildren.get('spine_anticipation')?.[0]).toBe(shared2);
@@ -115,7 +124,7 @@ describe('SceneController – attachBones', () => {
         const spineCtl = new SpineController(spines, animations);
         const scene = new SceneController(spines, texts, animations, spineCtl);
 
-        scene.attachBones(() => {});
+        scene.attachBones();
         expect(parent.__slotChildren.has('spine_missing')).toBe(false);
     });
 });
@@ -249,7 +258,7 @@ describe('SceneController – activateButtonBones (button_ bone wrappers)', () =
         const spineCtl = new SpineController(spines, animations);
         const scene = new SceneController(spines, texts, animations, spineCtl);
 
-        scene.attachBones(() => {});
+        scene.attachBones();
         scene.activateButtonBones();
     });
 
@@ -322,7 +331,7 @@ describe('SceneController – activateButtonBones (button_ bone wrappers)', () =
             new SpineController(spines, anims),
         );
 
-        scene.attachBones(() => {});
+        scene.attachBones();
         scene.activateButtonBones();
 
         await hover(button);
@@ -367,7 +376,7 @@ describe('SceneController – activateButtonBones (button_ bone wrappers)', () =
             new SpineController(spines, anims),
         );
 
-        scene.attachBones(() => {});
+        scene.attachBones();
         scene.activateButtonBones();
 
         press(button, 'touch');
@@ -400,7 +409,7 @@ describe('SceneController – activateButtonBones (button_ bone wrappers)', () =
             new SpineController(spines, anims),
         );
 
-        scene.attachBones(() => {});
+        scene.attachBones();
         scene.activateButtonBones();
 
         await hover(button);
@@ -433,7 +442,7 @@ describe('SceneController – activateButtonBones (button_ bone wrappers)', () =
             new SpineController(spines, anims),
         );
 
-        scene.attachBones(() => {});
+        scene.attachBones();
         scene.activateButtonBones();
 
         await hover(button);
@@ -478,7 +487,7 @@ describe('SceneController – activateButtonBones (button_ bone wrappers)', () =
             new SpineController(spines, anims),
         );
 
-        scene.attachBones(() => {});
+        scene.attachBones();
         parent.addSlotObject('text_spin_button', label);
         scene.activateButtonBones();
 
@@ -517,7 +526,7 @@ describe('SceneController – activateButtonBones (button_ bone wrappers)', () =
             new SpineController(spines, anims),
         );
 
-        scene.attachBones(() => {});
+        scene.attachBones();
         scene.activateButtonBones();
 
         press(instanceA);
@@ -552,7 +561,7 @@ describe('SceneController – activateButtonBones (button_ bone wrappers)', () =
             new SpineController(spines, anims),
         );
 
-        scene.attachBones(() => {});
+        scene.attachBones();
         // the real Spine.addSlotObject also parents the container; the fake only records it
         button.addChild(icon);
         scene.activateButtonBones();
@@ -593,7 +602,7 @@ describe('SceneController – activateButtonBones (button_ bone wrappers)', () =
             new SpineController(spines, anims),
         );
 
-        scene.attachBones(() => {});
+        scene.attachBones();
         parent.addSlotObject('text_spin_button', label);
         scene.activateButtonBones();
 
@@ -643,7 +652,7 @@ describe('SceneController – activateButtonBones (button_ bone wrappers)', () =
             new SpineController(spines, anims),
         );
 
-        scene.attachBones(() => {});
+        scene.attachBones();
         scene.activateButtonBones();
 
         expect(other.eventMode).not.toBe('static');

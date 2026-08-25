@@ -33,7 +33,13 @@ const layout = new SpineLayout({ debug: true });
 await layout.createInstancesFromManifest(manifest, 'spines');
 ```
 
-`createInstancesFromManifest` parses the manifest for `.atlas` / `.json` / `.png` triplets, instantiates each spine, then calls `render()` which wires the full hierarchy.
+`createInstancesFromManifest` parses the manifest for `.atlas` / `.json` / `.png` triplets, builds the scene from its root, then wires the full hierarchy.
+
+The scene has one entry point — `root`, or whatever `options.root` names. It is built first, its
+`spine_<id>` slots name the spines built next, theirs name the ones after that, and so on down the
+tree; the layout container holds the root and nothing else. A skeleton that is loaded but embedded
+nowhere is not instanced at all — nothing points at it, so nothing would place it. `createInstance`
+builds one anyway, together with everything it embeds in turn.
 
 A skeleton that attaches no image needs no atlas and no page: Spine exports it as the JSON alone, and it is read with an empty atlas. It is picked up from the folder the atlases are in — a manifest cannot otherwise tell a skeleton from any other `.json`.
 

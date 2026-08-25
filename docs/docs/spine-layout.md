@@ -13,6 +13,8 @@ You can embed one spine instance into a slot of another spine instance by naming
 
 You have a root spine with a slot named `spine_hero` and another spine exported as `hero`. The hero spine is automatically positioned, scaled, and animated according to the `spine_hero` slot in the root spine. Add as many embedded spines as you need by creating more slots with the `spine_` prefix.
 
+Embedding is also what gets a spine built at all: the scene starts at the root and follows the `spine_` slots down, so a skeleton no slot points at is left out of the scene entirely — see [Initialization](./initialization.md).
+
 ![Slot Embedding example](/info/1.png)
 
 ## 2. Animation Control

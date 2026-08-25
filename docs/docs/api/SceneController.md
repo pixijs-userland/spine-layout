@@ -10,17 +10,17 @@ Wires the full scene hierarchy: nests child spines into parent slots, creates te
 ### attachBones
 
 ```ts
-attachBones(addChildToLayout: (spine: Spine) => void)
+attachBones(only?: Set<SpineID>)
 ```
 
-Nests child spines into their parent slot objects (via `spine_<id>` naming) and adds root spines to the layout container.
+Nests child spines into the slot that names them (via `spine_<id>` naming). Pass `only` to run over a subset of the registry — the spines a `createInstance` call just built — leaving the ones already wired alone; `attachTexts`, `activateButtonBones` and `syncSlotObjectsWithDrawOrder` take the same argument.
 
 ---
 
 ### attachTexts
 
 ```ts
-attachTexts();
+attachTexts(only?: Set<SpineID>);
 ```
 
 Scans all spines for `text_<key>` slots and creates `Text`/`BitmapText` nodes inside them per `settings/texts.json`.
@@ -30,7 +30,7 @@ Scans all spines for `text_<key>` slots and creates `Text`/`BitmapText` nodes in
 ### activateButtonBones
 
 ```ts
-activateButtonBones();
+activateButtonBones(only?: Set<SpineID>);
 ```
 
 Creates invisible interactive sprites over `button_<key>` slots and wires pointer events to animation events (`<key>_click`, `<key>_hover`, etc.).

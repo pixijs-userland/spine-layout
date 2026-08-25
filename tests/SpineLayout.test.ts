@@ -49,3 +49,182 @@ describe('SpineLayout — a skeleton with no atlas', () => {
         Assets.cache.remove('spine/root.json');
     });
 });
+
+/**
+ * A skeleton of nothing but bones and slots — what a spine whose job is to place other spines
+ * exports. Every slot hangs from a bone of the same name, as the Spine editor writes it.
+ */
+const skeleton = (slots: string[] = []) => ({
+    skeleton: { hash: `hash-${slots.join('-')}`, spine: '4.3.23' },
+    bones: [{ name: 'root' }, ...slots.map((name) => ({ name, parent: 'root' }))],
+    slots: slots.map((name) => ({ name, bone: name })),
+    animations: {},
+});
+
+const instance = (name: string, slots: string[] = []) => ({
+    name,
+    skeleton: skeleton(slots),
+    atlasText: '',
+    textures: {},
+});
+
+describe('SpineLayout — building the scene from its root', () => {
+    afterEach(() => vi.restoreAllMocks());
+
+    it('builds the root, then whatever the tree beneath it embeds', () => {
+        const layout = new SpineLayout();
+
+        layout.createInstancesFromDataArray([
+            instance('root', ['spine_bg']),
+            instance('bg', ['spine_logo']),
+            instance('logo'),
+        ]);
+
+        expect([...layout.spines.keys()]).toEqual(['root', 'bg', 'logo']);
+    });
+
+    it('leaves a skeleton nothing embeds unbuilt', () => {
+        const layout = new SpineLayout();
+
+        layout.createInstancesFromDataArray([
+            instance('root', ['spine_bg']),
+            instance('bg'),
+            instance('popup', ['spine_okButton']),
+            instance('okButton'),
+        ]);
+
+        expect([...layout.spines.keys()]).toEqual(['root', 'bg']);
+    });
+
+    it('builds a pool from the template the counted pointers name', () => {
+        const layout = new SpineLayout();
+
+        layout.createInstancesFromDataArray([
+            instance('root', ['spine_reel_1', 'spine_reel_2']),
+            instance('reel', ['spine_symbol0', 'spine_symbol1']),
+            instance('symbol'),
+        ]);
+
+        // the `reel` and `symbol` templates are consumed by their instances
+        expect([...layout.spines.keys()]).toEqual([
+            'root',
+            'reel_1',
+            'reel_2',
+            'symbol1',
+            'symbol2',
+            'symbol3',
+            'symbol4',
+        ]);
+    });
+
+    it('holds the root, and only the root, in the layout container', () => {
+        const layout = new SpineLayout({ skipAttachingSpinesPatterns: ['loose'] });
+
+        layout.createInstancesFromDataArray([
+            instance('root', ['spine_bg', 'spine_loose']),
+            instance('bg'),
+            instance('loose'),
+        ]);
+
+        expect(layout.children).toEqual([layout.spines.get('root')]);
+        // built, since the root points at it, but placed by the game rather than by its slot
+        expect(layout.spines.get('loose')!.parent).toBe(null);
+    });
+
+    it('starts from the spine the options name instead of `root`', () => {
+        const layout = new SpineLayout({ root: 'main' });
+
+        layout.createInstancesFromDataArray([
+            instance('main', ['spine_bg']),
+            instance('bg'),
+            instance('root'),
+        ]);
+
+        expect([...layout.spines.keys()]).toEqual(['main', 'bg']);
+        expect(layout.children).toEqual([layout.spines.get('main')]);
+    });
+
+    it('warns and builds every skeleton when there is no root to start from', () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        const layout = new SpineLayout();
+
+        layout.createInstancesFromDataArray([instance('menu', ['spine_button']), instance('button')]);
+
+        expect([...layout.spines.keys()]).toEqual(['menu', 'button']);
+        expect(layout.children).toEqual([layout.spines.get('menu')]);
+        expect(warn.mock.calls[0][0]).toContain('No root spine "root"');
+    });
+});
+
+describe('SpineLayout.createInstance — building what the tree does not reach', () => {
+    afterEach(() => vi.restoreAllMocks());
+
+    const withPopup = () => {
+        const layout = new SpineLayout();
+
+        layout.createInstancesFromDataArray([
+            instance('root', ['spine_bg']),
+            instance('bg'),
+            instance('popup', ['spine_okButton']),
+            instance('okButton'),
+        ]);
+
+        return layout;
+    };
+
+    it('builds the spine and everything it embeds in turn', () => {
+        const layout = withPopup();
+
+        const popup = layout.createInstance('popup');
+
+        expect(popup).toBe(layout.spines.get('popup'));
+        expect([...layout.spines.keys()]).toEqual(['root', 'bg', 'popup', 'okButton']);
+        expect(popup!.getSlotObject('spine_okButton')).toBe(layout.spines.get('okButton'));
+    });
+
+    it('gives it no place on screen — nothing embedded it', () => {
+        const layout = withPopup();
+
+        layout.createInstance('popup');
+
+        expect(layout.children).toEqual([layout.spines.get('root')]);
+        expect(layout.spines.get('popup')!.parent).toBe(null);
+    });
+
+    it('returns the instance already built, without building a second one', () => {
+        const layout = withPopup();
+
+        expect(layout.createInstance('bg')).toBe(layout.spines.get('bg'));
+        expect([...layout.spines.keys()]).toEqual(['root', 'bg']);
+    });
+
+    it('leaves a spine that is already standing where it is, and copies it for the newcomer', () => {
+        const layout = new SpineLayout();
+
+        layout.createInstancesFromDataArray([
+            instance('root', ['spine_bg']),
+            instance('bg'),
+            instance('popup', ['spine_bg']),
+        ]);
+
+        const bg = layout.spines.get('bg')!;
+
+        layout.createInstance('popup');
+
+        expect(layout.spines.get('bg')).toBe(bg);
+        expect(bg.parent).toBe(layout.spines.get('root'));
+        expect(layout.spines.get('popup')!.getSlotObject('spine_bg')).toBe(
+            layout.spines.get('bg_popup'),
+        );
+        // its texts are configured per instance, as any shared child's are
+        expect(layout.multipleInstanceIds).toContain('bg_popup');
+    });
+
+    it('errors on a name no loaded skeleton carries', () => {
+        const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+        const layout = withPopup();
+
+        expect(layout.createInstance('nothing')).toBeUndefined();
+        expect(errors.mock.calls[0][0]).toContain('Cannot create "nothing"');
+    });
+});
