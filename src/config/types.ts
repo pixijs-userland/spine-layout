@@ -1,4 +1,3 @@
-import type { SkeletonData } from '@esotericsoftware/spine-pixi-v8';
 import type { AssetsManifest, Texture } from 'pixi.js';
 
 export type SpineID = string;
@@ -23,9 +22,16 @@ export type SpineLayoutOptions = {
     skipAttachingSpinesPatterns?: string[];
 };
 
+/**
+ * A skeleton as Spine exported it, not as a runtime read it: the parsed `.json`, or the bytes of
+ * a `.skel`. `skins` is absent altogether on a skeleton that attaches no image.
+ */
+export type SkeletonSource = { skins?: { name: string }[] } | ArrayBuffer | Uint8Array;
+
 export type SpineInstanceData = {
     name: string;
-    skeleton: SkeletonData;
+    skeleton: SkeletonSource;
+    /** Empty for a skeleton with no images: an atlas of no pages, describing nothing. */
     atlasText: string;
     textures: Record<string, Texture>;
 };
