@@ -105,3 +105,67 @@ describe('ManifestParser.getSpineAssets', () => {
         ]);
     });
 });
+
+describe('ManifestParser.getSpineAssets — skeletons with no atlas', () => {
+    it('takes a lone skeleton sitting where the atlases are', () => {
+        const result = ManifestParser.getSpineAssets(
+            manifest(
+                bundle([
+                    { alias: ['spine/hero.atlas'] },
+                    { alias: ['spine/hero.json'] },
+                    { alias: ['spine/hero.png'] },
+                    { alias: ['spine/root.json'] },
+                ]),
+            ),
+        );
+
+        expect(result).toEqual([
+            { atlas: 'hero.atlas', skel: 'hero.json', texture: 'hero.png' },
+            { skel: 'root.json' },
+        ]);
+    });
+
+    it('leaves json that is not in a spine folder alone', () => {
+        const result = ManifestParser.getSpineAssets(
+            manifest(
+                bundle([
+                    { alias: ['spine/hero.atlas'] },
+                    { alias: ['spine/hero.json'] },
+                    { alias: ['spine/hero.png'] },
+                    { alias: ['settings/texts.json'] },
+                    { alias: ['sprites'] },
+                ]),
+            ),
+        );
+
+        expect(result).toEqual([
+            { atlas: 'hero.atlas', skel: 'hero.json', texture: 'hero.png' },
+        ]);
+    });
+
+    it('reads the spine folders from the whole manifest, not one bundle', () => {
+        const result = ManifestParser.getSpineAssets(
+            manifest(
+                bundle([
+                    { alias: ['spine/hero.atlas'] },
+                    { alias: ['spine/hero.json'] },
+                    { alias: ['spine/hero.png'] },
+                ]),
+                bundle([{ alias: ['spine/root.json'] }]),
+            ),
+        );
+
+        expect(result).toEqual([
+            { atlas: 'hero.atlas', skel: 'hero.json', texture: 'hero.png' },
+            { skel: 'root.json' },
+        ]);
+    });
+
+    it('finds nothing at all when the manifest holds no atlas to locate the spines by', () => {
+        const result = ManifestParser.getSpineAssets(
+            manifest(bundle([{ alias: ['spine/root.json'] }])),
+        );
+
+        expect(result).toEqual([]);
+    });
+});

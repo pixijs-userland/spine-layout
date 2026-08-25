@@ -1,5 +1,6 @@
 import {
     AtlasAttachmentLoader,
+    SkeletonBinary,
     SkeletonJson,
     SpineTexture,
     TextureAtlas,
@@ -9,12 +10,21 @@ import {
     type SlotData,
 } from '@esotericsoftware/spine-pixi-v8';
 import type {
+    SkeletonSource,
     SpineID,
     SpineLayoutOptions,
     SpineInstanceData,
     TextsJson,
 } from './config/types';
-import { type AssetsManifest, BitmapText, Container, Text, Texture, type Point } from 'pixi.js';
+import {
+    Assets,
+    type AssetsManifest,
+    BitmapText,
+    Container,
+    Text,
+    Texture,
+    type Point,
+} from 'pixi.js';
 import { LOG } from './config/logs';
 import { log } from './utils/Log';
 import { ManifestParser, type SpineAssetData } from './utils/ManifestParser';
@@ -138,7 +148,7 @@ export class SpineLayout extends Container {
         // and their slots can be scanned for multiple-instance pointers.
         const assetByID = new Map<string, SpineAssetData>();
         ManifestParser.getSpineAssets(manifest).forEach((asset) => {
-            const spineID = asset.atlas.replace(/\.[^.]+$/, '');
+            const spineID = asset.skel.replace(/\.[^.]+$/, '');
             assetByID.set(spineID, asset);
             try {
                 this.addSpineInstance(spineID, this.spineFromAsset(asset, folderName));
@@ -228,14 +238,11 @@ export class SpineLayout extends Container {
             page.setTexture(SpineTexture.from(texture.source));
         }
 
-        const skeletonData = new SkeletonJson(
-            new AtlasAttachmentLoader(spineAtlas),
-        ).readSkeletonData(data.skeleton);
-        const spine = new Spine(skeletonData);
+        const spine = spineFromSkeleton(data.skeleton, spineAtlas);
 
         this.addSpineInstance(spineID, spine);
 
-        data.skeleton.skins.forEach((skin) => {
+        skinsOf(data.skeleton).forEach((skin) => {
             const defaultSkin =
                 spine.skeleton.data.findSkin('default') ?? spine.skeleton.data.findSkin('basic');
             if (defaultSkin) this.#skins.applyBySpineID(spineID, defaultSkin.name);
@@ -245,10 +252,14 @@ export class SpineLayout extends Container {
 
     /** Creates a Spine instance from a manifest asset entry. */
     private spineFromAsset(asset: SpineAssetData, folderName?: string): Spine {
-        return Spine.from({
-            skeleton: `${folderName}/${asset.skel}`,
-            atlas: `${folderName}/${asset.atlas}`,
-        });
+        const skeleton = alias(asset.skel, folderName);
+
+        // A skeleton with no atlas is read with an empty one. `Spine.from` cannot: it looks the
+        // atlas up in the asset cache, so a missing one is a warning and then a null attachment
+        // loader, rather than the skeleton of bones and animations that was exported.
+        if (!asset.atlas) return spineFromSkeleton(Assets.get(skeleton), new TextureAtlas(''));
+
+        return Spine.from({ skeleton, atlas: alias(asset.atlas, folderName) });
     }
 
     /**
@@ -546,4 +557,33 @@ export class SpineLayout extends Container {
         }
         spine.removeSlotObject(slotOrContainer);
     }
+}
+
+/**
+ * Reads a skeleton — a parsed `.json` or the bytes of a `.skel` — against an atlas.
+ *
+ * The atlas may hold no pages: an attachment is what reaches into it, so a skeleton of nothing
+ * but bones, slots and animations never looks a region up.
+ */
+function spineFromSkeleton(skeleton: SkeletonSource, atlas: TextureAtlas): Spine {
+    const loader = new AtlasAttachmentLoader(atlas);
+
+    return new Spine(
+        isBinarySkeleton(skeleton)
+            ? new SkeletonBinary(loader).readSkeletonData(skeleton)
+            : new SkeletonJson(loader).readSkeletonData(skeleton),
+    );
+}
+
+/** The skins a skeleton exported. A skeleton that attaches no image carries no `skins` key. */
+function skinsOf(skeleton: SkeletonSource): { name: string }[] {
+    return isBinarySkeleton(skeleton) ? [] : skeleton.skins ?? [];
+}
+
+function isBinarySkeleton(skeleton: SkeletonSource): skeleton is ArrayBuffer | Uint8Array {
+    return skeleton instanceof Uint8Array || skeleton instanceof ArrayBuffer;
+}
+
+function alias(filename: string, folderName?: string): string {
+    return folderName ? `${folderName}/${filename}` : filename;
 }

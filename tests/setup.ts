@@ -8,6 +8,21 @@ if (typeof (globalThis as Record<string, unknown>).window === 'undefined') {
     });
 }
 
+// A real `Spine` puts itself on Pixi's shared ticker, which starts off requestAnimationFrame.
+// Nothing here waits for a frame, so a stub that is never called back is enough.
+if (typeof (globalThis as Record<string, unknown>).requestAnimationFrame === 'undefined') {
+    Object.defineProperty(globalThis, 'requestAnimationFrame', {
+        value: () => 0,
+        configurable: true,
+        writable: true,
+    });
+    Object.defineProperty(globalThis, 'cancelAnimationFrame', {
+        value: () => {},
+        configurable: true,
+        writable: true,
+    });
+}
+
 if (typeof (globalThis as Record<string, unknown>).document === 'undefined') {
     Object.defineProperty(globalThis, 'document', {
         value: { hidden: false },
