@@ -18,6 +18,16 @@ export const parcePointers = {
          */
         followPointer: '_followPointer',
     },
+    /**
+     * The two states the layout plays for itself, from the shape of the screen: a window
+     * taller than it is wide poses `state_portrait/`, a wider one `state_landscape/`. See
+     * {@link OrientationController} — nothing else is needed to make a scene turn with the
+     * device.
+     */
+    orientation: {
+        portrait: 'portrait',
+        landscape: 'landscape',
+    } as const,
     sound: {
         /**
          * Word marking a skeleton event, anywhere in its name, as a music track (`music`,

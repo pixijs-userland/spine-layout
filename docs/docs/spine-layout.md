@@ -110,3 +110,11 @@ SpineLayout has a built-in sound manager. Bind a sound file to a timeline event 
 Place a `click.mp3` next to the spine export files. Create a timeline event from it in the editor, add that event anywhere on the animation timeline (e.g. on the button-down frame), and the sound plays each time the event is emitted.
 
 ![Sound control example](/info/9.png)
+
+## 10. Screen orientation
+
+Name a folder `state_landscape` or `state_portrait` and the layout plays it for itself, from the shape of the screen: landscape while the window is wider than it is tall, portrait while it is taller than it is wide, and again every time the screen turns. Nothing in the game has to call them.
+
+### Example
+
+You have a logo and a set of reels that sit side by side on a desktop screen and stack on a phone held upright. Put the wide arrangement in `state_landscape` and the tall one in `state_portrait` — both folders posing the same bones — and the scene rearranges itself as the device is turned.

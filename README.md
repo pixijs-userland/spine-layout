@@ -8,7 +8,7 @@ Full documentation: [userland.pixijs.io/spine-layout](https://userland.pixijs.io
 
 ## Architecture
 
-`SpineLayout` is a Pixi.js `Container` that acts as a facade over six specialized controllers:
+`SpineLayout` is a Pixi.js `Container` that acts as a facade over seven specialized controllers:
 
 ```
 SpineLayout (Container)
@@ -17,7 +17,8 @@ SpineLayout (Container)
 ├── SpineController       — bone/slot queries, global positions, cloning
 ├── TextsController       — dynamic text rendering & number animation
 ├── SceneController       — hierarchical composition (nest spines, attach texts/buttons)
-└── PointerController     — bones that follow the mouse or finger
+├── PointerController     — bones that follow the mouse or finger
+└── OrientationController — poses the layout for the shape of the screen
 ```
 
 All spines are stored in a central `Map<SpineID, Spine>` registry and each controller operates against that registry.
@@ -129,6 +130,27 @@ event_win/
 ```typescript
 layout.animations.playState('idle');
 layout.animations.playEvent('win');
+```
+
+### Orientation
+
+Two state folders the layout plays for itself, from the shape of the screen — no code, and no
+call from the game:
+
+```
+state_landscape/   ← plays while the window is wider than it is tall
+state_portrait/    ← plays while the window is taller than it is wide
+```
+
+They are ordinary states, so everything else about them is unchanged: several spines can each
+hold their own animation in the folder, `_loop` still loops. Author both halves — the pair pose
+the same bones, so they take turns on one track and each undoes the other; a state authored
+alone has nothing to hand the pose back to and holds in both orientations.
+
+```typescript
+layout.orientation.current; // 'landscape' | 'portrait' — what the layout is posed for
+layout.orientation.setSize(width, height); // a layout that does not fill the window
+layout.orientation.enabled = false; // stop following the screen
 ```
 
 ---

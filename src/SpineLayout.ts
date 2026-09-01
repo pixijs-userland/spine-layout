@@ -35,6 +35,7 @@ import { TextsController } from './controllers/Texts.controller';
 import { SceneController } from './controllers/Scene.controller';
 import { SpineController } from './controllers/Spine.controller';
 import { PointerController } from './controllers/Pointer.controller';
+import { OrientationController } from './controllers/Orientation.controller';
 import { sounds } from './controllers/Sounds.controller';
 
 /** The spine the scene is built from, unless the options name another. */
@@ -63,6 +64,7 @@ export class SpineLayout extends Container {
     #spine: SpineController;
     #scene: SceneController;
     #pointer: PointerController;
+    #orientation: OrientationController;
 
     constructor(private options?: SpineLayoutOptions) {
         super();
@@ -84,6 +86,7 @@ export class SpineLayout extends Container {
             options,
         );
         this.#pointer = new PointerController(this.#spines, this);
+        this.#orientation = new OrientationController(this.#animations);
 
         if (options?.manifest) {
             this.createInstancesFromManifest(options.manifest);
@@ -116,6 +119,9 @@ export class SpineLayout extends Container {
     }
     get pointer(): PointerController {
         return this.#pointer;
+    }
+    get orientation(): OrientationController {
+        return this.#orientation;
     }
 
     set textSettings(settings: TextsJson) {
@@ -175,6 +181,7 @@ export class SpineLayout extends Container {
 
         this.#animations.playState('init');
         this.#animations.playByName('init');
+        this.#orientation.attach();
     }
 
     createInstancesFromDataArray(data: SpineInstanceData[]) {
@@ -197,6 +204,7 @@ export class SpineLayout extends Container {
 
         this.#animations.playState('init');
         this.#animations.playByName('init');
+        this.#orientation.attach();
     }
 
     /**
@@ -208,7 +216,9 @@ export class SpineLayout extends Container {
      * registered and wired like any other — nested children, texts, buttons — but it is given
      * no place on screen, since nothing named one: attach it with `scene.addSlotChild()`, or
      * `addChild()` it into the layout. Nor is anything played — the tree's `init` ran when the
-     * tree was built — so pose it with `animations.play(spineID, 'init')` if it needs it.
+     * tree was built — so pose it with `animations.play(spineID, 'init')` if it needs it. The
+     * screen is the exception: a layout that was not oriented yet, because this instance is
+     * the first to author `state_portrait/` or `state_landscape/`, is posed for it now.
      *
      * @returns the instance, already-built ones included, or `undefined` when no skeleton by
      * that name was loaded.
@@ -237,6 +247,7 @@ export class SpineLayout extends Container {
         this.#scene.activateButtonBones(built);
         this.#scene.syncSlotObjectsWithDrawOrder(built);
         this.#pointer.attach();
+        this.#orientation.attach();
 
         return this.#spines.get(spineID);
     }
@@ -473,6 +484,7 @@ export class SpineLayout extends Container {
         this.#skins.clear();
         this.#scene.clear();
         this.#pointer.clear();
+        this.#orientation.clear();
 
         this.#spines.forEach((spine) => spine.destroy());
         this.#spines.clear();

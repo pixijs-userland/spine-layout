@@ -18,6 +18,7 @@ SpineLayout (Container)
 ├── TextsController       — dynamic text rendering & number animation         ✓ stable
 ├── SceneController       — hierarchical composition (spines, texts, buttons) ✓ stable
 ├── PointerController     — bones that follow the mouse or finger             ✓ stable
+├── OrientationController — poses the layout for the shape of the screen      ✓ stable
 ├── @pixi/layout          — responsive layout for Pixi.js containers          ⚠ WIP
 └── @pixi/ui              — interactive UI component library                  ⚠ WIP
 

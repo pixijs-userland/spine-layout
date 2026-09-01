@@ -17,6 +17,13 @@ describe('parcePointers', () => {
         });
     });
 
+    it('exposes the state names the layout plays for the shape of the screen', () => {
+        expect(parcePointers.orientation).toEqual({
+            portrait: 'portrait',
+            landscape: 'landscape',
+        });
+    });
+
     it('exposes the animation modifier suffixes', () => {
         expect(parcePointers.mod).toEqual({
             next: '_next',

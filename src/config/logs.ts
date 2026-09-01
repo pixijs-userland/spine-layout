@@ -12,4 +12,5 @@ export const LOG = {
     ANIMATIONS: `⚡ Animations added`,
     ADD_SLOT_CHILD: `🧩 Add slot child`,
     FOLLOW_POINTER: `🖱️ Bones following pointer`,
+    ORIENTATION: `📱 Screen orientation`,
 };

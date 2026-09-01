@@ -1,6 +1,11 @@
 import type { AssetsManifest, Texture } from 'pixi.js';
 
 export type SpineID = string;
+/**
+ * The shape of the screen, which is also the name of the state posing the layout for it:
+ * `state_portrait/` and `state_landscape/`. See `OrientationController`.
+ */
+export type Orientation = 'portrait' | 'landscape';
 export type AnimationName = string;
 export type AnimationsRegistry = Map<SpineID, AnimationName[]>;
 export type AnimationTrackRegistry = Map<AnimationName, number>;

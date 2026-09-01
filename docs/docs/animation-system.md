@@ -33,6 +33,27 @@ layout.animations.playState('idle');
 layout.animations.playEvent('win');
 ```
 
+### Orientation states
+
+Two state folders the layout plays for itself, from the shape of the screen. Nothing calls them:
+naming the folders is the whole setup, and the pair are re-played whenever the screen turns.
+
+| Folder             | Plays while                          |
+| ------------------ | ------------------------------------ |
+| `state_landscape/` | the window is wider than it is tall  |
+| `state_portrait/`  | the window is taller than it is wide |
+
+They are ordinary states in every other respect — several spines can each hold their own
+animation in the folder, `_loop` still loops, `playState('portrait')` still works by hand.
+
+Author both halves, even when only one of them moves anything: the pair pose the same bones, so
+they take turns on one track and each undoes the other by replacing it. A state authored on its
+own has nothing to hand the pose back to and holds in both orientations. A square window counts
+as landscape.
+
+See [OrientationController](./api/OrientationController.md) for a layout that does not fill the
+window, and for switching the following off.
+
 ### Custom event listeners
 
 ```ts

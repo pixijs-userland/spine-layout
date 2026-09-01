@@ -228,3 +228,87 @@ describe('SpineLayout.createInstance — building what the tree does not reach',
         expect(errors.mock.calls[0][0]).toContain('Cannot create "nothing"');
     });
 });
+
+/** A skeleton posed differently for each shape of screen, plus the `init` every scene has. */
+const oriented = {
+    skeleton: { hash: 'oriented', spine: '4.3.23' },
+    bones: [{ name: 'root' }, { name: 'logo', parent: 'root' }],
+    slots: [{ name: 'logo', bone: 'logo' }],
+    animations: {
+        init: { bones: { root: { translate: [{}] } } },
+        'state_landscape/wide': { bones: { logo: { translate: [{ x: 100 }] } } },
+        'state_portrait/tall': { bones: { logo: { translate: [{ y: 100 }] } } },
+    },
+};
+
+/** A window of the given size, whose resize the test fires. */
+function stubWindow(width: number, height: number) {
+    const listeners = new Set<() => void>();
+    const win = {
+        innerWidth: width,
+        innerHeight: height,
+        addEventListener: (type: string, fn: () => void) => {
+            if (type === 'resize') listeners.add(fn);
+        },
+        removeEventListener: (_type: string, fn: () => void) => listeners.delete(fn),
+        resizeTo(nextWidth: number, nextHeight: number) {
+            win.innerWidth = nextWidth;
+            win.innerHeight = nextHeight;
+            listeners.forEach((fn) => fn());
+        },
+    };
+
+    vi.stubGlobal('window', win);
+
+    return win;
+}
+
+const playing = (layout: SpineLayout, spineID: string) =>
+    layout.spines
+        .get(spineID)!
+        .state.tracks.map((entry) => entry?.animation?.name)
+        .filter(Boolean);
+
+describe('SpineLayout — posing the scene for the screen', () => {
+    afterEach(() => {
+        vi.restoreAllMocks();
+        vi.unstubAllGlobals();
+    });
+
+    it('plays the state for the shape of the screen once the scene is built', () => {
+        stubWindow(1280, 720);
+        const layout = new SpineLayout();
+
+        layout.createInstancesFromDataArray([
+            { name: 'root', skeleton: oriented, atlasText: '', textures: {} },
+        ]);
+
+        expect(layout.orientation.current).toBe('landscape');
+        expect(playing(layout, 'root')).toContain('state_landscape/wide');
+    });
+
+    it('plays the other one when the screen turns', () => {
+        const win = stubWindow(1280, 720);
+        const layout = new SpineLayout();
+
+        layout.createInstancesFromDataArray([
+            { name: 'root', skeleton: oriented, atlasText: '', textures: {} },
+        ]);
+
+        win.resizeTo(720, 1280);
+
+        expect(layout.orientation.current).toBe('portrait');
+        // the pair pose the same bone, so the turn takes the track over rather than stacking
+        expect(playing(layout, 'root')).toContain('state_portrait/tall');
+        expect(playing(layout, 'root')).not.toContain('state_landscape/wide');
+    });
+
+    it('leaves a scene that authors neither state unposed', () => {
+        stubWindow(1280, 720);
+        const layout = new SpineLayout();
+
+        layout.createInstancesFromDataArray([instance('root')]);
+
+        expect(layout.orientation.current).toBeUndefined();
+    });
+});
