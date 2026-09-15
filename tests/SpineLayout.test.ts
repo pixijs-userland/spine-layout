@@ -117,6 +117,26 @@ describe('SpineLayout — building the scene from its root', () => {
         ]);
     });
 
+    it('keeps a numbered pointer that names a real export as that export, not a copy of the base', () => {
+        const layout = new SpineLayout();
+
+        layout.createInstancesFromDataArray([
+            instance('root', ['spine_bg']),
+            instance('bg', ['spine_hero_1', 'spine_hero_2']),
+            instance('hero'),
+            instance('hero_2', ['hero2Only']),
+        ]);
+
+        // `hero` is consumed by the one instance `spine_hero_1` asks for; `hero_2` is untouched
+        expect([...layout.spines.keys()]).toEqual(['root', 'bg', 'hero_2', 'hero_1']);
+
+        const hero2 = layout.spines.get('hero_2')!;
+
+        expect(hero2.skeleton.findSlot('hero2Only')).toBeTruthy();
+        expect(layout.spines.get('hero_1')!.skeleton.findSlot('hero2Only')).toBeFalsy();
+        expect(hero2.parent).toBe(layout.spines.get('bg'));
+    });
+
     it('holds the root, and only the root, in the layout container', () => {
         const layout = new SpineLayout({ skipAttachingSpinesPatterns: ['loose'] });
 

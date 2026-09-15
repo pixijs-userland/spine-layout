@@ -19,9 +19,12 @@ export function spinePointerBases(slotName: string, isKnown: (id: string) => boo
     if (!slotName.startsWith(prefix)) return [];
 
     const pointer = slotName.slice(prefix.length);
-    const named = pointer.match(NAMED_INSTANCE)?.[1];
-    // A counted pointer that is itself a spine names that sibling rather than a pool.
-    const counted = isKnown(pointer) ? undefined : pointer.match(COUNTED_INSTANCE)?.[1];
+    // A pointer that is itself a spine names that sibling rather than an instance of a base:
+    // `spine_hero_2` is a second hero exported in his own right when `hero_2` was loaded, and
+    // a copy of `hero` only when it was not.
+    const isSibling = isKnown(pointer);
+    const named = isSibling ? undefined : pointer.match(NAMED_INSTANCE)?.[1];
+    const counted = isSibling ? undefined : pointer.match(COUNTED_INSTANCE)?.[1];
 
     return [...new Set([pointer, named, counted])].filter(
         (id): id is string => !!id && isKnown(id),
@@ -61,9 +64,9 @@ export type InstanceGroup = {
  *    `SceneController` then attaches to its own parent's slot. A plain pointer carried by a
  *    single spine stays a plain single attach.
  *
- * A pointer only expands a base when that base id is a known spine. A counted pointer is
- * additionally ignored when the full pointer is itself a known spine, since that means it
- * points at a real sibling for a plain single attach rather than naming a pool.
+ * A pointer only expands a base when that base id is a known spine, and never when the full
+ * pointer is itself one: `spine_hero_2` alongside a loaded `hero_2` names that second hero
+ * rather than asking for a copy of `hero`, the same way `spine_symbol0` does for `symbol0`.
  *
  * Expansion is resolved to a fixed point so pools size correctly off parents that are
  * themselves multiplied: a reel's `spine_symbol*` slots only number 25 once the single
@@ -98,6 +101,8 @@ export function planMultipleInstances(bases: BaseSpineSlots[]): InstanceGroup[] 
                 if (!name.startsWith(prefix)) return;
 
                 const pointer = name.slice(prefix.length); // e.g. "reel_1"
+                if (registry.has(pointer)) return; // points at a real spine -> single attach
+
                 const match = pointer.match(NAMED_INSTANCE);
                 if (!match) return;
 
