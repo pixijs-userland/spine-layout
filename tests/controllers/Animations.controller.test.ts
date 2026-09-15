@@ -9,6 +9,7 @@ import {
     AnimationState,
     AnimationStateData,
     BoneData,
+    Property,
     RotateTimeline,
     Skeleton,
     SkeletonData,
@@ -274,9 +275,10 @@ describe('AnimationsController – never-applied entries', () => {
 
     it('still drops a never-applied entry replaced by a different animation and undoes its pose', async () => {
         const board = createFakeSpine({
+            slots: [{ name: 'symbol' }],
             animations: [
-                { name: 'inactive', duration: 1, poses: ['slot:symbol'] },
-                { name: 'idle', duration: 1, poses: ['slot:symbol'] },
+                { name: 'inactive', duration: 1, poses: [`${Property.attachment}|0`] },
+                { name: 'idle', duration: 1, poses: [`${Property.attachment}|0`] },
             ],
         });
         const ctl = new AnimationsController(asSpineMap({ board }));
@@ -286,9 +288,35 @@ describe('AnimationsController – never-applied entries', () => {
         void ctl.play('board', 'idle'); // same frame — `inactive` never applied
 
         expect(board.__clearTrackCalls).toEqual([0]);
-        expect(board.__bonesSetupPoseCount).toBe(1);
-        expect(board.__setupPoseCount).toBe(1);
+        expect(board.__slotSetupPoseCalls).toEqual(['symbol']);
         expect(board.state.tracks[0]?.animation.name).toBe('idle');
+
+        await vi.runAllTimersAsync();
+    });
+
+    it('leaves every bone and slot the dropped entry never claimed exactly where it stood', async () => {
+        // the reel-position case: a whole-skeleton reset here once snapped a spin still
+        // turning, or a hand raised outside the animation state, back to setup pose the
+        // instant an unrelated entry on the same skeleton was replaced before Spine applied it
+        const board = createFakeSpine({
+            slots: [{ name: 'symbol' }],
+            bones: [{ name: 'reel', setupX: 0, setupY: 0 }],
+            animations: [
+                { name: 'inactive', duration: 1, poses: [`${Property.attachment}|0`] },
+                { name: 'idle', duration: 1, poses: [`${Property.attachment}|0`] },
+            ],
+        });
+        const ctl = new AnimationsController(asSpineMap({ board }));
+        ctl.registerSpine('board', board as never);
+
+        const reel = board.skeleton.bones[0]!;
+        reel.pose.x = 42; // driven by something outside the animation state entirely
+
+        void ctl.play('board', 'inactive');
+        void ctl.play('board', 'idle'); // same frame — `inactive` never applied
+
+        expect(board.__boneSetupPoseCalls).toEqual([]);
+        expect(reel.pose.x).toBe(42);
 
         await vi.runAllTimersAsync();
     });
@@ -309,8 +337,8 @@ describe('AnimationsController – never-applied entries', () => {
         void ctl.play('board', 'idle');
 
         expect(board.__clearTrackCalls).toEqual([]);
-        expect(board.__bonesSetupPoseCount).toBe(0);
-        expect(board.__setupPoseCount).toBe(0);
+        expect(board.__boneSetupPoseCalls).toEqual([]);
+        expect(board.__slotSetupPoseCalls).toEqual([]);
         expect(board.state.tracks[0]?.animation.name).toBe('idle');
 
         await vi.runAllTimersAsync();
@@ -351,6 +379,48 @@ describe('AnimationsController – never-applied entries', () => {
 
         expect(point.pose.x).toBe(400);
         expect(point.pose.y).toBe(300);
+    });
+
+    /**
+     * The other half of the payline fix: against the real runtime, undoing a genuinely
+     * replaced (not merely re-set) never-applied entry must not cost its neighbours their
+     * pose — only what the dropped entry itself claimed comes back to setup.
+     */
+    it('undoes only what the dropped entry claimed, leaving an unrelated bone as it was', () => {
+        const data = new SkeletonData();
+        const root = new BoneData(0, 'root', null);
+        const point1 = new BoneData(1, 'point1', root);
+        const reel = new BoneData(2, 'reel', root);
+
+        data.bones.push(root, point1, reel);
+
+        const show = new RotateTimeline(1, 0, 1); // point1
+        show.setFrame(0, 0, 45);
+        data.animations.push(new Animation('show', [show], 1));
+
+        const hide = new RotateTimeline(1, 0, 1); // point1 too — a genuine collision
+        hide.setFrame(0, 0, -45);
+        data.animations.push(new Animation('hide', [hide], 1));
+
+        const spine = {
+            skeleton: new Skeleton(data),
+            state: new AnimationState(new AnimationStateData(data)),
+        } as unknown as Spine;
+
+        const ctl = new AnimationsController(new Map([['payline', spine]]));
+        ctl.registerSpine('payline', spine);
+
+        const reelBone = spine.skeleton.findBone('reel')!;
+        const point1Bone = spine.skeleton.findBone('point1')!;
+
+        reelBone.pose.rotation = 90; // driven by something outside the animation state entirely
+        point1Bone.pose.rotation = 999; // stands in for whatever `show` would have posed it to
+
+        void ctl.play('payline', 'show');
+        void ctl.play('payline', 'hide'); // same frame — `show` never applied, and claims point1 too
+
+        expect(point1Bone.pose.rotation).toBe(0); // `show`'s claim, undone back to setup
+        expect(reelBone.pose.rotation).toBe(90); // claimed by neither — untouched
     });
 });
 

@@ -1,4 +1,4 @@
-import { Physics, type Spine } from '@esotericsoftware/spine-pixi-v8';
+import { Physics, Property, type Spine } from '@esotericsoftware/spine-pixi-v8';
 import type {
     AnimationName,
     AnimationsRegistry,
@@ -399,28 +399,65 @@ export class AnimationsController {
      * Two poses in one frame is not a caller's mistake to avoid. The win presentation re-poses
      * the board on a timer and a press of the spin button poses it back to `idle`, and the two
      * land in the same frame whenever the press falls on the wrong moment — so the unapplied
-     * entry is dropped and the pose put back here instead, which is what Spine's own undo pass
-     * would have left behind. The tracks that are still live re-apply over it on the next
-     * update, before anything is drawn.
+     * entry is dropped and the pose it claimed put back here instead, which is what Spine's own
+     * undo pass would have left behind. The tracks that are still live re-apply over it on the
+     * next update, before anything is drawn.
      *
-     * An unapplied entry replaced by *its own animation* is left alone: Spine's `setAnimation`
-     * drops such an entry itself instead of mixing from it, and an entry that never applied
-     * left nothing on the skeleton to undo. The reset here would wipe poses set from outside
-     * the animation state, which no live track re-applies. That is how a payline placed by
-     * hand ended up drawn from the skeleton origin — the middle of the screen: in a hidden tab
-     * the ticker never applies `show`, while the win loop, on wall-clock timers, keeps
-     * replaying it, and each replay snapped the point bones back to the setup pose.
+     * Scoped to the dropped entry's own claim rather than the whole skeleton: every other bone,
+     * slot and constraint is left exactly where it stood, including ones no track is currently
+     * driving — a spin still turning, a hand raised by the game rather than by an animation.
+     * That distinction is not optional. A whole-skeleton reset here once wiped a payline placed
+     * by hand back to the skeleton origin: in a hidden tab the ticker never applied `show`,
+     * while the win loop, on wall-clock timers, kept replaying it, and each replay reset the
+     * point bones nothing was there to reapply.
+     *
+     * An unapplied entry replaced by *its own animation* is left alone regardless: Spine's
+     * `setAnimation` drops such an entry itself instead of mixing from it, and an entry that
+     * never applied left nothing on the skeleton to undo.
      */
     private undoUnappliedEntry(spine: Spine, track: number, animation: string) {
         const entry = spine.state.tracks[track];
 
         // every apply stamps `nextTrackLast`, so -1 is an entry that has not had one
         if (!entry || entry.nextTrackLast !== -1) return;
-        if (entry.animation?.name === animation) return;
 
+        const dropped = entry.animation?.name;
+
+        if (dropped === animation) return;
+
+        // `clearTrack` queues and drains the entry's own dispose synchronously, which frees it
+        // back to the runtime's TrackEntry pool — `entry.animation` is nulled as part of that,
+        // so what it named has to be read before the call, not after
         spine.state.clearTrack(track);
-        spine.skeleton.setupPoseBones();
-        spine.skeleton.setupPoseSlots();
+        this.revertClaim(spine, dropped);
+    }
+
+    /** Puts back the setup pose for exactly what `animation` claims — see {@link undoUnappliedEntry}. */
+    private revertClaim(spine: Spine, animation: string | undefined) {
+        if (!animation) return;
+
+        const claim = poseClaims(spine.state.data.skeletonData).get(animation);
+
+        if (!claim) return;
+
+        const { bones, slots, constraints, drawOrder } = spine.skeleton;
+        let resetDrawOrder = false;
+
+        claim.forEach((id) => {
+            const [property, index] = id.split('|').map(Number);
+
+            // a claim that is not the runtime's own `Property|index` shape (a test double's
+            // opaque id, say) names nothing to revert
+            if (!Number.isFinite(property)) return;
+
+            if (property <= Property.inherit) bones[index]?.setupPose();
+            else if (property <= Property.deform || property === Property.sequence) slots[index]?.setupPose();
+            else if (property === Property.drawOrder || property === Property.drawOrderFolder) {
+                resetDrawOrder = true;
+            } else constraints?.[index]?.setupPose();
+        });
+
+        if (resetDrawOrder) drawOrder.setupPose();
     }
 
     /**
