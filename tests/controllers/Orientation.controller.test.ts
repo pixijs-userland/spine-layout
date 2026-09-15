@@ -49,6 +49,7 @@ function scene(animations = ['state_landscape/wide', 'state_portrait/tall']) {
         animations: [
             ...animations.map((name) => ({ name, duration: 1, poses: ['bone:logo'] })),
             { name: 'state_idle/breathe_loop', duration: 1, poses: ['bone:chest'] },
+            { name: 'state_boot/steal logo', duration: 1, poses: ['bone:logo'] },
         ],
     });
     const animationsController = new AnimationsController(asSpineMap({ bg: spine }));
@@ -60,6 +61,29 @@ function scene(animations = ['state_landscape/wide', 'state_portrait/tall']) {
 
 function played(spine: FakeSpine): string[] {
     return spine.__setAnimationCalls.map((call) => call.name);
+}
+
+/**
+ * A frame clock, which the setup file leaves as a stub that never calls back — the controller
+ * waits on one to pose the layout a second time, once the build it was called from is over.
+ */
+function stubFrames() {
+    const frames = new Map<number, () => void>();
+    let next = 0;
+
+    vi.stubGlobal('requestAnimationFrame', (fn: () => void) => {
+        frames.set(++next, fn);
+
+        return next;
+    });
+    vi.stubGlobal('cancelAnimationFrame', (id: number) => frames.delete(id));
+
+    return () => {
+        const queued = [...frames.values()];
+
+        frames.clear();
+        queued.forEach((fn) => fn());
+    };
 }
 
 afterEach(() => {
@@ -104,6 +128,51 @@ describe('OrientationController – attach', () => {
 
         expect(played(spine)).toEqual([]);
         expect(win.listenerCount('resize')).toBe(0);
+    });
+
+    it('plays the state again once the frame the layout was built in is over', () => {
+        stubWindow(1280, 720);
+        const endOfFrame = stubFrames();
+        const { spine, animations } = scene();
+
+        new OrientationController(animations).attach();
+
+        expect(played(spine)).toEqual(['state_landscape/wide']);
+
+        endOfFrame();
+
+        expect(played(spine)).toEqual(['state_landscape/wide', 'state_landscape/wide']);
+    });
+
+    it('puts the state back on top of what took its track while the layout was built', () => {
+        stubWindow(1280, 720);
+        const endOfFrame = stubFrames();
+        const { spine, animations } = scene();
+
+        new OrientationController(animations).attach();
+        void animations.playState('boot');
+
+        expect(played(spine)).toEqual(['state_landscape/wide', 'state_boot/steal logo']);
+        expect(spine.__setAnimationCalls.map((call) => call.track)).toEqual([0, 0]);
+
+        endOfFrame();
+
+        expect(played(spine).at(-1)).toBe('state_landscape/wide');
+        expect(spine.__setAnimationCalls.at(-1)?.track).toBe(0);
+    });
+
+    it('drops the queued pose on clear', () => {
+        stubWindow(1280, 720);
+        const endOfFrame = stubFrames();
+        const { spine, animations } = scene();
+        const orientation = new OrientationController(animations);
+
+        orientation.attach();
+        orientation.clear();
+
+        endOfFrame();
+
+        expect(played(spine)).toEqual(['state_landscape/wide']);
     });
 
     it('does not re-pose a layout that is already oriented', () => {

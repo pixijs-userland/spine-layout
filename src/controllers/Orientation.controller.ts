@@ -27,6 +27,8 @@ export class OrientationController {
     #size?: Size;
     #enabled = true;
     #listening = false;
+    /** Cancels the pose queued by {@link settle}, `undefined` when none is waiting. */
+    #settling?: () => void;
 
     constructor(private animations: AnimationsController) { }
 
@@ -60,9 +62,9 @@ export class OrientationController {
      *
      * Idempotent, and free for the layouts that never author the two folders: with neither
      * state registered there is nothing to play and no listener is added. Safe to call again
-     * once more spines are registered — a layout already posed keeps the pose it has, so a
-     * late spine is posed by the next turn of the screen rather than by re-running the state
-     * on everything standing.
+     * once more spines are registered — the pose is played again for everything standing, so a
+     * spine built after the layout was oriented is posed for the screen rather than left in its
+     * setup pose until the screen turns.
      */
     attach() {
         if (!this.authored()) return;
@@ -70,6 +72,39 @@ export class OrientationController {
         this.listen();
 
         if (!this.#current) this.update();
+
+        this.settle();
+    }
+
+    /**
+     * Plays the state for the screen once more, when the frame the layout was built in is over.
+     *
+     * A layout is built in one synchronous burst, and the orientation states go out in the
+     * middle of it: `init` first, then the screen, then whatever the game plays the moment
+     * `createInstancesFromManifest` returns. An animation dispatched after them that poses the
+     * same bones takes their track ({@link AnimationsController.allocateTrack} hands a claim to
+     * the newcomer), and the scene is left standing in the pose the setup or `init` gave it —
+     * right in landscape, where the two usually agree, and wrong in portrait until the screen
+     * turns and the state is played again.
+     *
+     * So the pose is played twice: once now, so no frame is ever drawn unoriented, and once
+     * more when nothing is queued behind it. The second pass restarts the state rather than
+     * leaving a running one alone: a state whose track was taken is still registered as running
+     * — the newcomer replaced the entry rather than stopping it — so the pass that has to put it
+     * back is exactly the pass the registry would talk out of playing.
+     */
+    private settle() {
+        this.#settling?.();
+        this.#settling = afterFrame(() => {
+            this.#settling = undefined;
+
+            const posed = this.#current;
+
+            if (!this.#enabled || !posed) return;
+            if (!this.animations.getStates().includes(posed)) return;
+
+            void this.animations.playState(posed, { restart: true });
+        });
     }
 
     /**
@@ -129,6 +164,9 @@ export class OrientationController {
     // ─── Lifecycle ───────────────────────────────────────────────────────────────
 
     clear() {
+        this.#settling?.();
+        this.#settling = undefined;
+
         if (this.#listening) {
             window.removeEventListener('resize', this.onResize);
             window.removeEventListener('orientationchange', this.onResize);
@@ -145,6 +183,27 @@ function orientationOf({ width, height }: Size): Orientation {
     const { portrait, landscape } = parcePointers.orientation;
 
     return height > width ? portrait : landscape;
+}
+
+/**
+ * Runs `fn` once the frame in progress is drawn, and returns the cancel for it.
+ *
+ * A frame rather than a task, so the wait is over the work the layout was built by and not over
+ * a fixed number of milliseconds. Where there is no frame clock to wait on — a test, a layout
+ * built off-screen — the next task is as close as it gets.
+ */
+function afterFrame(fn: () => void): () => void {
+    const request = globalThis.requestAnimationFrame;
+
+    if (typeof request !== 'function') {
+        const timer = setTimeout(fn, 0);
+
+        return () => clearTimeout(timer);
+    }
+
+    const frame = request(() => fn());
+
+    return () => globalThis.cancelAnimationFrame(frame);
 }
 
 /** The window's own size, or `undefined` where there is no window to measure (SSR, a test). */
