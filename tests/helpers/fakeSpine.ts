@@ -44,8 +44,10 @@ export type FakeSkeletonBone = {
         worldY: number;
         worldToParent: (point: { x: number; y: number }) => { x: number; y: number };
     };
+    /** Puts just this bone back to setup — what a scoped revert calls, one bone at a time. */
+    setupPose: () => void;
 };
-export type FakeSkeletonSlot = { data: { name: string }; bone: FakeSkeletonBone };
+export type FakeSkeletonSlot = { data: { name: string }; bone: FakeSkeletonBone; setupPose: () => void };
 export type FakeSkin = { name: string };
 
 export type FakeSpineOptions = {
@@ -98,12 +100,14 @@ export type FakeSpine = Container & {
     skeleton: {
         slots: FakeSkeletonSlot[];
         bones: FakeSkeletonBone[];
+        /** Empty unless a fixture is added that needs one — no game asset under test has one yet. */
+        constraints: Array<{ setupPose: () => void }>;
         /** Where the skeleton itself sits, and how it is scaled — spine-pixi runs it y-down. */
         x: number;
         y: number;
         scaleX: number;
         scaleY: number;
-        drawOrder: { appliedPose: Array<{ data: { name: string } }> };
+        drawOrder: { appliedPose: Array<{ data: { name: string } }>; setupPose: () => void };
         data: {
             slots: FakeSlot[];
             animations: FakeAnimation[];
@@ -131,6 +135,10 @@ export type FakeSpine = Container & {
     __activeSkin?: FakeSkin;
     __setupPoseCount: number;
     __bonesSetupPoseCount: number;
+    /** Names of the bones/slots individually put back to setup — a scoped revert, one at a time. */
+    __boneSetupPoseCalls: string[];
+    __slotSetupPoseCalls: string[];
+    __drawOrderSetupPoseCount: number;
     __clearTrackCalls: number[];
     __clearTracksCalls: number;
     __worldTransformUpdates: number;
@@ -173,6 +181,9 @@ export function createFakeSpine(options: FakeSpineOptions = {}): FakeSpine {
     spine.__slotChildren = new Map();
     spine.__setupPoseCount = 0;
     spine.__bonesSetupPoseCount = 0;
+    spine.__boneSetupPoseCalls = [];
+    spine.__slotSetupPoseCalls = [];
+    spine.__drawOrderSetupPoseCount = 0;
     spine.__clearTrackCalls = [];
     spine.__clearTracksCalls = 0;
     spine.__worldTransformUpdates = 0;
@@ -245,6 +256,11 @@ export function createFakeSpine(options: FakeSpineOptions = {}): FakeSpine {
                     return point;
                 },
             },
+            setupPose: () => {
+                spine.__boneSetupPoseCalls.push(bone.name);
+                skeletonBone.pose.x = bone.setupX ?? 0;
+                skeletonBone.pose.y = bone.setupY ?? 0;
+            },
         };
         return skeletonBone;
     };
@@ -259,14 +275,22 @@ export function createFakeSpine(options: FakeSpineOptions = {}): FakeSpine {
         makeSkeletonBone({ name: s.boneName ?? '' });
 
     spine.skeleton = {
-        slots: slots.map((s) => ({ data: { name: s.name }, bone: skeletonSlotBone(s) })),
+        slots: slots.map((s) => ({
+            data: { name: s.name },
+            bone: skeletonSlotBone(s),
+            setupPose: () => spine.__slotSetupPoseCalls.push(s.name),
+        })),
         bones: [...skeletonBones.values()],
+        constraints: [],
         x: 0,
         y: 0,
         scaleX: 1,
         // spine-pixi sets `Skeleton.yDown`, which lands on the skeleton as a negative scaleY.
         scaleY: -1,
-        drawOrder: { appliedPose: slots.map((s) => ({ data: { name: s.name } })) },
+        drawOrder: {
+            appliedPose: slots.map((s) => ({ data: { name: s.name } })),
+            setupPose: () => spine.__drawOrderSetupPoseCount++,
+        },
         data: {
             slots,
             animations,
