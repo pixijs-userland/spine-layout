@@ -219,7 +219,7 @@ export class AnimationsController {
      * state that has to outrank whatever else is on the spine does so because it claims the
      * same properties, not because a caller reserved an index for it.
      */
-    async playState(stateName: string) {
+    async playState(stateName: string, options?: PlayOptions) {
         const logName = `${LOG.STATE} [${stateName}]`;
         log.open(logName);
 
@@ -228,7 +228,7 @@ export class AnimationsController {
         this.stateAnimations.get(stateName)?.forEach((animation) => {
             this.animations.get(animation)?.forEach((animations, spineID) => {
                 animations.forEach(async (animation) => {
-                    promises.push(this.play(spineID, animation));
+                    promises.push(this.play(spineID, animation, false, options));
                     log.add(logName, spineID, `${stateName} -> ${animation}`);
                 });
             });

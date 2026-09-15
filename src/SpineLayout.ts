@@ -217,8 +217,9 @@ export class SpineLayout extends Container {
      * no place on screen, since nothing named one: attach it with `scene.addSlotChild()`, or
      * `addChild()` it into the layout. Nor is anything played — the tree's `init` ran when the
      * tree was built — so pose it with `animations.play(spineID, 'init')` if it needs it. The
-     * screen is the exception: a layout that was not oriented yet, because this instance is
-     * the first to author `state_portrait/` or `state_landscape/`, is posed for it now.
+     * screen is the exception: the orientation state is played again once this frame is over,
+     * so an instance that authors `state_portrait/` or `state_landscape/` is posed for the
+     * screen it was built on rather than waiting for the next turn of it.
      *
      * @returns the instance, already-built ones included, or `undefined` when no skeleton by
      * that name was loaded.
