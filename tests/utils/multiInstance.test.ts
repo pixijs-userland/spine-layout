@@ -170,6 +170,16 @@ describe('planMultipleInstances', () => {
         expect(groups).toEqual([]);
     });
 
+    it('treats an underscored pointer that names a real spine as a single attach, not an instance', () => {
+        const groups = planMultipleInstances([
+            { id: 'bg', slots: ['spine_hero_1', 'spine_hero_2'] },
+            { id: 'hero', slots: [] }, // `hero` still backs `spine_hero_1`…
+            { id: 'hero_2', slots: [] }, // …but `hero_2` is his own export -> not a copy of `hero`
+        ]);
+
+        expect(groups).toEqual([{ baseID: 'hero', instanceIDs: ['hero_1'] }]);
+    });
+
     it('does not pool when only a single counted slot exists', () => {
         const groups = planMultipleInstances([
             { id: 'reel', slots: ['spine_symbol0'] },
@@ -207,6 +217,10 @@ describe('spinePointerBases', () => {
 
     it('names the sibling itself when the counted pointer is a spine of its own', () => {
         expect(spinePointerBases('spine_symbol0', known(['symbol', 'symbol0']))).toEqual(['symbol0']);
+    });
+
+    it('names the sibling itself when the underscored pointer is a spine of its own', () => {
+        expect(spinePointerBases('spine_hero_2', known(['hero', 'hero_2']))).toEqual(['hero_2']);
     });
 
     it('names nothing for a pointer at a skeleton that was never loaded', () => {
