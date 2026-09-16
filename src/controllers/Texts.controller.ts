@@ -229,14 +229,25 @@ export class TextsController {
         }
 
         if (animate || (settings?.animateNumber ?? false)) {
-            const nextMatch = text.match(/^([\s\S]*?)(\d+)([\s\S]*)$/);
+            const nextMatch = text.match(/^([\s\S]*?)(\d+(?:\.\d+)?)([\s\S]*)$/);
 
             if (nextMatch) {
                 const prefix = nextMatch[1];
                 const suffix = nextMatch[3];
-                const end = Math.trunc(Number(nextMatch[2]));
-                const currentMatch = target.text.match(/^([\s\S]*?)(\d+)([\s\S]*)$/);
-                let value = currentMatch ? Math.trunc(Number(currentMatch[2])) : 0;
+                // The decimal places in the *target* value decide how this counts: none
+                // (a plain integer count, e.g. a free-spin tally) keeps the old whole-step
+                // cadence below; carrying its own decimals (a currency amount) switches to
+                // fractional stepping, so a long `duration` is still honoured when the
+                // range it has to cover is small — a handful of currency units can't
+                // otherwise be spread over more than a handful of animation frames.
+                const decimals = nextMatch[2].includes('.') ? nextMatch[2].split('.')[1].length : 0;
+                const end = decimals ? Number(nextMatch[2]) : Math.trunc(Number(nextMatch[2]));
+                const currentMatch = target.text.match(/^([\s\S]*?)(\d+(?:\.\d+)?)([\s\S]*)$/);
+                let value = currentMatch
+                    ? decimals
+                        ? Number(currentMatch[2])
+                        : Math.trunc(Number(currentMatch[2]))
+                    : 0;
                 const diff = Math.abs(end - value);
 
                 if (diff === 0) {
@@ -254,7 +265,9 @@ export class TextsController {
                 const DURATION_MS = duration || 500;
                 const INTERVAL_MS = 16;
                 const totalTicks = DURATION_MS / INTERVAL_MS;
-                const stepSize = Math.max(1, Math.round(diff / totalTicks));
+                const stepSize = decimals
+                    ? diff / totalTicks
+                    : Math.max(1, Math.round(diff / totalTicks));
                 const direction = end > value ? 1 : -1;
 
                 await new Promise<void>((resolve) => {
@@ -263,7 +276,7 @@ export class TextsController {
                         if (direction > 0 && value >= end) value = end;
                         if (direction < 0 && value <= end) value = end;
 
-                        target.text = `${prefix}${value}${suffix}`;
+                        target.text = `${prefix}${decimals ? value.toFixed(decimals) : value}${suffix}`;
                         this.fit(key, target);
 
                         if (value === end) {
