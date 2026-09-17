@@ -1,7 +1,9 @@
 import {
     MeshAttachment,
     RegionAttachment,
+    type Attachment,
     type Bone,
+    type SkinEntry,
     type Slot,
     type Spine,
 } from '@esotericsoftware/spine-pixi-v8';
@@ -269,14 +271,19 @@ export class SceneController {
      * The overlay is a sprite of the slot's texture standing at the bone, but the attachment is
      * not drawn that way: a region carries its own offset, rotation and scale from the bone, a
      * mesh a hull. Both are read in bone space, where a slot object lives with its y axis the
-     * other way up (see `Spine.updateSlotObject`). A weighted mesh has no bone-space shape, and
-     * a slot with no attachment nothing to read, so those stay on the sprite's own texture.
+     * other way up (see `Spine.updateSlotObject`). A weighted mesh has no bone-space shape, so
+     * that stays on the sprite's own texture.
+     *
+     * A slot empty in the setup pose is read from its skin instead, when the skin holds one
+     * attachment for it: a button that an animation attaches for as long as a state runs — a
+     * "tap to skip" over a celebration — is otherwise wired to nothing but the sprite's own
+     * texture, and the overlay it gets is a few pixels of hit area where the art is a screen.
      */
     private hitAreaOf(spine: Spine, slotName: string): Polygon | undefined {
         const slot = spine.skeleton.findSlot(slotName);
         if (!slot) return;
 
-        const attachment = slot.pose.attachment;
+        const attachment = slot.pose.attachment ?? this.skinAttachmentOf(spine, slot);
         let vertices: ArrayLike<number> | undefined;
 
         if (attachment instanceof RegionAttachment) {
@@ -290,6 +297,15 @@ export class SceneController {
         for (let i = 0; i < vertices.length; i += 2) points.push(vertices[i], -vertices[i + 1]);
 
         return new Polygon(points);
+    }
+
+    private skinAttachmentOf(spine: Spine, slot: Slot): Attachment | undefined {
+        const skin = spine.skeleton.skin ?? spine.skeleton.data.defaultSkin;
+        const entries: SkinEntry[] = [];
+
+        skin?.getAttachmentsForSlot(slot.data.index, entries);
+
+        return entries.length === 1 ? entries[0]?.attachment : undefined;
     }
 
     /** Walks the registry, narrowed to the given ids when the caller passes a set. */

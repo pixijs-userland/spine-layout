@@ -275,6 +275,37 @@ describe('TextsController – animated numbers', () => {
 
         expect(ctl.getVal('score')).toBe('5');
     });
+
+    it('settle lands the value at once, whatever animateNumber says', async () => {
+        const slot = { name: 'text_score' } as FakeSlot;
+        const spine = createFakeSpine({ slots: [slot] });
+        const ctl = new TextsController(asSpineMap({ hero: spine }));
+        ctl.settings = { hero: { score: { type: 'text', value: '0', animateNumber: true } } };
+        ctl.add(slot as never, spine as never, 'score', 'hero');
+
+        await ctl.settle('score', '10');
+
+        expect(ctl.getVal('score')).toBe('10');
+    });
+
+    it('settle cuts a running count short and holds the value it landed on', async () => {
+        const slot = { name: 'text_score' } as FakeSlot;
+        const spine = createFakeSpine({ slots: [slot] });
+        const ctl = new TextsController(asSpineMap({ hero: spine }));
+        ctl.settings = { hero: { score: { type: 'text', value: '0' } } };
+        ctl.add(slot as never, spine as never, 'score', 'hero');
+
+        const count = ctl.set('score', '100', true, 800);
+        await vi.advanceTimersByTimeAsync(96);
+        expect(ctl.getVal('score')).not.toBe('100');
+
+        await ctl.settle('score', '100');
+        await count;
+        expect(ctl.getVal('score')).toBe('100');
+
+        await vi.runAllTimersAsync();
+        expect(ctl.getVal('score')).toBe('100');
+    });
 });
 
 describe('TextsController – change events', () => {

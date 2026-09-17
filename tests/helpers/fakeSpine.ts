@@ -24,6 +24,8 @@ export type FakeBone = {
 export type FakeSlot = {
     name: string;
     attachment?: unknown;
+    /** An attachment the skin holds for the slot on top of its setup-pose one — what an animation attaches. */
+    skinAttachment?: unknown;
     boneName?: string;
 };
 
@@ -108,14 +110,19 @@ export type FakeSpine = Container & {
         scaleX: number;
         scaleY: number;
         drawOrder: { appliedPose: Array<{ data: { name: string } }>; setupPose: () => void };
+        skin: null;
         data: {
             slots: FakeSlot[];
             animations: FakeAnimation[];
             events: { name: string }[];
             findSkin: (name: string) => FakeSkin | undefined;
+            defaultSkin: {
+                getAttachmentsForSlot: (index: number, out: Array<{ attachment: unknown }>) => void;
+            };
         };
         findSlot: (name: string) =>
             | {
+                  data: { index: number };
                   bone: { pose: { worldX: number; worldY: number } };
                   /** `sequenceIndex` as the runtime seeds it: -1, the attachment's own setup frame. */
                   pose: { attachment: unknown; sequenceIndex: number };
@@ -167,9 +174,17 @@ export function createFakeSpine(options: FakeSpineOptions = {}): FakeSpine {
         const slot = slots.find((s) => s.name === name);
         if (!slot) return undefined;
         return {
+            data: { index: slots.indexOf(slot) },
             bone: { pose: { worldX: 1, worldY: 2 } },
             pose: { attachment: slot.attachment, sequenceIndex: -1 },
         };
+    };
+    const getAttachmentsForSlot = (index: number, out: Array<{ attachment: unknown }>) => {
+        const slot = slots[index];
+        if (!slot) return;
+        [slot.attachment, slot.skinAttachment]
+            .filter((attachment) => attachment !== undefined)
+            .forEach((attachment) => out.push({ attachment }));
     };
     const findBone = (name: string) => {
         const bone = bones.find((b) => b.name === name);
@@ -295,12 +310,14 @@ export function createFakeSpine(options: FakeSpineOptions = {}): FakeSpine {
             appliedPose: slots.map((s) => ({ data: { name: s.name } })),
             setupPose: () => spine.__drawOrderSetupPoseCount++,
         },
+        skin: null,
         data: {
             slots,
             animations,
             // spine 4.3 SkeletonData always carries an events array
             events: [],
             findSkin,
+            defaultSkin: { getAttachmentsForSlot },
         },
         findSlot,
         findBone,

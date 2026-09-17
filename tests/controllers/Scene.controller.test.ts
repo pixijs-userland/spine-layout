@@ -211,6 +211,29 @@ describe('SceneController – activateButtonBones', () => {
         expect(hitArea.contains(-11, -20)).toBe(false);
     });
 
+    it('reads a slot empty in the setup pose from its skin, so a button an animation attaches keeps its art as hit area', () => {
+        const banner = createFakeSpine({
+            slots: [{ name: 'button_skip', skinAttachment: makeRegion() }],
+            bones: [{ name: 'button_skip' }],
+        });
+        const spines = asSpineMap({ banner });
+        const bannerAnimations = new AnimationsController(spines);
+        const scene = new SceneController(
+            spines,
+            new TextsController(spines),
+            bannerAnimations,
+            new SpineController(spines, bannerAnimations),
+        );
+        scene.activateButtonBones();
+
+        const sprite = banner.__slotChildren.get('button_skip')?.[0] as Sprite;
+        const hitArea = sprite.hitArea as Polygon;
+
+        expect(hitArea).toBeInstanceOf(Polygon);
+        expect(hitArea.contains(10, -20)).toBe(true);
+        expect(hitArea.contains(10, 20)).toBe(false);
+    });
+
     it('keeps the overlay invisible whatever alpha the runtime writes, and takes its mask', () => {
         const sprite = spine.__slotChildren.get('button_play')?.[0] as Sprite;
         const clip = new Container();

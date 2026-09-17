@@ -57,6 +57,16 @@ Sets the text value. When `animate=true` (or `animateNumber` is set in config), 
 
 ---
 
+### settle
+
+```ts
+settle(boneName: string, text: string)
+```
+
+Writes the value at once, whatever `animateNumber` says, and cuts short any count-up running on the field — for a figure the player has skipped to the end of. Fires the same `<textKey>_change` event `set` does.
+
+---
+
 ### setOffset
 
 ```ts

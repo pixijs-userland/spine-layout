@@ -214,7 +214,28 @@ export class TextsController {
         await Promise.all(keys.map((key) => this.setOne(key, text, animate, duration)));
     }
 
-    private async setOne(key: string, text: string, animate = false, duration = 0, emit = true) {
+    /**
+     * Writes the value at once, whatever the field's `animateNumber` says, and cuts short any
+     * count-up running on it — for a figure the player has skipped to the end of. Announced
+     * the way {@link set} announces: it is a value the game has arrived at.
+     */
+    async settle(boneName: string, text: string) {
+        const keys = this.resolveKeys(boneName);
+        if (keys.length === 0) {
+            console.error(`Text ${boneName} not found`);
+            return;
+        }
+        await Promise.all(keys.map((key) => this.setOne(key, text, false, 0, true, true)));
+    }
+
+    private async setOne(
+        key: string,
+        text: string,
+        animate = false,
+        duration = 0,
+        emit = true,
+        instant = false,
+    ) {
         const target = this.texts.get(key);
         if (!target) return;
 
@@ -228,7 +249,7 @@ export class TextsController {
             this.#textRunners.delete(key);
         }
 
-        if (animate || (settings?.animateNumber ?? false)) {
+        if (!instant && (animate || (settings?.animateNumber ?? false))) {
             const nextMatch = text.match(/^([\s\S]*?)(\d+(?:\.\d+)?)([\s\S]*)$/);
 
             if (nextMatch) {
