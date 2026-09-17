@@ -154,6 +154,13 @@ export class SceneController {
                     const bonePos = this.spine.getBoneGlobalPos(spine, slotName);
                     const button = new Sprite(texture || Texture.WHITE);
 
+                    // Spine.updateSlotObject resets a slot object's alpha to the slot's own
+                    // pose alpha on every update, so a plain `alpha = 0` here gets clobbered
+                    // back to 1 on the next tick. This button only ever serves as a hit area —
+                    // the skeleton's own attachment draws the art — so alpha is pinned shut.
+                    button.alpha = 0;
+                    Object.defineProperty(button, 'alpha', { get: () => 0, set: () => {}, configurable: true });
+
                     if (bonePos) {
                         button.x = bonePos.x;
                         button.y = bonePos.y;

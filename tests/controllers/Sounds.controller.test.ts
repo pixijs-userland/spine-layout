@@ -576,6 +576,49 @@ describe('Sounds – playMusic', () => {
 
 // ─── updateSettings ──────────────────────────────────────────────────────────
 
+describe('Sounds – setFXVolume / authoredFXVolume', () => {
+    it('authoredFXVolume returns the per-sound override, unscaled by fxLevel', () => {
+        const s = new Sounds({ fxVolume: 0.5, fxLevel: 0.5, soundsVolumes: { counterLoop: 0.3 } });
+        expect(s.authoredFXVolume('counterLoop')).toBe(0.3);
+    });
+
+    it('authoredFXVolume falls back to fxVolume for an unlisted sound', () => {
+        const s = new Sounds({ fxVolume: 0.5 });
+        expect(s.authoredFXVolume('coin')).toBe(0.5);
+    });
+
+    it('setFXVolume moves a playing fx, scaled by fxLevel', async () => {
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+        const s = new Sounds({ fxLevel: 0.5 });
+        s.init(makeManifest(['coin']));
+        s.onUserInteraction();
+        await s.playFX('coin');
+        fakeHowl.volume.mockClear();
+
+        s.setFXVolume('coin', 1);
+
+        expect(fakeHowl.volume).toHaveBeenCalledWith(0.5);
+    });
+
+    it('setFXVolume moves whichever variant of an fx is playing', async () => {
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+        const s = new Sounds({ soundVariants: { stop: ['stop_1', 'stop_2'] } });
+        s.init(makeManifest(['stop_1', 'stop_2']));
+        s.onUserInteraction();
+        await s.playFX('stop');
+        fakeHowl.volume.mockClear();
+
+        s.setFXVolume('stop', 1);
+
+        expect(fakeHowl.volume).toHaveBeenCalledWith(1);
+    });
+
+    it('is a no-op when the fx is not currently playing', () => {
+        const s = new Sounds();
+        expect(() => s.setFXVolume('coin', 1)).not.toThrow();
+    });
+});
+
 describe('Sounds – updateSettings', () => {
     it('muted:true calls Howler.mute(true)', () => {
         const s = new Sounds();

@@ -127,6 +127,35 @@ one was picked.
 
 ---
 
+### setFXVolume
+
+```ts
+setFXVolume(fx: string, volume: number): void
+```
+
+Moves a currently playing FX to a given volume, still scaled by the player's `fxLevel` dial. A
+no-op if the FX is not currently playing. An ID with `soundVariants` moves whichever of its
+files is playing. Use with `authoredFXVolume` to ramp a loop's volume over time, e.g. a win
+counter's loop getting louder the longer it runs.
+
+```ts
+sounds.playFX('counterLoop', true);
+sounds.setFXVolume('counterLoop', 1); // full volume, still × fxLevel
+```
+
+---
+
+### authoredFXVolume
+
+```ts
+authoredFXVolume(fx: string): number
+```
+
+The volume an FX is authored at — `soundsVolumes[fx]` (or its variant group's), falling back to
+`fxVolume` — before `fxLevel` is applied. The starting point for a `setFXVolume` ramp.
+
+---
+
 ### playMusic
 
 ```ts

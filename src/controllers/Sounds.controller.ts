@@ -294,6 +294,33 @@ export class Sounds {
         this.fxSounds.set(sound, newInstance);
     }
 
+    /**
+     * The volume an FX is authored at — `soundsVolumes[fx]` (or its variant group's), falling
+     * back to the general `fxVolume` — before the player's own `fxLevel` dial is applied. What
+     * {@link setFXVolume} interpolates from and towards, so a caller ramping a loop's volume
+     * starts from the same level `playFX` would have set it to and can name its target in the
+     * same units.
+     */
+    authoredFXVolume(fx: string): number {
+        const volumes = this.settings.soundsVolumes ?? {};
+
+        return volumes[fx] ?? volumes[this.groupOf(fx)] ?? this.settings.fxVolume;
+    }
+
+    /**
+     * Moves a currently playing FX to a given volume, still scaled by the player's `fxLevel`
+     * dial — for a caller that needs to change a loop's level after `playFX` started it (e.g.
+     * a win counter's loop getting louder the longer it runs) rather than leave it at the
+     * level it started on. A no-op for an FX that is not currently playing.
+     */
+    setFXVolume(fx: string, volume: number) {
+        const scaled = volume * this.settings.fxLevel;
+
+        new Set([fx, ...this.variantsOf(fx)]).forEach((name) => {
+            this.fxSounds.get(name)?.volume(scaled);
+        });
+    }
+
     stopFX(fx: string) {
         // A stop is deliberate, so whatever follows it is a new sound rather than the tail of
         // a burst: let it through even if it lands inside the duplicate window.
@@ -464,10 +491,7 @@ export class Sounds {
     }
 
     private fxVolumeOf(sound: string): number {
-        const volumes = this.settings.soundsVolumes ?? {};
-        const authored = volumes[sound] ?? volumes[this.groupOf(sound)] ?? this.settings.fxVolume;
-
-        return authored * this.settings.fxLevel;
+        return this.authoredFXVolume(sound) * this.settings.fxLevel;
     }
 
     mute() {
