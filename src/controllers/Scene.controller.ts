@@ -1,9 +1,16 @@
-import { type Bone, type Slot, type Spine } from '@esotericsoftware/spine-pixi-v8';
-import { Container, Sprite, Texture, type FederatedPointerEvent } from 'pixi.js';
+import {
+    MeshAttachment,
+    RegionAttachment,
+    type Bone,
+    type Slot,
+    type Spine,
+} from '@esotericsoftware/spine-pixi-v8';
+import { Container, Polygon, Sprite, Texture, type FederatedPointerEvent } from 'pixi.js';
 import type { SpineID, SpineLayoutOptions } from '../config/types';
 import { parcePointers } from '../config/parcePointers';
 import { LOG } from '../config/logs';
 import { log } from '../utils/Log';
+import { exposeToHitTesting, shieldFromHitTesting } from '../utils/hitTesting';
 import type { TextsController } from './Texts.controller';
 import type { AnimationsController } from './Animations.controller';
 import type { SpineController } from './Spine.controller';
@@ -29,6 +36,11 @@ const BUTTON_INTERACTIONS: Record<ButtonInteraction, { events: string[]; animati
     up: { events: ['up'], animations: ['up'] },
     up_out: { events: ['up_out'], animations: ['up_out', 'out', 'unhover'] },
 };
+
+/** Freezes a property at one value, whatever is assigned to it afterwards. */
+function pin<T extends object, K extends keyof T>(target: T, key: K, value: T[K]) {
+    Object.defineProperty(target, key, { get: () => value, set: () => {}, configurable: true });
+}
 
 /** A logical button: every container acting as its hit area, plus the pointer state they share. */
 type ButtonGroup = {
@@ -131,6 +143,11 @@ export class SceneController {
      * event on the declaring spine, and its own animation (`click`, `hover`, `out`, `down`,
      * `up`, `up_out`) on every spine nested inside the button — nested spines of nested
      * spines included, since a composite button animates as a whole.
+     *
+     * A slot button's hit area is the shape of the slot's attachment, and it stays clickable
+     * whatever the runtime clips or draws over it: the clipping mask a slot object is handed
+     * does not reach it, and no skeleton answers a hit-test with its own art — only the hit
+     * areas do (see {@link shieldFromHitTesting}).
      */
     activateButtonBones(only?: Set<SpineID>) {
         log.open(LOG.BUTTONS);
@@ -154,12 +171,18 @@ export class SceneController {
                     const bonePos = this.spine.getBoneGlobalPos(spine, slotName);
                     const button = new Sprite(texture || Texture.WHITE);
 
-                    // Spine.updateSlotObject resets a slot object's alpha to the slot's own
-                    // pose alpha on every update, so a plain `alpha = 0` here gets clobbered
-                    // back to 1 on the next tick. This button only ever serves as a hit area —
-                    // the skeleton's own attachment draws the art — so alpha is pinned shut.
-                    button.alpha = 0;
-                    Object.defineProperty(button, 'alpha', { get: () => 0, set: () => {}, configurable: true });
+                    // This sprite only ever serves as a hit area — the skeleton's own attachment
+                    // draws the art — and the runtime keeps dressing it as a slot object:
+                    // `updateSlotObject` writes the slot's pose alpha over it every update, and
+                    // `updateAndSetPixiMask` hands it the mask of whatever clipping attachment
+                    // the slot falls under in draw order. Pixi prunes a masked container from
+                    // hit-testing wherever the mask does not reach, so a button sitting under
+                    // the reels' clip would go dead along its edge. Both are pinned shut.
+                    pin(button, 'alpha', 0);
+                    pin(button, 'mask', null);
+
+                    const hitArea = this.hitAreaOf(spine, slotName);
+                    if (hitArea) button.hitArea = hitArea;
 
                     if (bonePos) {
                         button.x = bonePos.x;
@@ -217,24 +240,51 @@ export class SceneController {
                     ),
                 );
             });
+        });
 
-            // A skeleton drawn in front of a button (a hero standing over the reels, say)
-            // still recurses into its own children during hit-testing by default, and an
-            // animated mesh occasionally reports a hit at a point where nothing is actually
-            // drawn. Declaring no buttons of its own, and nesting no `spine_<id>` child that
-            // could declare one, means this skeleton can safely be pulled out of hit-testing
-            // altogether — so whatever it visually overlaps stays reachable underneath it.
-            const nestsSpines = spine.skeleton.data.slots.some((slot) =>
-                slot.name.startsWith(parcePointers.slot.spine),
-            );
+        // Only a hit area answers the pointer. A `Spine` is a view, and a view says it contains
+        // any point inside its bounding box; Pixi hands an interactive ancestor's mode down to
+        // every child, so with one `eventMode = 'static'` container above the scene a skeleton
+        // drawn in front of a button — a hero over the reels, a popup — answers for the whole
+        // rectangle around it, and the click ends there, on nothing. A skeleton is a hit target
+        // only where a `button_` bone makes it one ({@link wireButton}); every other one is made
+        // to say no, whatever mode it inherits.
+        const targets = new Set(this.buttons.values());
 
-            if (groups.size === 0 && !nestsSpines) {
-                spine.eventMode = 'none';
-                log.add(LOG.BUTTONS, spineID, 'no buttons -> eventMode none');
-            }
+        this.eachSpine(only, (spine) => {
+            if (!targets.has(spine)) shieldFromHitTesting(spine);
         });
 
         log.close(LOG.BUTTONS);
+    }
+
+    /**
+     * The button's art as its hit area, in the overlay's own space.
+     *
+     * The overlay is a sprite of the slot's texture standing at the bone, but the attachment is
+     * not drawn that way: a region carries its own offset, rotation and scale from the bone, a
+     * mesh a hull. Both are read in bone space, where a slot object lives with its y axis the
+     * other way up (see `Spine.updateSlotObject`). A weighted mesh has no bone-space shape, and
+     * a slot with no attachment nothing to read, so those stay on the sprite's own texture.
+     */
+    private hitAreaOf(spine: Spine, slotName: string): Polygon | undefined {
+        const slot = spine.skeleton.findSlot(slotName);
+        if (!slot) return;
+
+        const attachment = slot.pose.attachment;
+        let vertices: ArrayLike<number> | undefined;
+
+        if (attachment instanceof RegionAttachment) {
+            vertices = attachment.getOffsets(slot.pose);
+        } else if (attachment instanceof MeshAttachment && !attachment.bones) {
+            vertices = Array.from(attachment.vertices).slice(0, attachment.hullLength);
+        }
+        if (!vertices?.length) return;
+
+        const points: number[] = [];
+        for (let i = 0; i < vertices.length; i += 2) points.push(vertices[i], -vertices[i + 1]);
+
+        return new Polygon(points);
     }
 
     /** Walks the registry, narrowed to the given ids when the caller passes a set. */
@@ -266,6 +316,7 @@ export class SceneController {
      */
     private wireButton(group: ButtonGroup) {
         group.targets.forEach((target) => {
+            exposeToHitTesting(target);
             target.eventMode = 'static';
             target.cursor = 'pointer';
 

@@ -1,5 +1,5 @@
 import { Vector2, type Bone, type Skeleton, type Spine } from '@esotericsoftware/spine-pixi-v8';
-import { Point, type Container, type FederatedPointerEvent } from 'pixi.js';
+import { Container, Point, type FederatedPointerEvent } from 'pixi.js';
 import type { SpineID } from '../config/types';
 import { parcePointers } from '../config/parcePointers';
 import { LOG } from '../config/logs';
@@ -35,6 +35,15 @@ export class PointerController {
     /** Whether the pointer has been anywhere yet — before that, bones are left alone. */
     private pointerSeen = false;
     private listening = false;
+    /**
+     * What hears the pointer: an empty interactive container inside the layout. Pixi delivers
+     * `globalpointermove` to every interactive object on every move, wherever the pointer is,
+     * so nothing has to be covered with a hit area — and being empty, this one never answers a
+     * hit-test itself. The layout container is left alone: an interactive mode is inherited,
+     * and a `static` layout has every skeleton beneath it answering hit-tests with its
+     * bounding box, swallowing the clicks meant for the buttons behind it.
+     */
+    private readonly listener = new Container({ label: 'pointer-listener', eventMode: 'static' });
     private _enabled = true;
     private _strength = 1;
     /** Scratch points, so following a bone costs no allocation per frame. */
@@ -107,10 +116,9 @@ export class PointerController {
      * it is safe to call again after spines are added (a clone, a late instance) to pick
      * their follow bones up too.
      *
-     * Listening starts the first time a follow bone is found, and makes the layout container
-     * interactive (`eventMode = 'static'`) — Pixi delivers `globalpointermove` to interactive
-     * objects on every pointer move, wherever the pointer is, so nothing has to be covered
-     * with a hit area to hear the moves.
+     * Listening starts the first time a follow bone is found, through an empty interactive
+     * child of the layout ({@link listener}) — nothing has to be covered with a hit area to
+     * hear the moves, and nothing about the layout's own interactivity changes.
      */
     attach() {
         log.open(LOG.FOLLOW_POINTER);
@@ -219,8 +227,8 @@ export class PointerController {
         if (this.listening) return;
         this.listening = true;
 
-        this.root.eventMode = 'static';
-        this.root.on('globalpointermove', this.onPointerMove);
+        this.root.addChild(this.listener);
+        this.listener.on('globalpointermove', this.onPointerMove);
     }
 
     private onPointerMove = (event: FederatedPointerEvent) => {
@@ -250,7 +258,8 @@ export class PointerController {
         this.strengths.clear();
 
         if (this.listening) {
-            this.root.off('globalpointermove', this.onPointerMove);
+            this.listener.off('globalpointermove', this.onPointerMove);
+            this.listener.removeFromParent();
             this.listening = false;
         }
 

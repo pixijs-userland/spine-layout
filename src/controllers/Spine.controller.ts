@@ -12,6 +12,7 @@ import { Point, Rectangle, Texture } from 'pixi.js';
 import type { SpineID } from '../config/types';
 import { LOG } from '../config/logs';
 import { log } from '../utils/Log';
+import { shieldFromHitTesting } from '../utils/hitTesting';
 import type { AnimationsController } from './Animations.controller';
 
 export class SpineController {
@@ -27,6 +28,7 @@ export class SpineController {
         cloned.position.copyFrom({ x: spine.position.x + 100, y: spine.position.y + 100 });
         cloned.scale.copyFrom(spine.scale);
         cloned.rotation = spine.rotation;
+        shieldFromHitTesting(cloned);
 
         if (this.spines.has(newSpineID)) {
             this.spines.get(newSpineID)?.destroy();

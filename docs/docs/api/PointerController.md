@@ -33,9 +33,11 @@ Scans every registered spine for `_followPointer` bones and starts following. Ca
 by `SpineLayout.render()`; call it again after registering spines later (a clone, a late
 instance) to pick up their follow bones too — a spine already followed is skipped.
 
-Listening starts the first time a follow bone is found, and makes the layout container
-interactive (`eventMode = 'static'`): Pixi delivers `globalpointermove` to interactive objects
-on every pointer move, wherever the pointer is, so nothing has to be covered with a hit area.
+Listening starts the first time a follow bone is found, through an empty interactive child
+of the layout: Pixi delivers `globalpointermove` to interactive objects on every pointer move,
+wherever the pointer is, so nothing has to be covered with a hit area. The layout container
+itself is left as it is — an interactive mode is inherited, and a `static` layout would have
+every skeleton beneath it answering hit-tests with its bounding box, over the buttons behind it.
 A layout with no follow bone in it is left untouched.
 
 ---

@@ -377,6 +377,8 @@ describe('TextsController – attach / settings / clear', () => {
         expect(summary).toBe('a -> text_a');
         const attached = spine.__slotChildren.get('text_a');
         expect(attached?.[0]).toBeInstanceOf(Container);
+        // a label is never a hit target of its own — over a button, it would take the click
+        expect(attached?.[0].eventMode).toBe('none');
         expect(ctl.getVal('a')).toBe('HI');
     });
 
