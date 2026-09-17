@@ -264,6 +264,26 @@ describe('OrientationController – following the screen', () => {
         expect(played(spine)).toEqual(['state_landscape/wide', 'state_portrait/tall']);
     });
 
+    it('poses nothing while attached disabled, and poses the screen once enabled', () => {
+        const win = stubWindow(1280, 720);
+        const endOfFrame = stubFrames();
+        const { spine, animations } = scene();
+        const orientation = new OrientationController(animations);
+
+        orientation.enabled = false;
+        orientation.attach();
+        endOfFrame();
+        win.resizeTo(720, 1280);
+
+        expect(orientation.current).toBeUndefined();
+        expect(played(spine)).toEqual([]);
+
+        orientation.enabled = true;
+
+        expect(orientation.current).toBe('portrait');
+        expect(played(spine)).toEqual(['state_portrait/tall']);
+    });
+
     it('stops listening on clear', () => {
         const win = stubWindow(1280, 720);
         const { spine, animations } = scene();
