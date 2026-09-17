@@ -37,8 +37,14 @@ const BUTTON_INTERACTIONS: Record<ButtonInteraction, { events: string[]; animati
     up_out: { events: ['up_out'], animations: ['up_out', 'out', 'unhover'] },
 };
 
-/** Freezes a property at one value, whatever is assigned to it afterwards. */
+/**
+ * Sets a property and freezes it there, whatever is assigned to it afterwards.
+ *
+ * Set through the real accessor first: Pixi renders from what the setter stores (`localAlpha`,
+ * the mask effect), not from what the getter says, so freezing alone would leave the old value.
+ */
 function pin<T extends object, K extends keyof T>(target: T, key: K, value: T[K]) {
+    target[key] = value;
     Object.defineProperty(target, key, { get: () => value, set: () => {}, configurable: true });
 }
 
@@ -167,9 +173,14 @@ export class SceneController {
                 const slotName = slot.data.name;
 
                 if (slotName.startsWith(parcePointers.slot.button)) {
-                    const texture = this.spine.getSlotTexture(spineID, slotName);
+                    const hitArea = this.hitAreaOf(spine, slotName);
+                    // with a hit area the sprite has nothing to draw or to measure; without one
+                    // its texture is the hit area, as it always was
+                    const texture = hitArea
+                        ? Texture.EMPTY
+                        : this.spine.getSlotTexture(spineID, slotName) || Texture.WHITE;
                     const bonePos = this.spine.getBoneGlobalPos(spine, slotName);
-                    const button = new Sprite(texture || Texture.WHITE);
+                    const button = new Sprite(texture);
 
                     // This sprite only ever serves as a hit area — the skeleton's own attachment
                     // draws the art — and the runtime keeps dressing it as a slot object:
@@ -180,8 +191,6 @@ export class SceneController {
                     // the reels' clip would go dead along its edge. Both are pinned shut.
                     pin(button, 'alpha', 0);
                     pin(button, 'mask', null);
-
-                    const hitArea = this.hitAreaOf(spine, slotName);
                     if (hitArea) button.hitArea = hitArea;
 
                     if (bonePos) {

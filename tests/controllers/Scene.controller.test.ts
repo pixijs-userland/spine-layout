@@ -218,6 +218,9 @@ describe('SceneController – activateButtonBones', () => {
         sprite.mask = new Container();
 
         expect(sprite.alpha).toBe(0);
+        // what Pixi actually renders with — a frozen getter alone would leave it at 1
+        expect(sprite.localAlpha).toBe(0);
+        expect(sprite.texture).toBe(Texture.EMPTY);
         expect(sprite.mask).toBeNull();
     });
 
