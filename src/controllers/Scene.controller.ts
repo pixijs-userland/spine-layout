@@ -37,8 +37,14 @@ const BUTTON_INTERACTIONS: Record<ButtonInteraction, { events: string[]; animati
     up_out: { events: ['up_out'], animations: ['up_out', 'out', 'unhover'] },
 };
 
-/** Freezes a property at one value, whatever is assigned to it afterwards. */
+/**
+ * Sets a property and freezes it there, whatever is assigned to it afterwards.
+ *
+ * Set through the real accessor first: Pixi renders from what the setter stores (`localAlpha`),
+ * not from what the getter says, so freezing alone would leave the old value.
+ */
 function pin<T extends object, K extends keyof T>(target: T, key: K, value: T[K]) {
+    target[key] = value;
     Object.defineProperty(target, key, { get: () => value, set: () => {}, configurable: true });
 }
 
@@ -144,10 +150,9 @@ export class SceneController {
      * `up`, `up_out`) on every spine nested inside the button — nested spines of nested
      * spines included, since a composite button animates as a whole.
      *
-     * A slot button's hit area is the shape of the slot's attachment, and it stays clickable
-     * whatever the runtime clips or draws over it: the clipping mask a slot object is handed
-     * does not reach it, and no skeleton answers a hit-test with its own art — only the hit
-     * areas do (see {@link shieldFromHitTesting}).
+     * A slot button's hit area is the shape of the slot's attachment, clipped where the
+     * skeleton clips the art, and nothing drawn over it takes its clicks: no skeleton answers
+     * a hit-test with its own art — only the hit areas do (see {@link shieldFromHitTesting}).
      */
     activateButtonBones(only?: Set<SpineID>) {
         log.open(LOG.BUTTONS);
@@ -167,21 +172,21 @@ export class SceneController {
                 const slotName = slot.data.name;
 
                 if (slotName.startsWith(parcePointers.slot.button)) {
-                    const texture = this.spine.getSlotTexture(spineID, slotName);
+                    const hitArea = this.hitAreaOf(spine, slotName);
+                    // with a hit area the sprite has nothing to draw or to measure; without one
+                    // its texture is the hit area, as it always was
+                    const texture = hitArea
+                        ? Texture.EMPTY
+                        : this.spine.getSlotTexture(spineID, slotName) || Texture.WHITE;
                     const bonePos = this.spine.getBoneGlobalPos(spine, slotName);
-                    const button = new Sprite(texture || Texture.WHITE);
+                    const button = new Sprite(texture);
 
                     // This sprite only ever serves as a hit area — the skeleton's own attachment
-                    // draws the art — and the runtime keeps dressing it as a slot object:
-                    // `updateSlotObject` writes the slot's pose alpha over it every update, and
-                    // `updateAndSetPixiMask` hands it the mask of whatever clipping attachment
-                    // the slot falls under in draw order. Pixi prunes a masked container from
-                    // hit-testing wherever the mask does not reach, so a button sitting under
-                    // the reels' clip would go dead along its edge. Both are pinned shut.
+                    // draws the art — but `updateSlotObject` writes the slot's pose alpha over
+                    // it every update, so alpha is pinned shut. The clipping mask the runtime
+                    // hands it is kept: Pixi prunes a masked container from hit-testing where
+                    // the mask does not reach, which is what clips the art too.
                     pin(button, 'alpha', 0);
-                    pin(button, 'mask', null);
-
-                    const hitArea = this.hitAreaOf(spine, slotName);
                     if (hitArea) button.hitArea = hitArea;
 
                     if (bonePos) {

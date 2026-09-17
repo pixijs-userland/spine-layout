@@ -211,14 +211,19 @@ describe('SceneController – activateButtonBones', () => {
         expect(hitArea.contains(-11, -20)).toBe(false);
     });
 
-    it('keeps the overlay invisible and unmasked, whatever the runtime assigns it', () => {
+    it('keeps the overlay invisible whatever alpha the runtime writes, and takes its mask', () => {
         const sprite = spine.__slotChildren.get('button_play')?.[0] as Sprite;
+        const clip = new Container();
 
         sprite.alpha = 1;
-        sprite.mask = new Container();
+        sprite.mask = clip;
 
         expect(sprite.alpha).toBe(0);
-        expect(sprite.mask).toBeNull();
+        // what Pixi actually renders with — a frozen getter alone would leave it at 1
+        expect(sprite.localAlpha).toBe(0);
+        expect(sprite.texture).toBe(Texture.EMPTY);
+        // the skeleton's clipping reaches the hit area as it reaches the art
+        expect(sprite.mask).toBe(clip);
     });
 
     it('plays <key>_click event when the sprite is pressed and released', () => {
