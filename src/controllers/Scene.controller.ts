@@ -217,6 +217,21 @@ export class SceneController {
                     ),
                 );
             });
+
+            // A skeleton drawn in front of a button (a hero standing over the reels, say)
+            // still recurses into its own children during hit-testing by default, and an
+            // animated mesh occasionally reports a hit at a point where nothing is actually
+            // drawn. Declaring no buttons of its own, and nesting no `spine_<id>` child that
+            // could declare one, means this skeleton can safely be pulled out of hit-testing
+            // altogether — so whatever it visually overlaps stays reachable underneath it.
+            const nestsSpines = spine.skeleton.data.slots.some((slot) =>
+                slot.name.startsWith(parcePointers.slot.spine),
+            );
+
+            if (groups.size === 0 && !nestsSpines) {
+                spine.eventMode = 'none';
+                log.add(LOG.BUTTONS, spineID, 'no buttons -> eventMode none');
+            }
         });
 
         log.close(LOG.BUTTONS);
