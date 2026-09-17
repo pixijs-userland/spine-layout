@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { Container, Sprite, Texture } from 'pixi.js';
+import { Container, Polygon, Sprite, Texture } from 'pixi.js';
 import { RegionAttachment, Sequence, type TextureRegion } from '@esotericsoftware/spine-pixi-v8';
 
 import { SceneController } from '../../src/controllers/Scene.controller';
@@ -31,6 +31,7 @@ async function unhover(target: Container) {
     await Promise.resolve();
 }
 
+/** A 40×30 image placed 10 right of and 20 above its bone, the way an artist offsets a button's art. */
 function makeRegion(): RegionAttachment {
     // spine 4.3+: attachments hold their region(s) in a Sequence — static
     // images are single-frame sequences.
@@ -40,11 +41,27 @@ function makeRegion(): RegionAttachment {
         y: 0,
         width: 8,
         height: 8,
+        originalWidth: 8,
+        originalHeight: 8,
+        offsetX: 0,
+        offsetY: 0,
         degrees: 0,
         rotate: false,
         texture: { texture: Texture.WHITE },
     } as unknown as TextureRegion;
-    return new RegionAttachment('a', sequence);
+    const region = new RegionAttachment('a', sequence);
+    region.x = 10;
+    region.y = 20;
+    region.width = 40;
+    region.height = 30;
+    region.updateSequence();
+    return region;
+}
+
+/** What a view answers a hit-test with — `undefined` for a plain container, which has no answer. */
+function hits(view: Container): boolean | undefined {
+    return (view as unknown as { containsPoint?: (point: { x: number; y: number }) => boolean })
+        .containsPoint?.({ x: 0, y: 0 });
 }
 
 describe('SceneController – attachBones', () => {
@@ -179,6 +196,29 @@ describe('SceneController – activateButtonBones', () => {
         // Bone "button_play" worldX=30, worldY=40 → toGlobal -> (130, 240).
         expect(sprite.x).toBe(130);
         expect(sprite.y).toBe(240);
+    });
+
+    it('shapes the hit area to the attachment, in the overlay’s own space', () => {
+        const sprite = spine.__slotChildren.get('button_play')?.[0] as Sprite;
+        const hitArea = sprite.hitArea as Polygon;
+
+        expect(hitArea).toBeInstanceOf(Polygon);
+        // Spine measures y up from the bone and a slot object runs it down, so the art's
+        // centre, 20 above the bone, is 20 below it here — where the raw texture never was.
+        expect(hitArea.contains(10, -20)).toBe(true);
+        expect(hitArea.contains(29, -34)).toBe(true);
+        expect(hitArea.contains(10, 20)).toBe(false);
+        expect(hitArea.contains(-11, -20)).toBe(false);
+    });
+
+    it('keeps the overlay invisible and unmasked, whatever the runtime assigns it', () => {
+        const sprite = spine.__slotChildren.get('button_play')?.[0] as Sprite;
+
+        sprite.alpha = 1;
+        sprite.mask = new Container();
+
+        expect(sprite.alpha).toBe(0);
+        expect(sprite.mask).toBeNull();
     });
 
     it('plays <key>_click event when the sprite is pressed and released', () => {
@@ -657,6 +697,54 @@ describe('SceneController – activateButtonBones (button_ bone wrappers)', () =
 
         expect(other.eventMode).not.toBe('static');
         expect(other.cursor).not.toBe('pointer');
+    });
+});
+
+describe('SceneController – hit-testing', () => {
+    it('lets no skeleton answer a hit-test with its own art — only its hit areas do', () => {
+        const hero = createFakeSpine({
+            slots: [{ name: 'button_play', attachment: makeRegion() }],
+            bones: [{ name: 'button_play', worldX: 0, worldY: 0 }],
+        });
+        const decoration = createFakeSpine();
+        const spines = asSpineMap({ hero, decoration });
+        const anims = new AnimationsController(spines);
+        const scene = new SceneController(
+            spines,
+            new TextsController(spines),
+            anims,
+            new SpineController(spines, anims),
+        );
+
+        scene.activateButtonBones();
+
+        expect(hits(hero)).toBe(false);
+        expect(hits(decoration)).toBe(false);
+        const sprite = hero.__slotChildren.get('button_play')?.[0] as Sprite;
+        expect(Object.hasOwn(sprite, 'containsPoint')).toBe(false);
+    });
+
+    it('keeps a skeleton wrapped by a button_ bone answering for its bounds', () => {
+        const bigButton = createFakeSpine();
+        const ui = createFakeSpine({
+            bones: [{ name: 'button_spin' }, { name: 'spine_big_button', parent: 'button_spin' }],
+            slots: [{ name: 'spine_big_button', boneName: 'spine_big_button' }],
+        });
+        const spines = asSpineMap({ ui, big_button: bigButton });
+        const anims = new AnimationsController(spines);
+        const scene = new SceneController(
+            spines,
+            new TextsController(spines),
+            anims,
+            new SpineController(spines, anims),
+        );
+
+        scene.attachBones();
+        scene.activateButtonBones();
+
+        expect(bigButton.eventMode).toBe('static');
+        expect(hits(bigButton)).toBeUndefined();
+        expect(hits(ui)).toBe(false);
     });
 });
 

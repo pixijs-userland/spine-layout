@@ -631,7 +631,10 @@ export class TextsController {
         this.setMaxHeight(key, maxHeight ?? 0);
         this.setMaxWidth(key, maxWidth ?? 0);
 
-        const wrapper = new Container();
+        // A text is a view, and a view answers hit-tests with its bounding box: one interactive
+        // ancestor, and a label drawn over a button swallows its clicks. A `button_` bone that
+        // wraps this slot turns it interactive again (see SceneController.wireButton).
+        const wrapper = new Container({ eventMode: 'none' });
         wrapper.addChild(text);
         spine.addSlotObject(slot.name, wrapper);
 

@@ -31,6 +31,14 @@ function boneOf(spine: FakeSpine, name: string) {
     return spine.skeleton.bones.find((bone) => bone.data.name === name)!;
 }
 
+/** The `globalpointermove` listeners hanging off the layout's children — where the controller listens. */
+function listenersOf(root: Container): number {
+    return root.children.reduce(
+        (count, child) => count + child.listenerCount('globalpointermove'),
+        0,
+    );
+}
+
 describe('PointerController – attach', () => {
     it('follows bones named with the _followPointer modifier', () => {
         const spine = spineWithFollowBone();
@@ -64,7 +72,7 @@ describe('PointerController – attach', () => {
         expect(pointer.getBones().size).toBe(0);
         // The layout is left as it was found — nothing to follow, nothing to listen for.
         expect(root.eventMode).not.toBe('static');
-        expect(root.listenerCount('globalpointermove')).toBe(0);
+        expect(listenersOf(root)).toBe(0);
     });
 
     it('listens for pointer moves across the whole layout once a follow bone is found', () => {
@@ -73,8 +81,11 @@ describe('PointerController – attach', () => {
 
         pointer.attach();
 
-        expect(root.eventMode).toBe('static');
-        expect(root.listenerCount('globalpointermove')).toBe(1);
+        // through an empty interactive child — never by making the layout itself interactive,
+        // which every skeleton beneath it would inherit and answer with its bounding box
+        expect(root.eventMode).not.toBe('static');
+        expect(root.listenerCount('globalpointermove')).toBe(0);
+        expect(listenersOf(root)).toBe(1);
     });
 
     it('is idempotent: re-attaching neither duplicates a bone nor stacks listeners', () => {
@@ -87,7 +98,7 @@ describe('PointerController – attach', () => {
         pointer.attach();
 
         expect(pointer.getBones().get('main')).toEqual(['crosshair_followPointer']);
-        expect(root.listenerCount('globalpointermove')).toBe(1);
+        expect(listenersOf(root)).toBe(1);
         expect(spine.beforeUpdateWorldTransforms).toBe(hook);
     });
 
@@ -169,7 +180,7 @@ describe('PointerController – following', () => {
         const pointer = new PointerController(asSpineMap({ main: spine }), root);
 
         pointer.attach();
-        root.emit('globalpointermove', move(12, 34));
+        root.children.forEach((child) => child.emit('globalpointermove', move(12, 34)));
         frame(spine);
 
         expect(boneOf(spine, 'crosshair_followPointer').pose).toMatchObject({ x: 12, y: 34 });
@@ -296,7 +307,7 @@ describe('PointerController – clear', () => {
         pointer.clear();
 
         expect(spine.beforeUpdateWorldTransforms).toBe(ownHook);
-        expect(root.listenerCount('globalpointermove')).toBe(0);
+        expect(listenersOf(root)).toBe(0);
         expect(boneOf(spine, 'crosshair_followPointer').pose).toMatchObject({ x: 1, y: 2 });
         expect(pointer.getBones().size).toBe(0);
         expect(pointer.getPosition()).toBeUndefined();
@@ -316,7 +327,7 @@ describe('PointerController – clear', () => {
         pointer.setPosition(3, 4);
         frame(spine);
 
-        expect(root.listenerCount('globalpointermove')).toBe(1);
+        expect(listenersOf(root)).toBe(1);
         expect(boneOf(spine, 'crosshair_followPointer').pose).toMatchObject({ x: 3, y: 4 });
     });
 });

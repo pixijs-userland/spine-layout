@@ -115,7 +115,11 @@ export type FakeSpine = Container & {
             findSkin: (name: string) => FakeSkin | undefined;
         };
         findSlot: (name: string) =>
-            | { bone: { pose: { worldX: number; worldY: number } }; pose: { attachment: unknown } }
+            | {
+                  bone: { pose: { worldX: number; worldY: number } };
+                  /** `sequenceIndex` as the runtime seeds it: -1, the attachment's own setup frame. */
+                  pose: { attachment: unknown; sequenceIndex: number };
+              }
             | undefined;
         findBone: (name: string) => { pose: { worldX: number; worldY: number } } | undefined;
         setSkin: (skin: FakeSkin) => void;
@@ -164,7 +168,7 @@ export function createFakeSpine(options: FakeSpineOptions = {}): FakeSpine {
         if (!slot) return undefined;
         return {
             bone: { pose: { worldX: 1, worldY: 2 } },
-            pose: { attachment: slot.attachment },
+            pose: { attachment: slot.attachment, sequenceIndex: -1 },
         };
     };
     const findBone = (name: string) => {
