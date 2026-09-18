@@ -1,7 +1,13 @@
 import { Assets, BitmapFontManager, BitmapText, Container, Text } from 'pixi.js';
 import type { TextStyleOptions } from 'pixi.js';
 import type { Spine, SlotData } from '@esotericsoftware/spine-pixi-v8';
-import type { SpineID, TextsJson, TextsJsonBitmapTextEntry, TextsJsonEntry } from '../config/types';
+import type {
+    SpineID,
+    TextSetOptions,
+    TextsJson,
+    TextsJsonBitmapTextEntry,
+    TextsJsonEntry,
+} from '../config/types';
 import { parcePointers } from '../config/parcePointers';
 import type { AnimationsController } from './Animations.controller';
 
@@ -193,25 +199,33 @@ export class TextsController {
      */
     async seed(boneName: string, text: string) {
         await Promise.all(
-            this.resolveKeys(boneName).map((key) => this.setOne(key, text, false, 0, false)),
+            this.resolveKeys(boneName).map((key) => this.setOne(key, text, {}, false)),
         );
     }
 
     /**
-     * Sets the text value. When `animate=true` (or `animateNumber` is set in config),
-     * numeric values count up/down over 500ms.
+     * Sets the text value. When `animate` is set (or `animateNumber` is set in config), numeric
+     * values count up/down over `duration` ms (500 by default); `skipAnimation` writes the value
+     * straight regardless of either. `options` may also be the bare `animate` boolean, with
+     * `duration` as the fourth argument.
      *
      * `boneName` may be an exact registration key (e.g. `counter_1_reward` to target a
      * single instance) or a bare slot text key (e.g. `reward` to update every instance
      * that has it).
      */
-    async set(boneName: string, text: string, animate = false, duration = 0) {
+    async set(
+        boneName: string,
+        text: string,
+        options: boolean | TextSetOptions = false,
+        duration = 0,
+    ) {
         const keys = this.resolveKeys(boneName);
         if (keys.length === 0) {
             console.error(`Text ${boneName} not found`);
             return;
         }
-        await Promise.all(keys.map((key) => this.setOne(key, text, animate, duration)));
+        const resolved = typeof options === 'boolean' ? { animate: options, duration } : options;
+        await Promise.all(keys.map((key) => this.setOne(key, text, resolved)));
     }
 
     /**
@@ -220,21 +234,14 @@ export class TextsController {
      * the way {@link set} announces: it is a value the game has arrived at.
      */
     async settle(boneName: string, text: string) {
-        const keys = this.resolveKeys(boneName);
-        if (keys.length === 0) {
-            console.error(`Text ${boneName} not found`);
-            return;
-        }
-        await Promise.all(keys.map((key) => this.setOne(key, text, false, 0, true, true)));
+        await this.set(boneName, text, { skipAnimation: true });
     }
 
     private async setOne(
         key: string,
         text: string,
-        animate = false,
-        duration = 0,
+        { animate = false, duration = 0, skipAnimation = false }: TextSetOptions = {},
         emit = true,
-        instant = false,
     ) {
         const target = this.texts.get(key);
         if (!target) return;
@@ -249,7 +256,7 @@ export class TextsController {
             this.#textRunners.delete(key);
         }
 
-        if (!instant && (animate || (settings?.animateNumber ?? false))) {
+        if (!skipAnimation && (animate || (settings?.animateNumber ?? false))) {
             const nextMatch = text.match(/^([\s\S]*?)(\d+(?:\.\d+)?)([\s\S]*)$/);
 
             if (nextMatch) {
@@ -646,7 +653,7 @@ export class TextsController {
         this.setOffset(key, offset ?? ORIGIN);
         this.setStyle(key, rest);
         // registration seeds the configured value — not a change, so no `_change` event
-        this.setOne(key, value ?? '', false, 0, false);
+        this.setOne(key, value ?? '', {}, false);
 
         // height first, so the single fit that follows sees both bounds at once
         this.setMaxHeight(key, maxHeight ?? 0);

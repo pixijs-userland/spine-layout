@@ -261,6 +261,35 @@ describe('TextsController – animated numbers', () => {
         expect(ctl.getVal('score')).toBe('42');
     });
 
+    it('writes straight when skipAnimation is set, whatever the entry says', async () => {
+        const slot = { name: 'text_score' } as FakeSlot;
+        const spine = createFakeSpine({ slots: [slot] });
+        const ctl = new TextsController(asSpineMap({ hero: spine }));
+        ctl.settings = { hero: { score: { type: 'text', value: '-', animateNumber: true } } };
+        ctl.add(slot as never, spine as never, 'score', 'hero');
+
+        await ctl.set('score', '10', { skipAnimation: true });
+
+        expect(ctl.getVal('score')).toBe('10');
+        expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it('takes animate and duration from the options object', async () => {
+        const slot = { name: 'text_score' } as FakeSlot;
+        const spine = createFakeSpine({ slots: [slot] });
+        const ctl = new TextsController(asSpineMap({ hero: spine }));
+        ctl.settings = { hero: { score: { type: 'text', value: '0' } } };
+        ctl.add(slot as never, spine as never, 'score', 'hero');
+
+        const promise = ctl.set('score', '100', { animate: true, duration: 320 });
+        expect(vi.getTimerCount()).toBe(1);
+
+        await vi.runAllTimersAsync();
+        await promise;
+
+        expect(ctl.getVal('score')).toBe('100');
+    });
+
     it('cancels an in-flight runner when set is called again', async () => {
         const slot = { name: 'text_score' } as FakeSlot;
         const spine = createFakeSpine({ slots: [slot] });
@@ -375,6 +404,17 @@ describe('TextsController – change events', () => {
 
         expect(playEvent).toHaveBeenCalledTimes(1);
         vi.useRealTimers();
+    });
+
+    it('fires for a write that skipAnimation kept off the count-up', async () => {
+        const { ctl, playEvent } = setup({
+            hero: { score: { type: 'text', value: '-', animateNumber: true } },
+        });
+
+        await ctl.set('score', '100', { skipAnimation: true });
+
+        expect(playEvent).toHaveBeenCalledTimes(1);
+        expect(playEvent).toHaveBeenCalledWith('score_change', 'hero', { from: '-', to: '100' });
     });
 
     it('uses the bare slot text key for multiple-instance spines', async () => {

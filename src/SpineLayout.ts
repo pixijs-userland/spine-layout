@@ -14,6 +14,7 @@ import type {
     SpineID,
     SpineLayoutOptions,
     SpineInstanceData,
+    TextSetOptions,
     TextsJson,
 } from './config/types';
 import {
@@ -641,8 +642,13 @@ export class SpineLayout extends Container {
         return this.#texts.getVal(textID);
     }
     /** @deprecated Use `texts.set()` instead. */
-    async setText(boneName: string, text: string, animate = false, duration = 0) {
-        await this.#texts.set(boneName, text, animate, duration);
+    async setText(
+        boneName: string,
+        text: string,
+        options: boolean | TextSetOptions = false,
+        duration = 0,
+    ) {
+        await this.#texts.set(boneName, text, options, duration);
     }
     /** @deprecated Use `texts.setOffset()` instead. */
     setTextOffset(boneName: string, offset: { x: number; y: number }) {

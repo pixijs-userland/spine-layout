@@ -159,3 +159,14 @@ export type TextsJsonEntry = TextsJsonTextEntry | TextsJsonBitmapTextEntry;
  * ```
  */
 export type TextsJson = Record<string, Record<string, TextsJsonEntry>>;
+
+/**
+ * How `texts.set` writes a value. `animate` counts a numeric value up or down from the one on
+ * display, over `duration` ms (500 by default); `skipAnimation` writes it straight, whatever
+ * `animate` or the entry's `animateNumber` say.
+ */
+export type TextSetOptions = {
+    animate?: boolean;
+    duration?: number;
+    skipAnimation?: boolean;
+};
