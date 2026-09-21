@@ -372,6 +372,20 @@ export class AnimationsController {
 
         if (owner !== undefined) {
             colliding.forEach((index) => this.evictTrack(spineID, spine, index));
+
+            // The caller overwrites `owner`'s track right after this returns, via the same
+            // `setAnimation` a `stop()` on it would themselves trigger — but never routes
+            // through `stop()`, so whatever it held stays registered as active/looping under
+            // a track index that has already moved on. Left alone, that stale entry blocks
+            // the *next* time the same animation name is played (the early-return guard in
+            // `play()` reads it as still running) — a free-spin trigger's ambience that
+            // played once would silently no-op on every later trigger.
+            const superseded = tracks[owner]?.animation?.name;
+            if (superseded) {
+                this.removeActiveAnimation(spineID, superseded);
+                this.removeLoopingAnimation(spineID, superseded);
+            }
+
             return owner;
         }
 
