@@ -166,6 +166,19 @@ export type TextsJsonEntry = TextsJsonTextEntry | TextsJsonBitmapTextEntry;
 export type TextsJson = Record<string, Record<string, TextsJsonEntry>>;
 
 /**
+ * One emitter in `particles.json`. `textures` are asset aliases, `config` goes to the engine's
+ * emitter as it is.
+ */
+export type ParticlesJsonEntry = {
+    textures: string[];
+    config: Record<string, unknown>;
+    autoplay?: boolean;
+};
+
+/** `particles.json`: keyed by spine id, then by the `particles_<key>` slot key, like `texts.json`. */
+export type ParticlesJson = Record<string, Record<string, ParticlesJsonEntry>>;
+
+/**
  * How `texts.set` writes a value. `animate` counts a numeric value up or down from the one on
  * display, over `duration` ms (500 by default); `skipAnimation` writes it straight, whatever
  * `animate` or the entry's `animateNumber` say.

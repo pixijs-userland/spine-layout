@@ -6,6 +6,7 @@ import type {
     SpineLayoutOptions,
     SpineInstanceData,
     TextSetOptions,
+    ParticlesJson,
     TextsJson,
 } from './config/types';
 import type { BoneDataOf, SlotDataOf, SlotOf, TextStyleOf } from './types';
@@ -16,6 +17,7 @@ import { planMultipleInstances, spinePointerBases } from './utils/multiInstance'
 import { AnimationsController } from './controllers/Animations.controller';
 import { SkinsController } from './controllers/Skins.controller';
 import { TextsController } from './controllers/Texts.controller';
+import { ParticlesController } from './controllers/Particles.controller';
 import { SceneController } from './controllers/Scene.controller';
 import { SpineController } from './controllers/Spine.controller';
 import { PointerController } from './controllers/Pointer.controller';
@@ -55,6 +57,7 @@ export class SpineLayoutCore<T extends EngineTypes = EngineTypes> extends Layout
     #animations: AnimationsController<T>;
     #skins: SkinsController<T>;
     #texts: TextsController<T>;
+    #particles: ParticlesController<T>;
     #spine: SpineController<T>;
     #scene: SceneController<T>;
     #pointer: PointerController<T>;
@@ -76,6 +79,13 @@ export class SpineLayoutCore<T extends EngineTypes = EngineTypes> extends Layout
             this.#multipleInstanceIDs,
             this.#animations,
         );
+        this.#particles = new ParticlesController(
+            engine,
+            this.#spines,
+            this.#multipleInstanceIDs,
+            this.#animations,
+        );
+        this.#animations.particles = this.#particles;
         this.#spine = new SpineController(engine, this.#spines, this.#animations);
         this.#scene = new SceneController(
             engine,
@@ -119,6 +129,9 @@ export class SpineLayoutCore<T extends EngineTypes = EngineTypes> extends Layout
     get texts(): TextsController<T> {
         return this.#texts;
     }
+    get particles(): ParticlesController<T> {
+        return this.#particles;
+    }
     get spine(): SpineController<T> {
         return this.#spine;
     }
@@ -134,6 +147,13 @@ export class SpineLayoutCore<T extends EngineTypes = EngineTypes> extends Layout
     }
     get textSettings(): TextsJson | undefined {
         return this.#texts.settings;
+    }
+
+    set particleSettings(settings: ParticlesJson) {
+        this.#particles.settings = settings;
+    }
+    get particleSettings(): ParticlesJson | undefined {
+        return this.#particles.settings;
     }
 
     // TODO: UI
@@ -251,8 +271,10 @@ export class SpineLayoutCore<T extends EngineTypes = EngineTypes> extends Layout
         this.closeRegistryLogs();
 
         this.#texts.loadSettings();
+        this.#particles.loadSettings();
         this.#scene.attachBones(built);
         this.#scene.attachTexts(built);
+        this.#particles.attach(built);
         this.#scene.activateButtonBones(built);
         this.#scene.syncSlotObjectsWithDrawOrder(built);
         this.#pointer.attach();
@@ -458,9 +480,11 @@ export class SpineLayoutCore<T extends EngineTypes = EngineTypes> extends Layout
 
     private render(rootID?: SpineID) {
         this.#texts.loadSettings();
+        this.#particles.loadSettings();
         this.#scene.attachBones();
         this.layoutChildren(rootID).forEach((spine) => this.view.addChild(spine));
         this.#scene.attachTexts();
+        this.#particles.attach();
         this.#scene.activateButtonBones();
         this.#scene.syncSlotObjectsWithDrawOrder();
         this.#pointer.attach();
@@ -485,6 +509,7 @@ export class SpineLayoutCore<T extends EngineTypes = EngineTypes> extends Layout
 
     reset() {
         this.#texts.clear();
+        this.#particles.clear();
         this.#animations.clear();
         this.#skins.clear();
         this.#scene.clear();

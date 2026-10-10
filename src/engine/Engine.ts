@@ -156,6 +156,12 @@ export interface SpinePort<T extends EngineTypes> {
     beforeWorldTransforms(spine: T['Spine'], hook: () => void): () => void;
 
     /**
+     * Runs `hook` after every update of the spine, with the seconds it was advanced by before
+     * its `timeScale`. Returns what removes the hook.
+     */
+    onUpdate(spine: T['Spine'], hook: (dt: number) => void): () => void;
+
+    /**
      * `attachment`'s outline as the slot shows it, in the space of an object hung off that slot,
      * as flat `x, y` pairs — a region's four corners, an unweighted mesh's hull. `undefined` for
      * anything without one.

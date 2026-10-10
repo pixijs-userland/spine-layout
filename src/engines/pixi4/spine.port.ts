@@ -109,6 +109,19 @@ export function createSpinePort(
         create: (data) => new PIXI.spine.Spine(remember(data as Spine38SkeletonData)),
         update: (spine, dt) => spine.update(dt),
 
+        onUpdate(spine, hook) {
+            const previous = spine.update;
+
+            spine.update = (dt: number) => {
+                previous.call(spine, dt);
+                hook(dt);
+            };
+
+            return () => {
+                spine.update = previous;
+            };
+        },
+
         bonePose(target) {
             const bone = boneOf(target);
             let pose = poses.get(bone);

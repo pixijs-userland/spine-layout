@@ -3,6 +3,7 @@ export const parcePointers = {
         spine: 'spine_',
         text: 'text_',
         button: 'button_',
+        particles: 'particles_',
     },
     folder: {
         state: 'state_',
@@ -28,6 +29,12 @@ export const parcePointers = {
         portrait: 'portrait',
         landscape: 'landscape',
     } as const,
+    /** What a `particles_<key><suffix>` skeleton event does to that key's emitter. */
+    particleEvent: {
+        start: '_start',
+        stop: '_stop',
+        once: '_once',
+    },
     sound: {
         /**
          * Word marking a skeleton event, anywhere in its name, as a music track (`music`,

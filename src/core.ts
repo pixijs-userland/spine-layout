@@ -9,6 +9,7 @@ export { Sounds, sounds, type SoundSettings } from './core/controllers/Sounds.co
 export { AnimationsController } from './core/controllers/Animations.controller';
 export { SkinsController } from './core/controllers/Skins.controller';
 export { TextsController } from './core/controllers/Texts.controller';
+export { ParticlesController } from './core/controllers/Particles.controller';
 export { SceneController } from './core/controllers/Scene.controller';
 export { SpineController } from './core/controllers/Spine.controller';
 export { PointerController } from './core/controllers/Pointer.controller';

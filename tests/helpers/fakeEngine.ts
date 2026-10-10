@@ -1,6 +1,14 @@
 import { Container, Point } from 'pixi.js';
 import type { Spine } from '@esotericsoftware/spine-pixi-v8';
-import type { BonePose, Engine, PoseClaimEntry, SpinePort } from '../../src/engine/Engine';
+import type { Texture } from 'pixi.js';
+import type {
+    BonePose,
+    EmitterLike,
+    Engine,
+    ParticlesPort,
+    PoseClaimEntry,
+    SpinePort,
+} from '../../src/engine/Engine';
 import { classifyPropertyId, pixi8Engine, type Pixi8Types } from '../../src/engines/pixi8';
 
 export type FakeAnimation = {
@@ -428,12 +436,91 @@ const fakeSpinePort: SpinePort<FakeTypes> = {
             ),
         ),
 
+    onUpdate(spine, hook) {
+        const previous = spine.update;
+
+        spine.update = (dt: number) => {
+            previous.call(spine, dt);
+            hook(dt);
+        };
+
+        return () => {
+            spine.update = previous;
+        };
+    },
+
     attachSlotObject: (spine, slotName, child) => spine.addSlotObject(slotName, child),
     getSlotObject: (spine, slotName) => spine.getSlotObject(slotName),
+    detachSlotObject(spine, slotOrChild) {
+        const fake = spine as unknown as Partial<FakeSpine>;
+        if (!fake.__slotChildren) return pixi8Engine.spine.detachSlotObject(spine, slotOrChild);
+
+        const slots = fake.__slotChildren;
+        slots.forEach((children, name) => {
+            const kept = children.filter((child) =>
+                typeof slotOrChild === 'string' ? name !== slotOrChild : child !== slotOrChild,
+            );
+            if (kept.length > 0) slots.set(name, kept);
+            else slots.delete(name);
+        });
+    },
 };
 
-export function createFakeEngine(): Engine<FakeTypes> {
-    return { ...pixi8Engine, spine: fakeSpinePort };
+export type FakeEmitter = EmitterLike & {
+    parent: Container;
+    textures: Texture[];
+    config: Record<string, unknown>;
+    /** Every `dt` the emitter was advanced by. */
+    updates: number[];
+    /** Every value written to `emit`, in order. */
+    emitWrites: boolean[];
+    bursts: number;
+    destroyed: boolean;
+};
+
+export type FakeParticlesPort = ParticlesPort<FakeTypes> & { emitters: FakeEmitter[] };
+
+export function createFakeParticlesPort(): FakeParticlesPort {
+    const emitters: FakeEmitter[] = [];
+
+    return {
+        emitters,
+        createEmitter(parent, textures, config) {
+            let emit = false;
+            const emitter: FakeEmitter = {
+                parent,
+                textures,
+                config,
+                updates: [],
+                emitWrites: [],
+                bursts: 0,
+                destroyed: false,
+                get emit() {
+                    return emit;
+                },
+                set emit(value) {
+                    emit = value;
+                    emitter.emitWrites.push(value);
+                },
+                update: (dt) => emitter.updates.push(dt),
+                playOnce: () => {
+                    emitter.bursts++;
+                },
+                destroy: () => {
+                    emitter.destroyed = true;
+                },
+            };
+
+            emitters.push(emitter);
+            return emitter;
+        },
+    };
+}
+
+export function createFakeEngine(
+    options: { particles?: ParticlesPort<FakeTypes> } = {},
+): Engine<FakeTypes> {
+    return { ...pixi8Engine, spine: fakeSpinePort, particles: options.particles };
 }
 
 export const fakeEngine = createFakeEngine();

@@ -7,6 +7,7 @@ describe('parcePointers', () => {
             spine: 'spine_',
             text: 'text_',
             button: 'button_',
+            particles: 'particles_',
         });
     });
 

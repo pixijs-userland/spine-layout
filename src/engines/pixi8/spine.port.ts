@@ -81,6 +81,8 @@ export function classifyPropertyId(id: string): PoseClaimEntry {
     return { kind: 'constraint', index, id };
 }
 
+type SpineUpdateInternals = { _updateAndApplyState(time: number): void };
+
 const slotOf = (slot: SlotLike) => slot as Slot;
 const boneOf = (bone: BoneLike) => bone as Bone;
 const skeletonOf = (skeleton: SkeletonLike) => skeleton as unknown as Skeleton;
@@ -144,6 +146,22 @@ export const spinePort: SpinePort<Pixi8Types> = {
 
         return () => {
             spine.beforeUpdateWorldTransforms = previous;
+        };
+    },
+
+    // `_updateAndApplyState` is where the ticker's `internalUpdate` and `update(dt)` both land;
+    // the ticker holds its own reference to `internalUpdate`, so wrapping that would miss it.
+    onUpdate(spine, hook) {
+        const target = spine as unknown as SpineUpdateInternals;
+        const previous = target._updateAndApplyState;
+
+        target._updateAndApplyState = function (this: SpineUpdateInternals, time: number) {
+            previous.call(this, time);
+            hook(time);
+        };
+
+        return () => {
+            target._updateAndApplyState = previous;
         };
     },
 

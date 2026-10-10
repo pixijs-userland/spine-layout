@@ -159,6 +159,19 @@ export function engineContract(name: string, load: () => Promise<Engine>) {
             });
         });
 
+        it('reports every update to an onUpdate hook until it is removed', async () => {
+            await setUp();
+            const spine = create();
+            const seen: number[] = [];
+
+            const remove = engine.spine.onUpdate(spine, (dt) => seen.push(dt));
+            engine.spine.update(spine, 0.25);
+            remove();
+            engine.spine.update(spine, 0.5);
+
+            expect(seen).toEqual([0.25]);
+        });
+
         it('hangs an object off a slot, and takes it off again', async () => {
             await setUp();
             const spine = create();
@@ -200,6 +213,44 @@ export function engineContract(name: string, load: () => Promise<Engine>) {
                 expect(Number.isFinite(ink!.centre.x)).toBe(true);
                 expect(Number.isFinite(ink!.centre.y)).toBe(true);
                 expect(engine.text.bitmapLineCount(text)).toBe(1);
+            });
+        });
+
+        describe('particles, where the engine has them', () => {
+            const config = {
+                alpha: { start: 1, end: 0 },
+                scale: { start: 1, end: 1 },
+                color: { start: 'ffffff', end: 'ffffff' },
+                speed: { start: 100, end: 50 },
+                startRotation: { min: 0, max: 360 },
+                rotationSpeed: { min: 0, max: 0 },
+                lifetime: { min: 0.2, max: 0.5 },
+                frequency: 0.01,
+                emitterLifetime: -1,
+                maxParticles: 50,
+                pos: { x: 0, y: 0 },
+                addAtBack: false,
+                spawnType: 'point',
+            };
+
+            it('emits into a container while emit is on, and comes away on destroy', async (context) => {
+                await setUp();
+                if (!engine.particles) return context.skip();
+
+                const parent = engine.display.container({ label: 'emitter' });
+                const emitter = engine.particles.createEmitter(parent, [engine.display.whiteTexture], config);
+
+                emitter.emit = true;
+                expect(emitter.emit).toBe(true);
+                expect(() => emitter.update(0.1)).not.toThrow();
+                expect(parent.children.length).toBeGreaterThan(0);
+
+                emitter.emit = false;
+                expect(emitter.emit).toBe(false);
+                expect(() => emitter.playOnce()).not.toThrow();
+                expect(() => emitter.update(0.1)).not.toThrow();
+                expect(() => emitter.destroy()).not.toThrow();
+                parent.destroy();
             });
         });
     });

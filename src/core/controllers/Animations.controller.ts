@@ -11,6 +11,7 @@ import { log } from '../utils/Log';
 import { parcePointers } from '../config/parcePointers';
 import { claimsCollide, EMPTY_CLAIM, poseClaims, type AnimationClaim } from '../utils/poseClaims';
 import { sounds } from './Sounds.controller';
+import type { ParticlesController } from './Particles.controller';
 
 type EventsListeners<T extends EngineTypes> = Map<
     string,
@@ -41,6 +42,8 @@ export class AnimationsController<T extends EngineTypes = EngineTypes> {
      * the next animation.
      */
     #spineSpeeds: Map<SpineID, number> = new Map();
+    /** Where `particles_<key>_start|_stop|_once` events go. */
+    particles?: ParticlesController<T>;
 
     constructor(
         private engine: Engine<T>,
@@ -82,7 +85,9 @@ export class AnimationsController<T extends EngineTypes = EngineTypes> {
                     ? event.data.name.slice(0, -parcePointers.mod.loop.length)
                     : event.data.name;
 
-                if (sound.includes(parcePointers.sound.music)) {
+                if (event.data.name.startsWith(parcePointers.slot.particles)) {
+                    this.particles?.handleEvent(event.data.name, spineID);
+                } else if (sound.includes(parcePointers.sound.music)) {
                     sounds.playMusic(sound);
                 } else {
                     sounds.playFX(sound, looping);
@@ -799,7 +804,7 @@ export class AnimationsController<T extends EngineTypes = EngineTypes> {
     }
 
     /** The `timeScale` a spine actually runs on: the layout's speed at that spine's own pace. */
-    private timeScaleFor(spineID: SpineID): number {
+    timeScaleFor(spineID: SpineID): number {
         return this.#speed * this.getSpineSpeed(spineID);
     }
 

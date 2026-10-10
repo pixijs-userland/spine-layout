@@ -3,6 +3,7 @@ export const LOG = {
     BONES: '🦴 Bones attached',
     TEXT: `🦴 Texts attached`,
     BUTTONS: `⬇️ Buttons attached`,
+    PARTICLES: `✨ Particles attached`,
     SPINES: `𖠣 Spines added`,
     STATES: `🎬 States added`,
     STATE: '🎬 Play State',
