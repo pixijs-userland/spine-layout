@@ -25,6 +25,32 @@ All spines are stored in a central `Map<SpineID, Spine>` registry and each contr
 
 ---
 
+## Engines
+
+The core renders through an `Engine`, so one scene runs on two stacks:
+
+| Entry                                 | Stack                                                     | Spine |
+| ------------------------------------- | --------------------------------------------------------- | ----- |
+| `@pixijs-userland/spine-layout`       | pixi.js v8 + `@esotericsoftware/spine-pixi-v8`            | 4.3   |
+| `@pixijs-userland/spine-layout/pixi4` | PIXI v4.8.9 + pixi-spine 1.6.2 + pixi-particles 4.3.0     | 3.8   |
+| `@pixijs-userland/spine-layout/core`  | No rendering stack: `SpineLayoutCore` and the controllers | -     |
+
+The default entry is unchanged. On PIXI v4 the stack is loaded as `<script>` tags and the engine
+is handed `window.PIXI`:
+
+```typescript
+import { createPixi4Engine, SpineLayoutCore } from '@pixijs-userland/spine-layout/pixi4';
+
+const engine = createPixi4Engine(PIXI, { renderer: app.renderer });
+const layout = new SpineLayoutCore({ engine });
+```
+
+A project is one Spine version; `skeletonVersion(skeleton)` reads it from a `.json` or `.skel`.
+One engine family is live per page. See the [Engines guide](https://userland.pixijs.io/spine-layout/engines)
+for loading, the differences between the engines and how to write another.
+
+---
+
 ## Initialization
 
 ### From a Pixi.js manifest (recommended)

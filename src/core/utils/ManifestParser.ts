@@ -1,6 +1,9 @@
-import type { ManifestLike } from '../config/types';
+import type { ManifestAssetLike, ManifestLike } from '../config/types';
 
 type Bundle = ManifestLike['bundles'][number];
+
+/** A `PIXI.loader` resource, down to what tells a pixi-spine skeleton from any other file. */
+export type LoaderResourceLike = { url?: string; spineData?: unknown };
 
 export type SpineAssetData = {
     skel: string;
@@ -62,6 +65,34 @@ export class ManifestParser {
         return result;
     }
 
+    /**
+     * A manifest over what a `PIXI.loader` holds. pixi-spine's middleware reads a skeleton's
+     * atlas and pages under names of its own, so a skeleton it parsed is listed with the
+     * `.atlas` and `.png` aliases the pairing looks for; the assets port answers them from the
+     * `spineData` the loader already built.
+     */
+    static fromLoaderResources(resources: Record<string, LoaderResourceLike>): ManifestLike {
+        const assets: ManifestAssetLike[] = [];
+
+        Object.entries(resources).forEach(([name, resource]) => {
+            if (/_atlas($|_page_)/.test(name)) return;
+
+            assets.push({ alias: [name], src: resource.url });
+
+            if (!resource.spineData) return;
+
+            const id = trimExtension(name);
+
+            ['atlas', 'png'].forEach((type) => {
+                const alias = `${id}.${type}`;
+
+                if (!(alias in resources)) assets.push({ alias: [alias], src: resource.url });
+            });
+        });
+
+        return { bundles: [{ name: 'loader', assets }] };
+    }
+
     static getAssetByType(bundle: Bundle, type: string): string[] | undefined {
         if (Array.isArray(bundle.assets)) {
             return ManifestParser.aliasesByType(bundle, type).map(basename);
@@ -84,9 +115,7 @@ export class ManifestParser {
     private static aliasesByType(bundle: Bundle, type: string): string[] {
         if (!Array.isArray(bundle.assets)) return [];
 
-        return bundle.assets
-            .map(({ alias }) => alias![0])
-            .filter((alias) => alias.endsWith(type));
+        return bundle.assets.map(({ alias }) => alias![0]).filter((alias) => alias.endsWith(type));
     }
 }
 

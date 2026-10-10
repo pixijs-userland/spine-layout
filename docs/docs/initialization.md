@@ -43,3 +43,5 @@ await layout.createInstancesFromDataArray([
     },
 ]);
 ```
+
+On PIXI v4, build the layout with `createPixi4Engine`; see [Engines](./engines.md#pixi-v4).

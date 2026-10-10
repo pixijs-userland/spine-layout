@@ -4,6 +4,7 @@ const sidebars: SidebarsConfig = {
     guides: [
         'overview',
         'initialization',
+        'engines',
         'slot-naming',
         'animation-system',
         'options',

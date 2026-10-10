@@ -26,3 +26,5 @@ Sounds (singleton)        â€” FX + music playback via Howler.js                â
 ```
 
 All Spine instances are stored in a central `Map<SpineID, Spine>` registry and each controller operates against that registry.
+
+The core renders through an `Engine`, so the same scene runs on pixi.js v8 and on PIXI v4. See [Engines](./engines.md).
