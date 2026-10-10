@@ -186,7 +186,22 @@ export function createDisplayPort(
             );
         },
 
-        textureFromImage: (image) => new PIXI.Texture(new PIXI.BaseTexture(image)),
+        textureFromImage: (image) => new PIXI.Texture(new PIXI.BaseTexture(drawable(image))),
         point: (x, y) => new PIXI.Point(x, y),
     };
+}
+
+/** v4's BaseTexture waits for an `onload` that an ImageBitmap never fires; a canvas is ready at once. */
+function drawable(
+    image: ImageBitmap | HTMLImageElement | HTMLCanvasElement,
+): HTMLImageElement | HTMLCanvasElement {
+    if (!('close' in image)) return image;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = image.width;
+    canvas.height = image.height;
+    canvas.getContext('2d')!.drawImage(image, 0, 0);
+    image.close();
+
+    return canvas;
 }
