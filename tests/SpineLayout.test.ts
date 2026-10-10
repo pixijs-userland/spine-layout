@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Assets, type AssetsManifest } from 'pixi.js';
-import { SpineLayout } from '../src/SpineLayout';
+import { SpineLayout } from '../src/index';
 
 /**
  * What Spine exports for a skeleton that attaches no image: bones, slots and animations, no

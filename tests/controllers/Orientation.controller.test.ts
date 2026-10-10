@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('../../src/controllers/Sounds.controller', () => ({
+vi.mock('../../src/core/controllers/Sounds.controller', () => ({
     sounds: { playFX: vi.fn(), stopFX: vi.fn(), playMusic: vi.fn() },
 }));
 
-import { AnimationsController } from '../../src/controllers/Animations.controller';
-import { OrientationController } from '../../src/controllers/Orientation.controller';
-import { asSpineMap, createFakeSpine, type FakeSpine } from '../helpers/fakeSpine';
+import { AnimationsController } from '../../src/core/controllers/Animations.controller';
+import { OrientationController } from '../../src/core/controllers/Orientation.controller';
+import { asSpineMap, createFakeSpine, fakeEngine, type FakeSpine } from '../helpers/fakeEngine';
 
 type Listener = () => void;
 
@@ -52,7 +52,7 @@ function scene(animations = ['state_landscape/wide', 'state_portrait/tall']) {
             { name: 'state_boot/steal logo', duration: 1, poses: ['bone:logo'] },
         ],
     });
-    const animationsController = new AnimationsController(asSpineMap({ bg: spine }));
+    const animationsController = new AnimationsController(fakeEngine, asSpineMap({ bg: spine }));
 
     animationsController.registerSpine('bg', spine as never);
 

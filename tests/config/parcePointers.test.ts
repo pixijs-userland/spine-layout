@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parcePointers } from '../../src/config/parcePointers';
+import { parcePointers } from '../../src/core/config/parcePointers';
 
 describe('parcePointers', () => {
     it('exposes the slot prefixes the controllers depend on', () => {

@@ -1,34 +1,25 @@
-import {
-    MeshAttachment,
-    Physics,
-    RegionAttachment,
-    Spine,
-    type BoneData,
-    type Slot,
-    type SlotData,
-    type TextureAtlasRegion,
-} from '@esotericsoftware/spine-pixi-v8';
-import { Point, Rectangle, Texture } from 'pixi.js';
+import type { Engine, EngineTypes, PointLike } from '../../engine/Engine';
 import type { SpineID } from '../config/types';
+import type { BoneDataOf, SlotDataOf, SlotOf } from '../types';
 import { LOG } from '../config/logs';
 import { log } from '../utils/Log';
-import { shieldFromHitTesting } from '../utils/hitTesting';
 import type { AnimationsController } from './Animations.controller';
 
-export class SpineController {
+export class SpineController<T extends EngineTypes = EngineTypes> {
     constructor(
-        private spines: Map<SpineID, Spine>,
-        private animations: AnimationsController,
+        private engine: Engine<T>,
+        private spines: Map<SpineID, T['Spine']>,
+        private animations: AnimationsController<T>,
     ) { }
 
     /** Clones a Spine instance, registers it under `newSpineID`, and offsets its position by 100px so it doesn't overlap. */
-    clone(spine: Spine, newSpineID: string): Spine {
-        const cloned = new Spine(spine.skeleton.data);
+    clone(spine: T['Spine'], newSpineID: string): T['Spine'] {
+        const cloned = this.engine.spine.create(spine.skeleton.data);
 
         cloned.position.copyFrom({ x: spine.position.x + 100, y: spine.position.y + 100 });
         cloned.scale.copyFrom(spine.scale);
         cloned.rotation = spine.rotation;
-        shieldFromHitTesting(cloned);
+        this.engine.display.shieldFromHitTesting(cloned);
 
         if (this.spines.has(newSpineID)) {
             this.spines.get(newSpineID)?.destroy();
@@ -42,7 +33,7 @@ export class SpineController {
     }
 
     /** Looks up a registered spine by ID then clones it. Returns `null` if the source spine is not found. */
-    cloneBySpineID(spineID: string, newSpineID: string): Spine | null {
+    cloneBySpineID(spineID: string, newSpineID: string): T['Spine'] | null {
         const spine = this.spines.get(spineID);
         if (!spine) {
             console.warn(`Spine not found: ${spineID}`);
@@ -53,8 +44,8 @@ export class SpineController {
     }
 
     /** Returns all bone definitions whose names start with `pattern`, across all registered spines. */
-    getBonesByNamePattern(pattern: string): BoneData[] {
-        const bones: BoneData[] = [];
+    getBonesByNamePattern(pattern: string): BoneDataOf<T>[] {
+        const bones: BoneDataOf<T>[] = [];
         this.spines.forEach((spine) => {
             spine?.state.data.skeletonData.bones.forEach((bone) => {
                 if (bone.name.startsWith(pattern)) bones.push(bone);
@@ -64,8 +55,8 @@ export class SpineController {
     }
 
     /** Returns all slot definitions whose names start with `pattern`, across all registered spines. */
-    getSlotsByNamePattern(pattern: string): SlotData[] {
-        const slots: SlotData[] = [];
+    getSlotsByNamePattern(pattern: string): SlotDataOf<T>[] {
+        const slots: SlotDataOf<T>[] = [];
         this.spines.forEach((spine) => {
             spine?.state.data.skeletonData.slots.forEach((slot) => {
                 if (slot.name.startsWith(pattern)) slots.push(slot);
@@ -75,16 +66,19 @@ export class SpineController {
     }
 
     /** Finds the first live slot with the given name across all registered spines. */
-    getSlotByName(name: string): Slot | undefined {
+    getSlotByName(name: string): SlotOf<T> | undefined {
         for (const spine of this.spines.values()) {
             const slot = spine.skeleton.findSlot(name);
-            if (slot) return slot;
+            if (slot) return slot as SlotOf<T>;
         }
     }
 
     /** Returns all registered spines whose IDs start with `pattern`. Pass `options.not` to exclude IDs containing those substrings. */
-    getSpinesByNamePattern(pattern: string, options?: { not?: string[] }): Map<string, Spine> {
-        const result = new Map<string, Spine>();
+    getSpinesByNamePattern(
+        pattern: string,
+        options?: { not?: string[] },
+    ): Map<string, T['Spine']> {
+        const result = new Map<string, T['Spine']>();
         this.spines.forEach((spine, id) => {
             if (!id.startsWith(pattern)) return;
             if (options?.not?.some((p) => id.includes(p))) return;
@@ -94,15 +88,15 @@ export class SpineController {
     }
 
     /** Returns the world-space position of the first bone matching `boneName` on the given spine. */
-    getBoneGlobalPosition(spineID: string, boneName: string): Point | undefined {
+    getBoneGlobalPosition(spineID: string, boneName: string): PointLike | undefined {
         const spine = this.spines.get(spineID);
         if (!spine) {
             console.warn(`Spine not found: ${spineID}`);
             return;
         }
 
-        spine.skeleton.updateWorldTransform(Physics.update);
-        let position: Point | undefined;
+        this.engine.spine.updateWorldTransform(spine.skeleton);
+        let position: PointLike | undefined;
 
         spine.state.data.skeletonData.bones.forEach((bone) => {
             if (bone.name.startsWith(boneName)) {
@@ -115,10 +109,10 @@ export class SpineController {
     }
 
     /** Returns a name→Point map of world-space positions for all bones matching the prefix, across all spines. */
-    getBonesGlobalPositionsByNamePattern(pattern: string): Record<string, Point> {
-        const positions: Record<string, Point> = {};
+    getBonesGlobalPositionsByNamePattern(pattern: string): Record<string, PointLike> {
+        const positions: Record<string, PointLike> = {};
         this.spines.forEach((spine) => {
-            spine.skeleton.updateWorldTransform(Physics.update);
+            this.engine.spine.updateWorldTransform(spine.skeleton);
             spine.state.data.skeletonData.bones.forEach((bone) => {
                 if (bone.name.startsWith(pattern)) {
                     const p = this.getBoneGlobalPos(spine, bone.name);
@@ -130,10 +124,10 @@ export class SpineController {
     }
 
     /** Returns a name→Point map of world-space positions for all slots matching the prefix, across all spines. */
-    getSlotsGlobalPositionsByNamePattern(pattern: string): Record<string, Point> {
-        const positions: Record<string, Point> = {};
+    getSlotsGlobalPositionsByNamePattern(pattern: string): Record<string, PointLike> {
+        const positions: Record<string, PointLike> = {};
         this.spines.forEach((spine) => {
-            spine.skeleton.updateWorldTransform(Physics.update);
+            this.engine.spine.updateWorldTransform(spine.skeleton);
             spine.state.data.skeletonData.slots.forEach((slot) => {
                 if (slot.name.startsWith(pattern)) {
                     const p = this.getSlotGlobalPos(spine, slot.name);
@@ -144,8 +138,8 @@ export class SpineController {
         return positions;
     }
 
-    /** Extracts the Pixi.js `Texture` from a slot's attachment. Returns `null` if the slot has no region/mesh attachment. */
-    getSlotTexture(spineName: string, slotName: string): Texture | null {
+    /** Cuts the image out of a slot's region/mesh attachment. Returns `null` if the slot has no region/mesh attachment. */
+    getSlotTexture(spineName: string, slotName: string): T['Texture'] | null {
         const spine = this.spines.get(spineName);
         if (!spine) {
             console.warn(`Spine not found: ${spineName}`);
@@ -153,71 +147,41 @@ export class SpineController {
         }
 
         const slot = spine.skeleton.findSlot(slotName);
-        const attachment = slot?.pose.attachment;
+        const region = slot && this.engine.spine.regionTexture(this.engine.spine.slotAttachment(slot));
 
-        if (attachment instanceof RegionAttachment || attachment instanceof MeshAttachment) {
-            return this.getTextureFromAttachmentRegion(attachment) ?? null;
-        }
-        return null;
+        if (!region) return null;
+
+        const rotated = region.rotate === 90;
+
+        return this.engine.display.subTexture(
+            region.page,
+            {
+                x: region.x,
+                y: region.y,
+                width: rotated ? region.height : region.width,
+                height: rotated ? region.width : region.height,
+            },
+            region.rotate,
+        );
     }
 
-    getBoneGlobalPos(spine: Spine, boneName: string): Point | null {
+    getBoneGlobalPos(spine: T['Spine'], boneName: string): PointLike | null {
         const bone = spine.skeleton.findBone(boneName);
 
         if (!bone) return null;
 
-        return spine.toGlobal(new Point(bone.pose.worldX, bone.pose.worldY)) as Point;
+        const { worldX, worldY } = this.engine.spine.bonePose(bone);
+
+        return spine.toGlobal(this.engine.display.point(worldX, worldY));
     }
 
-    private getSlotGlobalPos(spine: Spine, slotName: string): Point | null {
+    private getSlotGlobalPos(spine: T['Spine'], slotName: string): PointLike | null {
         const slot = spine.skeleton.findSlot(slotName);
 
         if (!slot) return null;
 
-        return spine.toGlobal(new Point(slot.bone.pose.worldX, slot.bone.pose.worldY)) as Point;
-    }
+        const { worldX, worldY } = this.engine.spine.bonePose(slot.bone);
 
-    private getTextureFromAttachmentRegion(
-        att: RegionAttachment | MeshAttachment,
-    ): Texture | undefined {
-        // In spine 4.3+ every region/mesh attachment stores its region(s) in a
-        // Sequence — static attachments are single-frame sequences.
-        const rawRegion = att.sequence?.regions?.[0];
-        if (!rawRegion) {
-            console.warn('Invalid attachment or region');
-            return;
-        }
-
-        const region = rawRegion as TextureAtlasRegion & { rotate: boolean };
-        const pageTex: Texture = region.texture.texture;
-
-        // A region is measured in the atlas page's own pixels; a `Texture` frame is measured in
-        // its source's *logical* size, which is `pixelWidth / resolution`. The two are the same
-        // thing on a full-size page and a factor of two apart on a `@0.5x` one, where an unscaled
-        // frame lands at half the position and half the size — a 1px hit area comes out as a
-        // block of whatever art sits a quarter of the way into the atlas.
-        const { resolution } = pageTex.source;
-        const frame = (width: number, height: number) =>
-            new Rectangle(
-                region.x / resolution,
-                region.y / resolution,
-                width / resolution,
-                height / resolution,
-            );
-
-        let sub = new Texture({
-            source: pageTex.source,
-            frame: frame(region.width, region.height),
-        }) as Texture & { rotate: number };
-
-        if (region.degrees === 90 || region.rotate === true) {
-            sub = new Texture({
-                source: pageTex.source,
-                frame: frame(region.height, region.width),
-            }) as typeof sub;
-            sub.rotate = 2;
-        }
-
-        return sub;
+        return spine.toGlobal(this.engine.display.point(worldX, worldY));
     }
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AssetsManifest } from 'pixi.js';
-import { ManifestParser } from '../../src/utils/ManifestParser';
+import { ManifestParser } from '../../src/core/utils/ManifestParser';
 
 const bundle = (assets: Array<{ alias: string[] }>) => ({ name: 'b', assets });
 

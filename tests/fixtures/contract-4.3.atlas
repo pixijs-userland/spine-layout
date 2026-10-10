@@ -1,0 +1,5 @@
+contract.png
+size: 64,32
+filter: Linear,Linear
+square
+bounds: 0,0,40,20

@@ -1,5 +1,7 @@
 import { Container, Point } from 'pixi.js';
 import type { Spine } from '@esotericsoftware/spine-pixi-v8';
+import type { BonePose, Engine, PoseClaimEntry, SpinePort } from '../../src/engine/Engine';
+import { classifyPropertyId, pixi8Engine, type Pixi8Types } from '../../src/engines/pixi8';
 
 export type FakeAnimation = {
     name: string;
@@ -377,3 +379,61 @@ export function createFakeSpine(options: FakeSpineOptions = {}): FakeSpine {
 export function asSpineMap(map: Record<string, FakeSpine>): Map<string, Spine> {
     return new Map(Object.entries(map)) as unknown as Map<string, Spine>;
 }
+
+/** The fakes stand in for the pixi8 runtime, so they are typed as it. */
+export type FakeTypes = Pixi8Types;
+
+type Loose = Record<string, any>;
+
+const RUNTIME_PROPERTY_ID = /^\d+(\|\d+)?$/;
+
+/**
+ * The spine port over the fakes above: poses, setup pose and slot objects go to the fake's own
+ * records. Attachments are the runtime's own in the tests that use them, so those are left to
+ * the pixi8 port, and so is building a `Spine`, which a test mocks where it needs to.
+ */
+const fakeSpinePort: SpinePort<FakeTypes> = {
+    ...pixi8Engine.spine,
+
+    update: (spine, dt) => spine.update(dt),
+
+    bonePose: (bone) => (bone as Loose).pose as BonePose,
+    boneSetup: (bone) => (bone as Loose).data.setupPose,
+    slotAttachment: (slot) => (slot as Loose).pose?.attachment,
+    slotAlpha: (slot) => (slot as Loose).pose?.color?.a ?? 1,
+
+    setupPose(skeleton, scope) {
+        const target = skeleton as Loose;
+
+        if (scope === 'all') target.setupPose();
+        else if (scope === 'bones') target.setupPoseBones();
+        else if (scope === 'slots') target.setupPoseSlots();
+        else target.drawOrder.setupPose();
+    },
+    boneToSetup: (bone) => (bone as Loose).setupPose(),
+    slotToSetup: (slot) => (slot as Loose).setupPose(),
+    constraintToSetup: (skeleton, index) => (skeleton as Loose).constraints?.[index]?.setupPose(),
+    updateWorldTransform: (skeleton) => (skeleton as Loose).updateWorldTransform(),
+    drawOrder: (skeleton) => (skeleton as Loose).drawOrder.appliedPose,
+
+    // A fake's claim ids are opaque labels (`'bone:spin'`) unless a test writes the runtime's
+    // own; an opaque one competes for tracks like any other but names nothing to put back.
+    claimOf: (animation) =>
+        (animation.timelines as { propertyIds?: string[] }[]).flatMap((timeline) =>
+            (timeline.propertyIds ?? []).map(
+                (id): PoseClaimEntry =>
+                    RUNTIME_PROPERTY_ID.test(id)
+                        ? classifyPropertyId(id)
+                        : { kind: 'constraint', index: -1, id },
+            ),
+        ),
+
+    attachSlotObject: (spine, slotName, child) => spine.addSlotObject(slotName, child),
+    getSlotObject: (spine, slotName) => spine.getSlotObject(slotName),
+};
+
+export function createFakeEngine(): Engine<FakeTypes> {
+    return { ...pixi8Engine, spine: fakeSpinePort };
+}
+
+export const fakeEngine = createFakeEngine();

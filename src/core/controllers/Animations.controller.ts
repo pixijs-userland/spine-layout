@@ -1,4 +1,4 @@
-import { Physics, Property, type Spine } from '@esotericsoftware/spine-pixi-v8';
+import type { Engine, EngineTypes } from '../../engine/Engine';
 import type {
     AnimationName,
     AnimationsRegistry,
@@ -9,12 +9,15 @@ import type {
 import { LOG } from '../config/logs';
 import { log } from '../utils/Log';
 import { parcePointers } from '../config/parcePointers';
-import { claimsCollide, EMPTY_CLAIM, poseClaims } from '../utils/poseClaims';
+import { claimsCollide, EMPTY_CLAIM, poseClaims, type AnimationClaim } from '../utils/poseClaims';
 import { sounds } from './Sounds.controller';
 
-type EventsListeners = Map<string, ((spineID: string, spine?: Spine, event?: unknown) => void)[]>;
+type EventsListeners<T extends EngineTypes> = Map<
+    string,
+    ((spineID: string, spine?: T['Spine'], event?: unknown) => void)[]
+>;
 
-export class AnimationsController {
+export class AnimationsController<T extends EngineTypes = EngineTypes> {
     private animations: Map<SpineID, AnimationsRegistry> = new Map();
     private stateAnimations: Map<string, string[]> = new Map();
     private eventAnimations: Map<string, string[]> = new Map();
@@ -28,7 +31,7 @@ export class AnimationsController {
      * another one replaces it, regardless of the animation that started it.
      */
     private triggeredFX: Map<SpineID, Map<AnimationName, Set<string>>> = new Map();
-    #eventsListeners: EventsListeners = new Map();
+    #eventsListeners: EventsListeners<T> = new Map();
     #speed = 1;
     /**
      * How fast single spines run compared with the rest of the layout — a multiplier on
@@ -39,12 +42,15 @@ export class AnimationsController {
      */
     #spineSpeeds: Map<SpineID, number> = new Map();
 
-    constructor(private spines: Map<SpineID, Spine>) { }
+    constructor(
+        private engine: Engine<T>,
+        private spines: Map<SpineID, T['Spine']>,
+    ) { }
 
     // ─── Registration ────────────────────────────────────────────────────────────
 
     /** Registers a spine instance, wiring up its animation metadata and event listeners. */
-    registerSpine(spineID: string, spine: Spine) {
+    registerSpine(spineID: string, spine: T['Spine']) {
         spine.state.addListener({
             event: (entry, event) => {
                 // NB: don't JSON.stringify(event.data) — since spine-pixi-v8 4.3.7, EventData
@@ -205,7 +211,9 @@ export class AnimationsController {
     removeEventListener(event: string, fn: (event: unknown) => void) {
         const listeners = this.#eventsListeners.get(event);
         if (!listeners) return;
-        const index = listeners.indexOf(fn as (spineID: string, spine?: Spine, event?: unknown) => void);
+        const index = listeners.indexOf(
+            fn as (spineID: string, spine?: T['Spine'], event?: unknown) => void,
+        );
         if (index !== -1) listeners.splice(index, 1);
     }
 
@@ -264,7 +272,8 @@ export class AnimationsController {
 
         if (resetPose) {
             affectedSpineIDs.forEach((spineID) => {
-                this.spines.get(spineID)?.skeleton.setupPose();
+                const spine = this.spines.get(spineID);
+                if (spine) this.engine.spine.setupPose(spine.skeleton, 'all');
             });
         }
 
@@ -356,16 +365,16 @@ export class AnimationsController {
      * fade-out that closed the previous one (invisible popup), or land *on* an unrelated
      * state's track and evict a pose that was meant to hold.
      */
-    private allocateTrack(spineID: SpineID, spine: Spine, animation: string): number {
-        const claims = poseClaims(spine.state.data.skeletonData);
-        const claim = claims.get(animation) ?? EMPTY_CLAIM;
+    private allocateTrack(spineID: SpineID, spine: T['Spine'], animation: string): number {
+        const claims = this.claimsOf(spine);
+        const claim = claims.get(animation)?.ids ?? EMPTY_CLAIM;
         const tracks = spine.state.tracks;
         const colliding: number[] = [];
 
         for (let index = 0; index < tracks.length; index++) {
             const running = tracks[index]?.animation?.name;
             if (!running) continue;
-            if (claimsCollide(claim, claims.get(running) ?? EMPTY_CLAIM)) colliding.push(index);
+            if (claimsCollide(claim, claims.get(running)?.ids ?? EMPTY_CLAIM)) colliding.push(index);
         }
 
         const owner = colliding.pop();
@@ -429,7 +438,7 @@ export class AnimationsController {
      * `setAnimation` drops such an entry itself instead of mixing from it, and an entry that
      * never applied left nothing on the skeleton to undo.
      */
-    private undoUnappliedEntry(spine: Spine, track: number, animation: string) {
+    private undoUnappliedEntry(spine: T['Spine'], track: number, animation: string) {
         const entry = spine.state.tracks[track];
 
         // every apply stamps `nextTrackLast`, so -1 is an entry that has not had one
@@ -447,31 +456,36 @@ export class AnimationsController {
     }
 
     /** Puts back the setup pose for exactly what `animation` claims — see {@link undoUnappliedEntry}. */
-    private revertClaim(spine: Spine, animation: string | undefined) {
+    private revertClaim(spine: T['Spine'], animation: string | undefined) {
         if (!animation) return;
 
-        const claim = poseClaims(spine.state.data.skeletonData).get(animation);
+        const claim = this.claimsOf(spine).get(animation);
 
         if (!claim) return;
 
-        const { bones, slots, constraints, drawOrder } = spine.skeleton;
+        const { skeleton } = spine;
+        const { bones, slots } = skeleton;
         let resetDrawOrder = false;
 
-        claim.forEach((id) => {
-            const [property, index] = id.split('|').map(Number);
-
-            // a claim that is not the runtime's own `Property|index` shape (a test double's
-            // opaque id, say) names nothing to revert
-            if (!Number.isFinite(property)) return;
-
-            if (property <= Property.inherit) bones[index]?.setupPose();
-            else if (property <= Property.deform || property === Property.sequence) slots[index]?.setupPose();
-            else if (property === Property.drawOrder || property === Property.drawOrderFolder) {
+        claim.entries.forEach((entry) => {
+            if (entry.kind === 'bone') {
+                const bone = bones[entry.index];
+                if (bone) this.engine.spine.boneToSetup(bone);
+            } else if (entry.kind === 'slot') {
+                const slot = slots[entry.index];
+                if (slot) this.engine.spine.slotToSetup(slot);
+            } else if (entry.kind === 'drawOrder') {
                 resetDrawOrder = true;
-            } else constraints?.[index]?.setupPose();
+            } else this.engine.spine.constraintToSetup(skeleton, entry.index);
         });
 
-        if (resetDrawOrder) drawOrder.setupPose();
+        if (resetDrawOrder) this.engine.spine.setupPose(skeleton, 'drawOrder');
+    }
+
+    private claimsOf(spine: T['Spine']): Map<string, AnimationClaim> {
+        return poseClaims(spine.state.data.skeletonData, (animation) =>
+            this.engine.spine.claimOf(animation),
+        );
     }
 
     /**
@@ -481,7 +495,7 @@ export class AnimationsController {
      * leaves the active/looping registries and its triggered FX are cut — an evicted
      * looping animation would otherwise keep its sound running with nothing on screen.
      */
-    private evictTrack(spineID: SpineID, spine: Spine, index: number) {
+    private evictTrack(spineID: SpineID, spine: T['Spine'], index: number) {
         const animation = spine.state.tracks[index]?.animation?.name;
 
         if (animation) this.stop(spineID, animation);
@@ -584,11 +598,11 @@ export class AnimationsController {
         spine.state.setAnimation(playTrack, animation, loop);
         // the entry just set, not track 0 — allocation picks the track from what the
         // animation poses, so it is only track 0 when nothing else claims those properties
-        const trackEntry = spine.state.getTrack(playTrack);
+        const trackEntry = spine.state.tracks[playTrack];
 
         if (trackEntry) {
             trackEntry.trackTime = trackEntry.animationEnd;
-            spine.skeleton.updateWorldTransform(Physics.update);
+            this.engine.spine.updateWorldTransform(spine.skeleton);
         }
     }
 
@@ -599,7 +613,7 @@ export class AnimationsController {
         this.spines.forEach((spine, spineID) => {
             if (spine?.state) {
                 spine.state.clearTracks();
-                spine.skeleton.setupPose();
+                this.engine.spine.setupPose(spine.skeleton, 'all');
             }
             this.activeAnimations.delete(spineID);
             this.loopingAnimations.delete(spineID);
@@ -612,7 +626,7 @@ export class AnimationsController {
         const spine = this.spines.get(spineID);
         if (!spine) return;
         spine.state.clearTracks();
-        spine.skeleton.setupPose();
+        this.engine.spine.setupPose(spine.skeleton, 'all');
         this.activeAnimations.delete(spineID);
         this.loopingAnimations.delete(spineID);
         this.stopAllTriggeredFX(spineID);
@@ -693,7 +707,7 @@ export class AnimationsController {
             const frozenTime = trackEntry.trackTime;
             trackEntry.timeScale = 0;
             trackEntry.trackEnd = frozenTime;
-            spine.skeleton.updateWorldTransform(Physics.update);
+            this.engine.spine.updateWorldTransform(spine.skeleton);
 
             log.log(`spine pause: ${spineID}(${animation}) @ ${frozenTime.toFixed(2)}s`);
             return;
@@ -722,14 +736,14 @@ export class AnimationsController {
             }
         });
 
-        spine.skeleton.setupPoseBones();
-        spine.skeleton.setupPoseSlots();
+        this.engine.spine.setupPose(spine.skeleton, 'bones');
+        this.engine.spine.setupPose(spine.skeleton, 'slots');
         // a zero-delta update instead of a bare updateWorldTransform: it also
         // re-applies the remaining tracks and syncs slot-object children
         // (nested spines follow the spine's ticker update, so without this
         // they keep their stale transforms until the next tick and the reset
         // shows up one rendered frame late)
-        spine.update(0);
+        this.engine.spine.update(spine, 0);
 
         this.removeActiveAnimation(spineID, animation);
         this.removeLoopingAnimation(spineID, animation);

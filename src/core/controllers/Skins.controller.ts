@@ -1,10 +1,13 @@
-import type { Spine } from '@esotericsoftware/spine-pixi-v8';
+import type { Engine, EngineTypes } from '../../engine/Engine';
 import type { SpineID } from '../config/types';
 
-export class SkinsController {
+export class SkinsController<T extends EngineTypes = EngineTypes> {
     private skins: Map<SpineID, string[]> = new Map();
 
-    constructor(private spines: Map<SpineID, Spine>) {}
+    constructor(
+        private engine: Engine<T>,
+        private spines: Map<SpineID, T['Spine']>,
+    ) {}
 
     /** Returns the raw map of spineID → registered skin names. */
     getList(): Map<SpineID, string[]> {
@@ -45,7 +48,7 @@ export class SkinsController {
         }
 
         spine.skeleton.setSkin(skin);
-        spine.skeleton.setupPoseSlots();
+        this.engine.spine.setupPose(spine.skeleton, 'slots');
     }
 
     /** Records a skin name as available for the given spine (used during initialization). */

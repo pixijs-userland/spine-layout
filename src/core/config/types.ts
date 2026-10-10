@@ -1,4 +1,15 @@
-import type { AssetsManifest, Texture } from 'pixi.js';
+import type { EngineTypes } from '../../engine/Engine';
+import type { SkeletonSource } from '../../engine/runtime';
+
+export type { SkeletonSource };
+
+/** One manifest entry, as a loader's manifest spells it: an alias or several, and its file(s). */
+export type ManifestAssetLike = { alias?: string | string[]; src?: unknown };
+
+/** An asset manifest, down to what the layout reads of it: bundles of aliased files. */
+export type ManifestLike = {
+    bundles: { name: string; assets: ManifestAssetLike[] | Record<string, unknown> }[];
+};
 
 export type SpineID = string;
 /**
@@ -23,7 +34,7 @@ export type PlayOptions = {
 
 export type SpineLayoutOptions = {
     debug?: boolean;
-    manifest?: AssetsManifest;
+    manifest?: ManifestLike;
     skipAttachingSpinesPatterns?: string[];
     /**
      * The spine the scene is built from, `root` unless another id is named here.
@@ -36,18 +47,12 @@ export type SpineLayoutOptions = {
     root?: SpineID;
 };
 
-/**
- * A skeleton as Spine exported it, not as a runtime read it: the parsed `.json`, or the bytes of
- * a `.skel`. `skins` is absent altogether on a skeleton that attaches no image.
- */
-export type SkeletonSource = { skins?: { name: string }[] } | ArrayBuffer | Uint8Array;
-
-export type SpineInstanceData = {
+export type SpineInstanceData<T extends EngineTypes = EngineTypes> = {
     name: string;
     skeleton: SkeletonSource;
     /** Empty for a skeleton with no images: an atlas of no pages, describing nothing. */
     atlasText: string;
-    textures: Record<string, Texture>;
+    textures: Record<string, T['Texture']>;
 };
 
 type TextsJsonEntryBase = {

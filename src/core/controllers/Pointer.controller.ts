@@ -1,17 +1,17 @@
-import { Vector2, type Bone, type Skeleton, type Spine } from '@esotericsoftware/spine-pixi-v8';
-import { Container, Point, type FederatedPointerEvent } from 'pixi.js';
+import type { Engine, EngineTypes, PointLike } from '../../engine/Engine';
+import type { BoneLike, SkeletonLike } from '../../engine/runtime';
 import type { SpineID } from '../config/types';
 import { parcePointers } from '../config/parcePointers';
 import { LOG } from '../config/logs';
 import { log } from '../utils/Log';
 
 /** One spine's follow bones, and the update hook they were chained onto. */
-type PointerFollow = {
-    spine: Spine;
+type PointerFollow<T extends EngineTypes> = {
+    spine: T['Spine'];
     /** The bones of this spine that carry the `_followPointer` modifier. */
-    bones: Bone[];
-    /** The `beforeUpdateWorldTransforms` hook the spine carried before we chained onto it. */
-    previousHook: (spine: Spine) => void;
+    bones: BoneLike[];
+    /** Puts back the hook the spine carried before we chained onto it. */
+    unhook: () => void;
 };
 
 /**
@@ -25,35 +25,31 @@ type PointerFollow = {
  * Typically the follow bone is an IK target — the arm aims where the mouse is — or a bone
  * carrying a crosshair, a glow, or a parallax layer ({@link strength} for how far it travels).
  */
-export class PointerController {
+export class PointerController<T extends EngineTypes = EngineTypes> {
     /** Follow bones by spine id — one entry per spine that has any. */
-    private follows: Map<SpineID, PointerFollow> = new Map();
+    private follows: Map<SpineID, PointerFollow<T>> = new Map();
     /** Per-bone {@link strength} overrides, by bone name. */
     private strengths: Map<string, number> = new Map();
     /** Last pointer position, in stage coordinates. */
-    private pointer = new Point();
+    private pointer: PointLike;
     /** Whether the pointer has been anywhere yet — before that, bones are left alone. */
     private pointerSeen = false;
-    private listening = false;
-    /**
-     * What hears the pointer: an empty interactive container inside the layout. Pixi delivers
-     * `globalpointermove` to every interactive object on every move, wherever the pointer is,
-     * so nothing has to be covered with a hit area — and being empty, this one never answers a
-     * hit-test itself. The layout container is left alone: an interactive mode is inherited,
-     * and a `static` layout has every skeleton beneath it answering hit-tests with its
-     * bounding box, swallowing the clicks meant for the buttons behind it.
-     */
-    private readonly listener = new Container({ label: 'pointer-listener', eventMode: 'static' });
+    /** Stops hearing the pointer; set while listening (see `DisplayPort.onGlobalPointerMove`). */
+    private unlisten?: () => void;
     private _enabled = true;
     private _strength = 1;
     /** Scratch points, so following a bone costs no allocation per frame. */
-    private readonly spacePoint = new Point();
-    private readonly bonePoint = new Vector2();
+    private readonly spacePoint: PointLike;
+    private readonly bonePoint: PointLike = { x: 0, y: 0 };
 
     constructor(
-        private spines: Map<SpineID, Spine>,
-        private root: Container,
-    ) { }
+        private engine: Engine<T>,
+        private spines: Map<SpineID, T['Spine']>,
+        private root: T['Container'],
+    ) {
+        this.pointer = engine.display.point();
+        this.spacePoint = engine.display.point();
+    }
 
     // ─── setters / getters ───────────────────────────────────────────────────────
 
@@ -93,8 +89,8 @@ export class PointerController {
     }
 
     /** The last pointer position in stage coordinates, or `undefined` before the first move. */
-    getPosition(): Point | undefined {
-        return this.pointerSeen ? this.pointer.clone() : undefined;
+    getPosition(): PointLike | undefined {
+        return this.pointerSeen ? this.engine.display.point(this.pointer.x, this.pointer.y) : undefined;
     }
 
     /** The names of the bones following the pointer, by spine id. */
@@ -117,8 +113,8 @@ export class PointerController {
      * their follow bones up too.
      *
      * Listening starts the first time a follow bone is found, through an empty interactive
-     * child of the layout ({@link listener}) — nothing has to be covered with a hit area to
-     * hear the moves, and nothing about the layout's own interactivity changes.
+     * child of the layout (`DisplayPort.onGlobalPointerMove`) — nothing has to be covered with a
+     * hit area to hear the moves, and nothing about the layout's own interactivity changes.
      */
     attach() {
         log.open(LOG.FOLLOW_POINTER);
@@ -129,7 +125,7 @@ export class PointerController {
             const bones = this.findFollowBones(spine);
             if (!bones.length) return;
 
-            this.follows.set(spineID, { spine, bones, previousHook: this.hook(spineID, spine) });
+            this.follows.set(spineID, { spine, bones, unhook: this.hook(spineID, spine) });
 
             bones.forEach((bone) => log.add(LOG.FOLLOW_POINTER, spineID, bone.data.name));
         });
@@ -145,14 +141,15 @@ export class PointerController {
      * move takes over again.
      */
     setPosition(x: number, y: number) {
-        this.pointer.set(x, y);
+        this.pointer.x = x;
+        this.pointer.y = y;
         this.pointerSeen = true;
     }
 
     /** The follow bones of one spine: those named with the modifier, plus those its slots name. */
-    private findFollowBones(spine: Spine): Bone[] {
+    private findFollowBones(spine: T['Spine']): BoneLike[] {
         const mod = parcePointers.mod.followPointer;
-        const bones: Map<string, Bone> = new Map();
+        const bones: Map<string, BoneLike> = new Map();
 
         spine.skeleton.bones.forEach((bone) => {
             if (bone.data.name.endsWith(mod)) bones.set(bone.data.name, bone);
@@ -173,17 +170,10 @@ export class PointerController {
      * position within the same frame.
      *
      * The hook the spine already carried is kept and called first, so game code that uses
-     * it keeps working — and returned, so {@link clear} can hand it back.
+     * it keeps working — and can be handed back, which is what {@link clear} does.
      */
-    private hook(spineID: SpineID, spine: Spine): (spine: Spine) => void {
-        const previousHook = spine.beforeUpdateWorldTransforms;
-
-        spine.beforeUpdateWorldTransforms = (target) => {
-            previousHook(target);
-            this.poseBones(spineID);
-        };
-
-        return previousHook;
+    private hook(spineID: SpineID, spine: T['Spine']): () => void {
+        return this.engine.spine.beforeWorldTransforms(spine, () => this.poseBones(spineID));
     }
 
     private poseBones(spineID: SpineID) {
@@ -195,28 +185,32 @@ export class PointerController {
         follow.bones.forEach((bone) => this.poseBone(follow.spine, bone));
     }
 
-    private poseBone(spine: Spine, bone: Bone) {
+    private poseBone(spine: T['Spine'], bone: BoneLike) {
         // The pointer is in stage coordinates; a spine's own coordinates are its skeleton's
         // world space (spine-pixi runs skeletons y-down, so the axes line up), and a bone is
         // posed in its parent's space on top of that.
         const inSpine = spine.toLocal(this.pointer, undefined, this.spacePoint);
-        const target = this.bonePoint.set(inSpine.x, inSpine.y);
+        const target = this.bonePoint;
+        const pose = this.engine.spine.bonePose(bone);
 
-        if (bone.parent) bone.pose.worldToParent(target);
+        target.x = inSpine.x;
+        target.y = inSpine.y;
+
+        if (bone.parent) pose.worldToParent(target);
         else this.skeletonToRoot(spine.skeleton, target);
 
-        const { setupPose } = bone.data;
+        const setupPose = this.engine.spine.boneSetup(bone);
         const strength = this.strengths.get(bone.data.name) ?? this._strength;
 
-        bone.pose.x = setupPose.x + (target.x - setupPose.x) * strength;
-        bone.pose.y = setupPose.y + (target.y - setupPose.y) * strength;
+        pose.x = setupPose.x + (target.x - setupPose.x) * strength;
+        pose.y = setupPose.y + (target.y - setupPose.y) * strength;
     }
 
     /**
      * A root bone has no parent to be posed against: it is posed in skeleton space, scaled
      * and offset by the skeleton itself (see `BonePose.updateWorldTransform`).
      */
-    private skeletonToRoot(skeleton: Skeleton, point: Vector2) {
+    private skeletonToRoot(skeleton: SkeletonLike, point: PointLike) {
         const { scaleX, scaleY } = skeleton;
 
         point.x = scaleX ? (point.x - skeleton.x) / scaleX : 0;
@@ -224,24 +218,21 @@ export class PointerController {
     }
 
     private listen() {
-        if (this.listening) return;
-        this.listening = true;
+        if (this.unlisten) return;
 
-        this.root.addChild(this.listener);
-        this.listener.on('globalpointermove', this.onPointerMove);
+        this.unlisten = this.engine.display.onGlobalPointerMove(this.root, (global) =>
+            this.setPosition(global.x, global.y),
+        );
     }
-
-    private onPointerMove = (event: FederatedPointerEvent) => {
-        this.setPosition(event.global.x, event.global.y);
-    };
 
     /** Returns every follow bone to its setup position. */
     private resetBones() {
         this.follows.forEach(({ bones }) =>
             bones.forEach((bone) => {
-                const { setupPose } = bone.data;
-                bone.pose.x = setupPose.x;
-                bone.pose.y = setupPose.y;
+                const setupPose = this.engine.spine.boneSetup(bone);
+                const pose = this.engine.spine.bonePose(bone);
+                pose.x = setupPose.x;
+                pose.y = setupPose.y;
             }),
         );
     }
@@ -251,17 +242,12 @@ export class PointerController {
     clear() {
         this.resetBones();
 
-        this.follows.forEach(({ spine, previousHook }) => {
-            spine.beforeUpdateWorldTransforms = previousHook;
-        });
+        this.follows.forEach(({ unhook }) => unhook());
         this.follows.clear();
         this.strengths.clear();
 
-        if (this.listening) {
-            this.listener.off('globalpointermove', this.onPointerMove);
-            this.listener.removeFromParent();
-            this.listening = false;
-        }
+        this.unlisten?.();
+        this.unlisten = undefined;
 
         this.pointerSeen = false;
     }

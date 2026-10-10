@@ -1,4 +1,6 @@
-import type { AssetsManifest, UnresolvedAsset } from 'pixi.js';
+import type { ManifestLike } from '../config/types';
+
+type Bundle = ManifestLike['bundles'][number];
 
 export type SpineAssetData = {
     skel: string;
@@ -14,11 +16,11 @@ export type SpineAssetData = {
 };
 
 export class ManifestParser {
-    static getSpineAssets(manifest: AssetsManifest): SpineAssetData[] {
+    static getSpineAssets(manifest: ManifestLike): SpineAssetData[] {
         const result: SpineAssetData[] = [];
         const folders = ManifestParser.spineFolders(manifest);
 
-        manifest.bundles.forEach((bundle: UnresolvedAsset) => {
+        manifest.bundles.forEach((bundle: Bundle) => {
             const skeletons = ManifestParser.getAssetByType(bundle, 'skel') ?? [];
             const jsons = ManifestParser.getAssetByType(bundle, 'json') ?? [];
             const atlases = ManifestParser.getAssetByType(bundle, 'atlas') ?? [];
@@ -60,17 +62,17 @@ export class ManifestParser {
         return result;
     }
 
-    static getAssetByType(bundle: UnresolvedAsset, type: string): string[] | undefined {
+    static getAssetByType(bundle: Bundle, type: string): string[] | undefined {
         if (Array.isArray(bundle.assets)) {
             return ManifestParser.aliasesByType(bundle, type).map(basename);
         }
     }
 
     /** Where the spines live: every folder an atlas was found in, across the whole manifest. */
-    private static spineFolders(manifest: AssetsManifest): Set<string> {
+    private static spineFolders(manifest: ManifestLike): Set<string> {
         const folders = new Set<string>();
 
-        manifest.bundles.forEach((bundle: UnresolvedAsset) => {
+        manifest.bundles.forEach((bundle: Bundle) => {
             ManifestParser.aliasesByType(bundle, 'atlas').forEach((alias) =>
                 folders.add(directory(alias)),
             );
@@ -79,10 +81,12 @@ export class ManifestParser {
         return folders;
     }
 
-    private static aliasesByType(bundle: UnresolvedAsset, type: string): string[] {
+    private static aliasesByType(bundle: Bundle, type: string): string[] {
         if (!Array.isArray(bundle.assets)) return [];
 
-        return bundle.assets.map(({ alias }) => alias[0]).filter((alias) => alias.endsWith(type));
+        return bundle.assets
+            .map(({ alias }) => alias![0])
+            .filter((alias) => alias.endsWith(type));
     }
 }
 

@@ -16,6 +16,9 @@ export interface EventDataLike {
 
 export interface EventLike {
     data: EventDataLike;
+    time?: number;
+    volume?: number;
+    balance?: number;
     intValue?: number;
     floatValue?: number;
     stringValue?: string | null;
@@ -29,7 +32,8 @@ export interface SkinEntryLike {
 
 export interface SkinLike {
     name: string;
-    getAttachmentsForSlot(slotIndex: number, entries: SkinEntryLike[]): void;
+    /** Fills `entries` with `SkinEntryLike`s; typed `never[]` so each runtime's own entry type fits. */
+    getAttachmentsForSlot(slotIndex: number, entries: never[]): void;
 }
 
 export interface BoneDataLike {
@@ -87,7 +91,6 @@ export interface AnimationStateLike {
         loop: boolean,
         delay: number,
     ): TrackEntryLike;
-    getCurrent(trackIndex: number): TrackEntryLike | null | undefined;
     clearTrack(trackIndex: number): void;
     clearTracks(): void;
     addListener(listener: AnimationStateListenerLike): void;
@@ -115,7 +118,6 @@ export interface SkeletonLike {
     scaleY: number;
     findBone(name: string): BoneLike | null;
     findSlot(name: string): SlotLike | null;
-    setSkinByName(name: string): void;
     setSkin(skin: SkinLike | null): void;
 }
 

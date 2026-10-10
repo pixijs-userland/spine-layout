@@ -1,5 +1,5 @@
 import { Howl, type HowlOptions, Howler } from 'howler';
-import type { AssetSrc, AssetsManifest, UnresolvedAsset } from 'pixi.js';
+import type { ManifestAssetLike, ManifestLike } from '../config/types';
 
 /**
  * Two places asking for the same FX this close together mean one event, heard twice: the
@@ -67,7 +67,7 @@ export type SoundSettings = {
 export class Sounds {
     private userInteraction = false;
     private initialized = false;
-    private soundNames: Map<string, AssetSrc> = new Map();
+    private soundNames: Map<string, unknown> = new Map();
     private sounds: Map<string, Howl> = new Map();
     private fxSounds: Map<string, Howl> = new Map();
     private musicSounds: Map<string, Howl> = new Map();
@@ -98,7 +98,7 @@ export class Sounds {
         this.mute();
     }
 
-    init(pixiManifest?: AssetsManifest, settings?: Partial<SoundSettings>) {
+    init(pixiManifest?: ManifestLike, settings?: Partial<SoundSettings>) {
         if (settings) {
             this.settings = { ...this.settings, ...settings };
         }
@@ -168,11 +168,11 @@ export class Sounds {
         });
     }
 
-    private extractSoundNames(pixiManifest: AssetsManifest) {
+    private extractSoundNames(pixiManifest: ManifestLike) {
         const bundleName = this.settings.prefix || 'sounds';
-        const assets: UnresolvedAsset[] =
+        const assets: ManifestAssetLike[] =
             (pixiManifest.bundles.find((item) => item.name === bundleName)
-                ?.assets as UnresolvedAsset[]) ?? [];
+                ?.assets as ManifestAssetLike[]) ?? [];
 
         assets.forEach((asset) => {
             if (!asset.src) return;

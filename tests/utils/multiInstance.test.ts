@@ -3,7 +3,7 @@ import {
     planMultipleInstances,
     spinePointerBases,
     type BaseSpineSlots,
-} from '../../src/utils/multiInstance';
+} from '../../src/core/utils/multiInstance';
 
 /** Mirrors the slot-reel-of-the-dead layout: a `reels` parent with named reel pointers, a single
  *  `reel` template whose repeated `spine_symbol*` slots seed a 25-strong symbol pool and

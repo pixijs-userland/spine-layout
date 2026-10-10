@@ -1,23 +1,14 @@
-import {
-    MeshAttachment,
-    RegionAttachment,
-    type Attachment,
-    type Bone,
-    type SkinEntry,
-    type Slot,
-    type Spine,
-} from '@esotericsoftware/spine-pixi-v8';
-import { Container, Polygon, Sprite, Texture, type FederatedPointerEvent } from 'pixi.js';
+import type { Engine, EngineTypes, PointerEventLike } from '../../engine/Engine';
+import type { BoneLike, SkinEntryLike, SlotLike } from '../../engine/runtime';
 import type { SpineID, SpineLayoutOptions } from '../config/types';
 import { parcePointers } from '../config/parcePointers';
 import { LOG } from '../config/logs';
 import { log } from '../utils/Log';
-import { exposeToHitTesting, shieldFromHitTesting } from '../utils/hitTesting';
 import type { TextsController } from './Texts.controller';
 import type { AnimationsController } from './Animations.controller';
 import type { SpineController } from './Spine.controller';
 
-type EmbeddedSpine = { spineID: string; spine: Spine };
+type EmbeddedSpine<T extends EngineTypes> = { spineID: string; spine: T['Spine'] };
 
 type ButtonInteraction = 'click' | 'hover' | 'out' | 'down' | 'up' | 'up_out';
 
@@ -39,27 +30,16 @@ const BUTTON_INTERACTIONS: Record<ButtonInteraction, { events: string[]; animati
     up_out: { events: ['up_out'], animations: ['up_out', 'out', 'unhover'] },
 };
 
-/**
- * Sets a property and freezes it there, whatever is assigned to it afterwards.
- *
- * Set through the real accessor first: Pixi renders from what the setter stores (`localAlpha`),
- * not from what the getter says, so freezing alone would leave the old value.
- */
-function pin<T extends object, K extends keyof T>(target: T, key: K, value: T[K]) {
-    target[key] = value;
-    Object.defineProperty(target, key, { get: () => value, set: () => {}, configurable: true });
-}
-
 /** A logical button: every container acting as its hit area, plus the pointer state they share. */
-type ButtonGroup = {
+type ButtonGroup<Target> = {
     /** Button key (`spin` for `button_spin`), the base of its `<key>_<event>` event names. */
     key: string;
     /** The spine the button is declared on — the one its events are played for. */
     spineID: string;
     /** Every container that acts as a hit area for this button. */
-    targets: Container[];
+    targets: Target[];
     /** The targets the pointer is currently over; the button counts as hovered while non-empty. */
-    hovered: Set<Container>;
+    hovered: Set<Target>;
     /** Whether the button is currently reported as hovered, so only real transitions trigger. */
     isHovered: boolean;
     /** Whether a press started on this button and has not been released yet. */
@@ -68,16 +48,17 @@ type ButtonGroup = {
     hoverSyncQueued: boolean;
 };
 
-export class SceneController {
-    private buttons: Map<string, Container> = new Map();
+export class SceneController<T extends EngineTypes = EngineTypes> {
+    private buttons: Map<string, T['Container']> = new Map();
     /** Every wired button, by key — what lets {@link press} fire one without a pointer. */
-    private buttonGroups: Map<string, ButtonGroup[]> = new Map();
+    private buttonGroups: Map<string, ButtonGroup<T['Container']>[]> = new Map();
 
     constructor(
-        private spines: Map<SpineID, Spine>,
-        private texts: TextsController,
-        private animations: AnimationsController,
-        private spine: SpineController,
+        private engine: Engine<T>,
+        private spines: Map<SpineID, T['Spine']>,
+        private texts: TextsController<T>,
+        private animations: AnimationsController<T>,
+        private spine: SpineController<T>,
         private options?: SpineLayoutOptions,
     ) { }
 
@@ -112,7 +93,7 @@ export class SceneController {
                     const childSpine = this.spines.get(childID);
 
                     if (childSpine) {
-                        spine.addSlotObject(slot.name, childSpine);
+                        this.engine.spine.attachSlotObject(spine, slot.name, childSpine);
                         log.add(LOG.BONES, spineID, `${childID} -> ${slot.name}`);
                     }
                 }
@@ -154,7 +135,7 @@ export class SceneController {
      *
      * A slot button's hit area is the shape of the slot's attachment, clipped where the
      * skeleton clips the art, and nothing drawn over it takes its clicks: no skeleton answers
-     * a hit-test with its own art — only the hit areas do (see {@link shieldFromHitTesting}).
+     * a hit-test with its own art — only the hit areas do (see `DisplayPort.shieldFromHitTesting`).
      */
     activateButtonBones(only?: Set<SpineID>) {
         log.open(LOG.BUTTONS);
@@ -163,8 +144,8 @@ export class SceneController {
             // Hit areas grouped by button key: a `button_<key>` slot contributes its overlay
             // sprite, a `button_<key>` bone every slot object hanging beneath it. Both land
             // in the same group, so one key always stays one button.
-            const groups = new Map<string, Container[]>();
-            const addTarget = (key: string, target: Container) => {
+            const groups = new Map<string, T['Container'][]>();
+            const addTarget = (key: string, target: T['Container']) => {
                 const targets = groups.get(key) ?? [];
                 targets.push(target);
                 groups.set(key, targets);
@@ -178,28 +159,28 @@ export class SceneController {
                     // with a hit area the sprite has nothing to draw or to measure; without one
                     // its texture is the hit area, as it always was
                     const texture = hitArea
-                        ? Texture.EMPTY
-                        : this.spine.getSlotTexture(spineID, slotName) || Texture.WHITE;
+                        ? this.engine.display.emptyTexture
+                        : this.spine.getSlotTexture(spineID, slotName) ||
+                          this.engine.display.whiteTexture;
                     const bonePos = this.spine.getBoneGlobalPos(spine, slotName);
-                    const button = new Sprite(texture);
+                    const button = this.engine.display.sprite(texture, 0.5);
 
                     // This sprite only ever serves as a hit area — the skeleton's own attachment
                     // draws the art — but `updateSlotObject` writes the slot's pose alpha over
                     // it every update, so alpha is pinned shut. The clipping mask the runtime
                     // hands it is kept: Pixi prunes a masked container from hit-testing where
                     // the mask does not reach, which is what clips the art too.
-                    pin(button, 'alpha', 0);
-                    if (hitArea) button.hitArea = hitArea;
+                    this.engine.display.pin(button, 'alpha', 0);
+                    if (hitArea) this.engine.display.setHitArea(button, hitArea);
 
                     if (bonePos) {
                         button.x = bonePos.x;
                         button.y = bonePos.y;
                     }
-                    button.anchor.set(0.5);
 
                     const key = slotName.replace(parcePointers.slot.button, '');
 
-                    spine.addSlotObject(slotName, button);
+                    this.engine.spine.attachSlotObject(spine, slotName, button);
                     this.buttons.set(slotName, button);
                     addTarget(key, button);
 
@@ -210,7 +191,7 @@ export class SceneController {
                 const buttonBone = this.findButtonBoneAncestor(slot);
                 if (!buttonBone) return;
 
-                const slotObject = spine.getSlotObject(slotName);
+                const slotObject = this.engine.spine.getSlotObject(spine, slotName);
                 if (!slotObject) return;
 
                 const key = buttonBone.replace(parcePointers.slot.button, '');
@@ -222,7 +203,7 @@ export class SceneController {
             });
 
             groups.forEach((targets, key) => {
-                const group: ButtonGroup = {
+                const group: ButtonGroup<T['Container']> = {
                     key,
                     spineID,
                     targets,
@@ -259,7 +240,7 @@ export class SceneController {
         const targets = new Set(this.buttons.values());
 
         this.eachSpine(only, (spine) => {
-            if (!targets.has(spine)) shieldFromHitTesting(spine);
+            if (!targets.has(spine)) this.engine.display.shieldFromHitTesting(spine);
         });
 
         log.close(LOG.BUTTONS);
@@ -279,37 +260,30 @@ export class SceneController {
      * "tap to skip" over a celebration — is otherwise wired to nothing but the sprite's own
      * texture, and the overlay it gets is a few pixels of hit area where the art is a screen.
      */
-    private hitAreaOf(spine: Spine, slotName: string): Polygon | undefined {
+    private hitAreaOf(spine: T['Spine'], slotName: string): number[] | undefined {
         const slot = spine.skeleton.findSlot(slotName);
         if (!slot) return;
 
-        const attachment = slot.pose.attachment ?? this.skinAttachmentOf(spine, slot);
-        let vertices: ArrayLike<number> | undefined;
+        const attachment =
+            this.engine.spine.slotAttachment(slot) ?? this.skinAttachmentOf(spine, slot);
 
-        if (attachment instanceof RegionAttachment) {
-            vertices = attachment.getOffsets(slot.pose);
-        } else if (attachment instanceof MeshAttachment && !attachment.bones) {
-            vertices = Array.from(attachment.vertices).slice(0, attachment.hullLength);
-        }
-        if (!vertices?.length) return;
-
-        const points: number[] = [];
-        for (let i = 0; i < vertices.length; i += 2) points.push(vertices[i], -vertices[i + 1]);
-
-        return new Polygon(points);
+        return this.engine.spine.hitPolygon(slot, attachment);
     }
 
-    private skinAttachmentOf(spine: Spine, slot: Slot): Attachment | undefined {
+    private skinAttachmentOf(spine: T['Spine'], slot: SlotLike): unknown {
         const skin = spine.skeleton.skin ?? spine.skeleton.data.defaultSkin;
-        const entries: SkinEntry[] = [];
+        const entries: SkinEntryLike[] = [];
 
-        skin?.getAttachmentsForSlot(slot.data.index, entries);
+        skin?.getAttachmentsForSlot(slot.data.index, entries as never[]);
 
         return entries.length === 1 ? entries[0]?.attachment : undefined;
     }
 
     /** Walks the registry, narrowed to the given ids when the caller passes a set. */
-    private eachSpine(only: Set<SpineID> | undefined, wire: (spine: Spine, spineID: SpineID) => void) {
+    private eachSpine(
+        only: Set<SpineID> | undefined,
+        wire: (spine: T['Spine'], spineID: SpineID) => void,
+    ) {
         this.spines.forEach((spine, spineID) => {
             if (only && !only.has(spineID)) return;
             wire(spine, spineID);
@@ -317,8 +291,8 @@ export class SceneController {
     }
 
     /** Returns the name of the nearest `button_<key>` bone the slot hangs from, if any. */
-    private findButtonBoneAncestor(slot: Slot): string | undefined {
-        for (let bone: Bone | null = slot.bone; bone; bone = bone.parent) {
+    private findButtonBoneAncestor(slot: SlotLike): string | undefined {
+        for (let bone: BoneLike | null = slot.bone; bone; bone = bone.parent) {
             if (bone.data.name.startsWith(parcePointers.slot.button)) return bone.data.name;
         }
         return undefined;
@@ -335,28 +309,30 @@ export class SceneController {
      * the shared ancestor, which is not a hit area, and nothing on the button itself), while
      * releasing off the button is the distinct `up_out`.
      */
-    private wireButton(group: ButtonGroup) {
-        group.targets.forEach((target) => {
-            exposeToHitTesting(target);
-            target.eventMode = 'static';
-            target.cursor = 'pointer';
+    private wireButton(group: ButtonGroup<T['Container']>) {
+        const { display } = this.engine;
 
-            target.on('pointerover', () => {
+        group.targets.forEach((target) => {
+            display.exposeToHitTesting(target);
+            display.setInteractive(target, 'static');
+            display.setCursor(target, 'pointer');
+
+            display.on(target, 'pointerover', () => {
                 group.hovered.add(target);
                 this.queueHoverSync(group);
             });
-            target.on('pointerout', () => {
+            display.on(target, 'pointerout', () => {
                 group.hovered.delete(target);
                 this.queueHoverSync(group);
             });
-            target.on('pointerdown', () => {
+            display.on(target, 'pointerdown', () => {
                 group.isPressed = true;
                 this.trigger(group, 'down');
             });
             // Pixi dispatches `pointerup` on the released-over target before
             // `pointerupoutside` on the pressed one, so consuming the press here is what
             // keeps a release inside the button from also counting as a release outside it.
-            target.on('pointerup', (event: FederatedPointerEvent) => {
+            display.on(target, 'pointerup', (event: PointerEventLike) => {
                 if (!group.isPressed) return;
                 group.isPressed = false;
                 this.trigger(group, 'up');
@@ -371,7 +347,7 @@ export class SceneController {
                     this.trigger(group, 'out');
                 }
             });
-            target.on('pointerupoutside', () => {
+            display.on(target, 'pointerupoutside', () => {
                 if (!group.isPressed) return;
                 group.isPressed = false;
                 this.trigger(group, 'up_out');
@@ -389,7 +365,7 @@ export class SceneController {
      * only on a real change — means crossing a seam inside the button stays silent, instead
      * of replaying `hover` (and any sound its animation fires) on every internal border.
      */
-    private queueHoverSync(group: ButtonGroup) {
+    private queueHoverSync(group: ButtonGroup<T['Container']>) {
         if (group.hoverSyncQueued) return;
         group.hoverSyncQueued = true;
 
@@ -411,7 +387,7 @@ export class SceneController {
      * Nested spines are played by instance rather than through an `event_` folder, so other
      * instances of the same skeleton (a second copy of the same button) stay idle.
      */
-    private trigger(group: ButtonGroup, interaction: ButtonInteraction) {
+    private trigger(group: ButtonGroup<T['Container']>, interaction: ButtonInteraction) {
         const { events, animations } = BUTTON_INTERACTIONS[interaction];
 
         events.forEach((event) =>
@@ -438,13 +414,13 @@ export class SceneController {
      * animates all of them. Resolved per interaction instead of cached at wire time, so
      * spines added to the button later (`addSlotChild`) animate with it too.
      */
-    private collectNestedSpines(targets: Container[]): EmbeddedSpine[] {
-        const nested = new Map<string, Spine>();
+    private collectNestedSpines(targets: T['Container'][]): EmbeddedSpine<T>[] {
+        const nested = new Map<string, T['Spine']>();
 
-        const walk = (container: Container) => {
+        const walk = (container: T['Container']) => {
             const entry = this.findRegisteredSpine(container);
             if (entry) nested.set(entry.spineID, entry.spine);
-            container.children.forEach(walk);
+            container.children.forEach((child) => walk(child as T['Container']));
         };
         targets.forEach(walk);
 
@@ -452,21 +428,21 @@ export class SceneController {
     }
 
     /** The animations a nested spine answers the button's interactions with, for the log. */
-    private listOwnAnimations(nested: EmbeddedSpine): string[] {
+    private listOwnAnimations(nested: EmbeddedSpine<T>): string[] {
         const own = Object.values(BUTTON_INTERACTIONS).map(({ animations }) =>
             animations.find((name) => this.hasAnimation(nested.spine, name)),
         );
         return Array.from(new Set(own.filter((animation): animation is string => !!animation)));
     }
 
-    private hasAnimation(spine: Spine, animation: string): boolean {
+    private hasAnimation(spine: T['Spine'], animation: string): boolean {
         return !!spine.state.data.skeletonData.findAnimation(animation);
     }
 
     /** Resolves a slot object back to its registry entry, if it is a spine instance. */
-    private findRegisteredSpine(object: Container): EmbeddedSpine | undefined {
+    private findRegisteredSpine(object: T['Container']): EmbeddedSpine<T> | undefined {
         for (const [spineID, spine] of this.spines) {
-            if (spine === object) return { spineID, spine };
+            if ((spine as unknown) === object) return { spineID, spine };
         }
         return undefined;
     }
@@ -479,18 +455,11 @@ export class SceneController {
      * receives pointer events first.
      */
     syncSlotObjectsWithDrawOrder(only?: Set<SpineID>) {
-        this.eachSpine(only, (spine) => {
-            spine.skeleton.drawOrder.appliedPose.forEach((slot) => {
-                const container = spine.getSlotObject(slot);
-                if (container?.parent === spine) {
-                    spine.setChildIndex(container, spine.children.length - 1);
-                }
-            });
-        });
+        this.eachSpine(only, (spine) => this.engine.spine.syncSlotObjectsWithDrawOrder(spine));
     }
 
     /** Manually attaches any Pixi.js `Container` into a named slot on a specific spine. */
-    addSlotChild(spineID: string, slotName: string, child: Container) {
+    addSlotChild(spineID: string, slotName: string, child: T['Container']) {
         const spine = this.spines.get(spineID);
         if (!spine) {
             console.error(`Spine "${spineID}" not found`);
@@ -504,7 +473,7 @@ export class SceneController {
         }
 
         log.add(LOG.ADD_SLOT_CHILD, spineID, `${child} -> "${slotName}"`);
-        spine.addSlotObject(slot.name, child);
+        this.engine.spine.attachSlotObject(spine, slot.name, child);
     }
 
     /**

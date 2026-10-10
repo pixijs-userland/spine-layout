@@ -2,6 +2,7 @@ import { LOG } from '../config/logs';
 import { parcePointers } from '../config/parcePointers';
 import type { Orientation } from '../config/types';
 import { log } from '../utils/Log';
+import type { EngineTypes } from '../../engine/Engine';
 import type { AnimationsController } from './Animations.controller';
 
 type Size = { width: number; height: number };
@@ -20,7 +21,7 @@ type Size = { width: number; height: number };
  * undoes the other by replacing it; a state authored on its own has nothing to hand the pose
  * back to and holds it in both orientations.
  */
-export class OrientationController {
+export class OrientationController<T extends EngineTypes = EngineTypes> {
     /** The orientation the layout has been posed for, `undefined` before the first one. */
     #current?: Orientation;
     /** The size {@link setSize} named, for a layout that does not fill the window. */
@@ -30,7 +31,7 @@ export class OrientationController {
     /** Cancels the pose queued by {@link settle}, `undefined` when none is waiting. */
     #settling?: () => void;
 
-    constructor(private animations: AnimationsController) { }
+    constructor(private animations: AnimationsController<T>) { }
 
     // ─── setters / getters ───────────────────────────────────────────────────────
 

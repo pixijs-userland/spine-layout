@@ -1,21 +1,4 @@
 {
-    "compilerOptions": {
-        "target": "ES2022",
-        "module": "ESNext",
-        "moduleResolution": "bundler",
-        "moduleDetection": "force",
-        "skipLibCheck": true,
-        "resolveJsonModule": true,
-        "strict": true,
-        "noUnusedLocals": true,
-        "noUnusedParameters": true,
-        "noFallthroughCasesInSwitch": true,
-        "noUncheckedSideEffectImports": true,
-        "declaration": true,
-        "declarationMap": true,
-        "sourceMap": true,
-        "outDir": "dist",
-        "rootDir": "src"
-    },
-    "include": ["src"]
+    "files": [],
+    "references": [{ "path": "./tsconfig.core.json" }, { "path": "./tsconfig.pixi8.json" }]
 }

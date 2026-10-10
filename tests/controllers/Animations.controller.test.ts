@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('../../src/controllers/Sounds.controller', () => ({
+vi.mock('../../src/core/controllers/Sounds.controller', () => ({
     sounds: { playFX: vi.fn(), stopFX: vi.fn(), playMusic: vi.fn() },
 }));
 
@@ -15,10 +15,10 @@ import {
     SkeletonData,
     type Spine,
 } from '@esotericsoftware/spine-pixi-v8';
-import { AnimationsController } from '../../src/controllers/Animations.controller';
-import { sounds } from '../../src/controllers/Sounds.controller';
-import { asSpineMap, createFakeSpine, type FakeSpine } from '../helpers/fakeSpine';
-import { log } from '../../src/utils/Log';
+import { AnimationsController } from '../../src/core/controllers/Animations.controller';
+import { sounds } from '../../src/core/controllers/Sounds.controller';
+import { asSpineMap, createFakeSpine, fakeEngine, type FakeSpine } from '../helpers/fakeEngine';
+import { log } from '../../src/core/utils/Log';
 
 const soundsMock = sounds as unknown as {
     playFX: ReturnType<typeof vi.fn>;
@@ -47,7 +47,7 @@ describe('AnimationsController – registration & getters', () => {
 
     it('indexes animations by name (stripping _loop/_next modifiers) and exposes via getAll', () => {
         const hero = makeHero();
-        const ctl = new AnimationsController(asSpineMap({ hero }));
+        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero }));
         ctl.registerSpine('hero', hero as never);
 
         expect(ctl.getAll().sort()).toEqual(
@@ -57,7 +57,7 @@ describe('AnimationsController – registration & getters', () => {
 
     it('buckets animations under state_<name>/ into getStates', () => {
         const hero = makeHero();
-        const ctl = new AnimationsController(asSpineMap({ hero }));
+        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero }));
         ctl.registerSpine('hero', hero as never);
 
         expect(ctl.getStates()).toEqual(['idle']);
@@ -65,7 +65,7 @@ describe('AnimationsController – registration & getters', () => {
 
     it('buckets animations under event_<name>/ into getEvents', () => {
         const hero = makeHero();
-        const ctl = new AnimationsController(asSpineMap({ hero }));
+        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero }));
         ctl.registerSpine('hero', hero as never);
 
         expect(ctl.getEvents()).toEqual(['click']);
@@ -75,7 +75,7 @@ describe('AnimationsController – registration & getters', () => {
         const hero = makeHero();
         const prop = createFakeSpine({ animations: [{ name: 'misc/wave' }, { name: 'spin_loop' }] });
         const mute = createFakeSpine({ animations: [] });
-        const ctl = new AnimationsController(asSpineMap({ hero, prop, mute }));
+        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero, prop, mute }));
         ctl.registerSpine('hero', hero as never);
         ctl.registerSpine('prop', prop as never);
         ctl.registerSpine('mute', mute as never);
@@ -91,21 +91,21 @@ describe('AnimationsController – registration & getters', () => {
 
     it('warns when state_/event_ animation has no name segment after the slash prefix', () => {
         const hero = createFakeSpine({ animations: [{ name: 'state_' }] });
-        const ctl = new AnimationsController(asSpineMap({ hero }));
+        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero }));
         ctl.registerSpine('hero', hero as never);
 
         expect(warn).toHaveBeenCalledWith('Animation state_ does not have a state name.');
     });
 
     it('returns empty arrays for active/looping until something is played', () => {
-        const ctl = new AnimationsController(new Map());
+        const ctl = new AnimationsController(fakeEngine, new Map());
         expect(ctl.getActive()).toEqual([]);
         expect(ctl.getLooping()).toEqual([]);
     });
 
     it('attaches an event listener to the spine state during registration', () => {
         const hero = makeHero();
-        const ctl = new AnimationsController(asSpineMap({ hero }));
+        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero }));
         ctl.registerSpine('hero', hero as never);
 
         expect(hero.__listeners.length).toBe(1);
@@ -135,7 +135,7 @@ describe('AnimationsController – track allocation', () => {
     beforeEach(() => {
         vi.useFakeTimers();
         ui = createFakeSpine({ animations: UI });
-        ctl = new AnimationsController(asSpineMap({ ui }));
+        ctl = new AnimationsController(fakeEngine, asSpineMap({ ui }));
         ctl.registerSpine('ui', ui as never);
     });
 
@@ -204,7 +204,7 @@ describe('AnimationsController – track allocation', () => {
                 { name: 'whole_body', duration: 1, poses: ['bone:head', 'bone:tail'] },
             ],
         });
-        const controller = new AnimationsController(asSpineMap({ beast: spine }));
+        const controller = new AnimationsController(fakeEngine, asSpineMap({ beast: spine }));
         controller.registerSpine('beast', spine as never);
 
         void controller.play('beast', 'head'); // track 0
@@ -227,7 +227,7 @@ describe('AnimationsController – track allocation', () => {
                 { name: 'pong', duration: 0.1 },
             ],
         });
-        const controller = new AnimationsController(asSpineMap({ bell: spine }));
+        const controller = new AnimationsController(fakeEngine, asSpineMap({ bell: spine }));
         controller.registerSpine('bell', spine as never);
 
         void controller.play('bell', 'ping');
@@ -254,7 +254,7 @@ describe('AnimationsController – never-applied entries', () => {
         const payline = createFakeSpine({
             animations: [{ name: 'show', duration: 1, poses: ['slot:glow'] }],
         });
-        const ctl = new AnimationsController(asSpineMap({ payline }));
+        const ctl = new AnimationsController(fakeEngine, asSpineMap({ payline }));
         ctl.registerSpine('payline', payline as never);
 
         void ctl.play('payline', 'show', true);
@@ -281,7 +281,7 @@ describe('AnimationsController – never-applied entries', () => {
                 { name: 'idle', duration: 1, poses: [`${Property.attachment}|0`] },
             ],
         });
-        const ctl = new AnimationsController(asSpineMap({ board }));
+        const ctl = new AnimationsController(fakeEngine, asSpineMap({ board }));
         ctl.registerSpine('board', board as never);
 
         void ctl.play('board', 'inactive');
@@ -306,7 +306,7 @@ describe('AnimationsController – never-applied entries', () => {
                 { name: 'idle', duration: 1, poses: [`${Property.attachment}|0`] },
             ],
         });
-        const ctl = new AnimationsController(asSpineMap({ board }));
+        const ctl = new AnimationsController(fakeEngine, asSpineMap({ board }));
         ctl.registerSpine('board', board as never);
 
         const reel = board.skeleton.bones[0]!;
@@ -328,7 +328,7 @@ describe('AnimationsController – never-applied entries', () => {
                 { name: 'idle', duration: 1, poses: ['slot:symbol'] },
             ],
         });
-        const ctl = new AnimationsController(asSpineMap({ board }));
+        const ctl = new AnimationsController(fakeEngine, asSpineMap({ board }));
         ctl.registerSpine('board', board as never);
 
         void ctl.play('board', 'inactive');
@@ -365,7 +365,7 @@ describe('AnimationsController – never-applied entries', () => {
             state: new AnimationState(new AnimationStateData(data)),
         } as unknown as Spine;
 
-        const ctl = new AnimationsController(new Map([['payline', spine]]));
+        const ctl = new AnimationsController(fakeEngine, new Map([['payline', spine]]));
         ctl.registerSpine('payline', spine);
 
         const point = spine.skeleton.findBone('point1')!;
@@ -407,7 +407,7 @@ describe('AnimationsController – never-applied entries', () => {
             state: new AnimationState(new AnimationStateData(data)),
         } as unknown as Spine;
 
-        const ctl = new AnimationsController(new Map([['payline', spine]]));
+        const ctl = new AnimationsController(fakeEngine, new Map([['payline', spine]]));
         ctl.registerSpine('payline', spine);
 
         const reelBone = spine.skeleton.findBone('reel')!;
@@ -436,7 +436,7 @@ describe('AnimationsController – playback', () => {
     it('playByName triggers setAnimation on every spine that has it', async () => {
         const hero = makeHero();
         const enemy = makeHero();
-        const ctl = new AnimationsController(asSpineMap({ hero, enemy }));
+        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero, enemy }));
         ctl.registerSpine('hero', hero as never);
         ctl.registerSpine('enemy', enemy as never);
 
@@ -451,7 +451,7 @@ describe('AnimationsController – playback', () => {
     it('playByName leaves the other spines alone when given one to play on', async () => {
         const hero = makeHero();
         const enemy = makeHero();
-        const ctl = new AnimationsController(asSpineMap({ hero, enemy }));
+        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero, enemy }));
         ctl.registerSpine('hero', hero as never);
         ctl.registerSpine('enemy', enemy as never);
 
@@ -470,7 +470,7 @@ describe('AnimationsController – playback', () => {
                 { name: 'b', duration: 0.1, poses: ['bone:tail'] },
             ],
         });
-        const ctl = new AnimationsController(asSpineMap({ hero }));
+        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero }));
         ctl.registerSpine('hero', hero as never);
 
         const p1 = ctl.play('hero', 'a');
@@ -485,7 +485,7 @@ describe('AnimationsController – playback', () => {
         const hero = createFakeSpine({
             animations: [{ name: 'idle_loop', duration: 1 }],
         });
-        const ctl = new AnimationsController(asSpineMap({ hero }));
+        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero }));
         ctl.registerSpine('hero', hero as never);
 
         const promise = ctl.play('hero', 'idle_loop');
@@ -504,7 +504,7 @@ describe('AnimationsController – playback', () => {
                 { name: 'b', duration: 1 },
             ],
         });
-        const ctl = new AnimationsController(asSpineMap({ hero }));
+        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero }));
         ctl.registerSpine('hero', hero as never);
 
         // Start "a" non-solo so an active animation is recorded.
@@ -519,7 +519,7 @@ describe('AnimationsController – playback', () => {
 
     it('play logs error and resolves when spine is unknown', async () => {
         const err = vi.spyOn(console, 'error').mockImplementation(() => {});
-        const ctl = new AnimationsController(new Map());
+        const ctl = new AnimationsController(fakeEngine, new Map());
         await ctl.play('missing', 'anim');
         expect(err).toHaveBeenCalledWith('Spine missing not found');
     });
@@ -528,7 +528,7 @@ describe('AnimationsController – playback', () => {
         const hero = createFakeSpine({
             animations: [{ name: 'a', duration: 1 }],
         });
-        const ctl = new AnimationsController(asSpineMap({ hero }));
+        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero }));
         ctl.registerSpine('hero', hero as never);
 
         // The first call uses track 0; the second should be deduped even though
@@ -544,7 +544,7 @@ describe('AnimationsController – playback', () => {
     it('playState dispatches to all spines that have an animation in that state', async () => {
         const hero = makeHero();
         const enemy = makeHero();
-        const ctl = new AnimationsController(asSpineMap({ hero, enemy }));
+        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero, enemy }));
         ctl.registerSpine('hero', hero as never);
         ctl.registerSpine('enemy', enemy as never);
 
@@ -576,7 +576,7 @@ describe('AnimationsController – playback', () => {
         log.enabled = true;
 
         const hero = makeHero();
-        const ctl = new AnimationsController(asSpineMap({ hero }));
+        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero }));
         ctl.registerSpine('hero', hero as never);
 
         const promise = run(ctl);
@@ -592,7 +592,7 @@ describe('AnimationsController – playback', () => {
 
     it('playEvent invokes registered listeners and plays event animations', async () => {
         const hero = makeHero();
-        const ctl = new AnimationsController(asSpineMap({ hero }));
+        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero }));
         ctl.registerSpine('hero', hero as never);
 
         const listener = vi.fn();
@@ -608,7 +608,7 @@ describe('AnimationsController – playback', () => {
 
     it('routes skeleton events through playEvent (registered via registerSpine)', async () => {
         const hero = makeHero();
-        const ctl = new AnimationsController(asSpineMap({ hero }));
+        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero }));
         ctl.registerSpine('hero', hero as never);
 
         const listener = vi.fn();
@@ -631,7 +631,7 @@ describe('AnimationsController – playback', () => {
 
         try {
             const hero = makeHero();
-            const ctl = new AnimationsController(asSpineMap({ hero }));
+            const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero }));
             ctl.registerSpine('hero', hero as never);
 
             hero.triggerEvent('vibration_50');
@@ -648,7 +648,7 @@ describe('AnimationsController – playback', () => {
 
     it('playSolo stops all tracks then plays the named animation', async () => {
         const hero = createFakeSpine({ animations: [{ name: 'a', duration: 0.1 }] });
-        const ctl = new AnimationsController(asSpineMap({ hero }));
+        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero }));
         ctl.registerSpine('hero', hero as never);
 
         await ctl.playSolo('a');
@@ -660,7 +660,7 @@ describe('AnimationsController – playback', () => {
 
     it('speed setter propagates to all spines', () => {
         const hero = createFakeSpine();
-        const ctl = new AnimationsController(asSpineMap({ hero }));
+        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero }));
         ctl.speed = 2;
 
         expect(hero.state.timeScale).toBe(2);
@@ -670,7 +670,7 @@ describe('AnimationsController – playback', () => {
     it('setSpineSpeed paces one spine against the layout speed, leaving the others on it', () => {
         const hero = createFakeSpine();
         const villain = createFakeSpine();
-        const ctl = new AnimationsController(asSpineMap({ hero, villain }));
+        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero, villain }));
 
         ctl.setSpineSpeed('hero', 2);
 
@@ -687,7 +687,7 @@ describe('AnimationsController – playback', () => {
 
     it('play keeps a spine on its own speed instead of the layout speed', async () => {
         const hero = createFakeSpine({ animations: [{ name: 'a', duration: 1 }] });
-        const ctl = new AnimationsController(asSpineMap({ hero }));
+        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero }));
         ctl.registerSpine('hero', hero as never);
         ctl.setSpineSpeed('hero', 2);
 
@@ -702,7 +702,7 @@ describe('AnimationsController – playback', () => {
 
     it('setSpineSpeed hands a spine back to the layout pace when given 1', () => {
         const hero = createFakeSpine();
-        const ctl = new AnimationsController(asSpineMap({ hero }));
+        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero }));
 
         ctl.setSpineSpeed('hero', 2);
         ctl.setSpineSpeed('hero', 1);
@@ -714,7 +714,7 @@ describe('AnimationsController – playback', () => {
 
     it('pauseBySpineID sets timeScale to 0 on the target spine', () => {
         const hero = createFakeSpine();
-        const ctl = new AnimationsController(asSpineMap({ hero }));
+        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero }));
         hero.state.timeScale = 1;
         ctl.pauseBySpineID('hero');
         expect(hero.state.timeScale).toBe(0);
@@ -722,7 +722,7 @@ describe('AnimationsController – playback', () => {
 
     it('stopAll clears tracks, resets pose, and empties registries on every spine', async () => {
         const hero = createFakeSpine({ animations: [{ name: 'a', duration: 0.1 }] });
-        const ctl = new AnimationsController(asSpineMap({ hero }));
+        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero }));
         ctl.registerSpine('hero', hero as never);
 
         void ctl.play('hero', 'a');
@@ -744,7 +744,7 @@ describe('AnimationsController – playback', () => {
                 { name: 'b_loop', duration: 1, poses: ['bone:tail'] },
             ],
         });
-        const ctl = new AnimationsController(asSpineMap({ hero }));
+        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero }));
         ctl.registerSpine('hero', hero as never);
 
         void ctl.play('hero', 'a');
@@ -760,7 +760,7 @@ describe('AnimationsController – playback', () => {
 
     it('stopState stops every animation under the state and optionally resets pose', async () => {
         const hero = makeHero();
-        const ctl = new AnimationsController(asSpineMap({ hero }));
+        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero }));
         ctl.registerSpine('hero', hero as never);
 
         const promise = ctl.playState('idle');
@@ -773,7 +773,7 @@ describe('AnimationsController – playback', () => {
 
     it('clear empties all internal maps', async () => {
         const hero = makeHero();
-        const ctl = new AnimationsController(asSpineMap({ hero }));
+        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero }));
         ctl.registerSpine('hero', hero as never);
         ctl.addEventListener('click', () => {});
 
@@ -801,14 +801,14 @@ describe('AnimationsController – pause', () => {
     });
 
     it('logs an error when the spine is unknown', () => {
-        const ctl = new AnimationsController(new Map());
+        const ctl = new AnimationsController(fakeEngine, new Map());
         ctl.pause('missing', 'a');
         expect(err).toHaveBeenCalledWith('Spine missing not found');
     });
 
     it('is a no-op when the animation is not currently tracked on the spine', () => {
         const hero = createFakeSpine({ animations: [{ name: 'a', duration: 1 }] });
-        const ctl = new AnimationsController(asSpineMap({ hero }));
+        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero }));
         ctl.registerSpine('hero', hero as never);
 
         ctl.pause('hero', 'a');
@@ -819,7 +819,7 @@ describe('AnimationsController – pause', () => {
 
     it('freezes the active track at its current trackTime', async () => {
         const hero = createFakeSpine({ animations: [{ name: 'a', duration: 1 }] });
-        const ctl = new AnimationsController(asSpineMap({ hero }));
+        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero }));
         ctl.registerSpine('hero', hero as never);
 
         void ctl.play('hero', 'a');
@@ -837,7 +837,7 @@ describe('AnimationsController – pause', () => {
 
     it('freezes a looping track when the animation was started with _loop modifier', async () => {
         const hero = createFakeSpine({ animations: [{ name: 'idle_loop', duration: 1 }] });
-        const ctl = new AnimationsController(asSpineMap({ hero }));
+        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero }));
         ctl.registerSpine('hero', hero as never);
 
         void ctl.play('hero', 'idle_loop');
@@ -866,14 +866,14 @@ describe('AnimationsController – reset', () => {
     });
 
     it('logs an error when the spine is unknown', () => {
-        const ctl = new AnimationsController(new Map());
+        const ctl = new AnimationsController(fakeEngine, new Map());
         ctl.reset('missing', 'a');
         expect(err).toHaveBeenCalledWith('Spine missing not found');
     });
 
     it('clears the active track and restores bones+slots to setup pose', async () => {
         const hero = createFakeSpine({ animations: [{ name: 'a', duration: 1 }] });
-        const ctl = new AnimationsController(asSpineMap({ hero }));
+        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero }));
         ctl.registerSpine('hero', hero as never);
 
         void ctl.play('hero', 'a');
@@ -896,7 +896,7 @@ describe('AnimationsController – reset', () => {
 
     it('clears the looping track when called on a _loop animation', async () => {
         const hero = createFakeSpine({ animations: [{ name: 'idle_loop', duration: 1 }] });
-        const ctl = new AnimationsController(asSpineMap({ hero }));
+        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero }));
         ctl.registerSpine('hero', hero as never);
 
         void ctl.play('hero', 'idle_loop');
@@ -911,7 +911,7 @@ describe('AnimationsController – reset', () => {
 
     it('still resets the pose even when the animation is not tracked', () => {
         const hero = createFakeSpine({ animations: [{ name: 'a', duration: 1 }] });
-        const ctl = new AnimationsController(asSpineMap({ hero }));
+        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero }));
         ctl.registerSpine('hero', hero as never);
 
         ctl.reset('hero', 'a');
@@ -945,7 +945,7 @@ describe('AnimationsController – animation-triggered FX', () => {
 
     it('stop stops the FX the animation triggered', async () => {
         const hero = makeSpineWithFX();
-        const ctl = new AnimationsController(asSpineMap({ hero }));
+        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero }));
         ctl.registerSpine('hero', hero as never);
 
         void ctl.play('hero', 'a');
@@ -960,7 +960,7 @@ describe('AnimationsController – animation-triggered FX', () => {
 
     it('treats a *_loop event as a looping FX, not music, and stops it with the animation', async () => {
         const hero = makeSpineWithFX();
-        const ctl = new AnimationsController(asSpineMap({ hero }));
+        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero }));
         ctl.registerSpine('hero', hero as never);
 
         void ctl.play('hero', 'a');
@@ -977,7 +977,7 @@ describe('AnimationsController – animation-triggered FX', () => {
 
     it('stop leaves FX triggered by a different animation playing', async () => {
         const hero = makeSpineWithFX();
-        const ctl = new AnimationsController(asSpineMap({ hero }));
+        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero }));
         ctl.registerSpine('hero', hero as never);
 
         void ctl.play('hero', 'a');
@@ -992,7 +992,7 @@ describe('AnimationsController – animation-triggered FX', () => {
 
     it('leaves music alone — a music_* event is not stopped with its animation', async () => {
         const hero = makeSpineWithFX();
-        const ctl = new AnimationsController(asSpineMap({ hero }));
+        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero }));
         ctl.registerSpine('hero', hero as never);
 
         void ctl.play('hero', 'a');
@@ -1008,7 +1008,7 @@ describe('AnimationsController – animation-triggered FX', () => {
 
     it('routes a music track without the _loop suffix to the music channel too', async () => {
         const hero = makeSpineWithFX();
-        const ctl = new AnimationsController(asSpineMap({ hero }));
+        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero }));
         ctl.registerSpine('hero', hero as never);
 
         void ctl.play('hero', 'a');
@@ -1021,7 +1021,7 @@ describe('AnimationsController – animation-triggered FX', () => {
 
     it('routes an event with music anywhere in its name to the music channel', async () => {
         const hero = makeSpineWithFX();
-        const ctl = new AnimationsController(asSpineMap({ hero }));
+        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero }));
         ctl.registerSpine('hero', hero as never);
 
         void ctl.play('hero', 'a');
@@ -1038,7 +1038,7 @@ describe('AnimationsController – animation-triggered FX', () => {
 
     it('keeps an FX playing while another running animation also triggered it', async () => {
         const hero = makeSpineWithFX();
-        const ctl = new AnimationsController(asSpineMap({ hero }));
+        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero }));
         ctl.registerSpine('hero', hero as never);
 
         void ctl.play('hero', 'a');
@@ -1059,7 +1059,7 @@ describe('AnimationsController – animation-triggered FX', () => {
 
     it('reset stops the FX the animation triggered', async () => {
         const hero = makeSpineWithFX();
-        const ctl = new AnimationsController(asSpineMap({ hero }));
+        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero }));
         ctl.registerSpine('hero', hero as never);
 
         void ctl.play('hero', 'a');
@@ -1073,7 +1073,7 @@ describe('AnimationsController – animation-triggered FX', () => {
 
     it('stopState stops the FX triggered by the state animations', async () => {
         const hero = makeHero();
-        const ctl = new AnimationsController(asSpineMap({ hero }));
+        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero }));
         ctl.registerSpine('hero', hero as never);
 
         void ctl.playState('idle');
@@ -1088,7 +1088,7 @@ describe('AnimationsController – animation-triggered FX', () => {
     it('stopAllForSpine stops that spine FX and leaves other spines untouched', async () => {
         const hero = makeSpineWithFX();
         const enemy = makeSpineWithFX();
-        const ctl = new AnimationsController(asSpineMap({ hero, enemy }));
+        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero, enemy }));
         ctl.registerSpine('hero', hero as never);
         ctl.registerSpine('enemy', enemy as never);
 
@@ -1107,7 +1107,7 @@ describe('AnimationsController – animation-triggered FX', () => {
     it('stopAll stops the FX triggered on every spine', async () => {
         const hero = makeSpineWithFX();
         const enemy = makeSpineWithFX();
-        const ctl = new AnimationsController(asSpineMap({ hero, enemy }));
+        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero, enemy }));
         ctl.registerSpine('hero', hero as never);
         ctl.registerSpine('enemy', enemy as never);
 
@@ -1125,7 +1125,7 @@ describe('AnimationsController – animation-triggered FX', () => {
 
     it('clear stops the FX triggered by all animations', async () => {
         const hero = makeSpineWithFX();
-        const ctl = new AnimationsController(asSpineMap({ hero }));
+        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero }));
         ctl.registerSpine('hero', hero as never);
 
         void ctl.play('hero', 'a');
@@ -1139,7 +1139,7 @@ describe('AnimationsController – animation-triggered FX', () => {
 
     it('unregisterSpine stops the FX that spine triggered', async () => {
         const hero = makeSpineWithFX();
-        const ctl = new AnimationsController(asSpineMap({ hero }));
+        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero }));
         ctl.registerSpine('hero', hero as never);
 
         void ctl.play('hero', 'a');
@@ -1153,7 +1153,7 @@ describe('AnimationsController – animation-triggered FX', () => {
 
     it('re-triggers and re-stops the FX after the animation is replayed', async () => {
         const hero = makeSpineWithFX();
-        const ctl = new AnimationsController(asSpineMap({ hero }));
+        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero }));
         ctl.registerSpine('hero', hero as never);
 
         void ctl.play('hero', 'a');
@@ -1170,7 +1170,7 @@ describe('AnimationsController – animation-triggered FX', () => {
 
     it('does not throw when an event fires without a track entry', async () => {
         const hero = makeSpineWithFX();
-        const ctl = new AnimationsController(asSpineMap({ hero }));
+        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero }));
         ctl.registerSpine('hero', hero as never);
 
         void ctl.play('hero', 'a');
@@ -1188,7 +1188,7 @@ describe('AnimationsController – addEventListener / removeEventListener', () =
 
     it('registered listener is invoked when the matching event fires via playEvent', async () => {
         const hero = makeHero();
-        const ctl = new AnimationsController(asSpineMap({ hero }));
+        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero }));
         ctl.registerSpine('hero', hero as never);
 
         const cb = vi.fn();
@@ -1204,7 +1204,7 @@ describe('AnimationsController – addEventListener / removeEventListener', () =
 
     it('payload is merged into the listener event object', async () => {
         const hero = makeHero();
-        const ctl = new AnimationsController(asSpineMap({ hero }));
+        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero }));
         ctl.registerSpine('hero', hero as never);
 
         const cb = vi.fn();
@@ -1223,7 +1223,7 @@ describe('AnimationsController – addEventListener / removeEventListener', () =
 
     it('a payload cannot override eventName', async () => {
         const hero = makeHero();
-        const ctl = new AnimationsController(asSpineMap({ hero }));
+        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero }));
         ctl.registerSpine('hero', hero as never);
 
         const cb = vi.fn();
@@ -1237,7 +1237,7 @@ describe('AnimationsController – addEventListener / removeEventListener', () =
     });
 
     it('multiple listeners on the same event are all invoked', async () => {
-        const ctl = new AnimationsController(new Map());
+        const ctl = new AnimationsController(fakeEngine, new Map());
 
         const a = vi.fn();
         const b = vi.fn();
@@ -1253,7 +1253,7 @@ describe('AnimationsController – addEventListener / removeEventListener', () =
 
     it('"*" wildcard listener receives every skeleton event', async () => {
         const hero = makeHero();
-        const ctl = new AnimationsController(asSpineMap({ hero }));
+        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero }));
         ctl.registerSpine('hero', hero as never);
 
         const wildcard = vi.fn();
@@ -1266,7 +1266,7 @@ describe('AnimationsController – addEventListener / removeEventListener', () =
     });
 
     it('removeEventListener stops the callback from being called', async () => {
-        const ctl = new AnimationsController(new Map());
+        const ctl = new AnimationsController(fakeEngine, new Map());
 
         const cb = vi.fn();
         ctl.addEventListener('win', cb);
@@ -1279,7 +1279,7 @@ describe('AnimationsController – addEventListener / removeEventListener', () =
     });
 
     it('removeEventListener removes only the specified listener, leaving others intact', async () => {
-        const ctl = new AnimationsController(new Map());
+        const ctl = new AnimationsController(fakeEngine, new Map());
 
         const keep = vi.fn();
         const remove = vi.fn();
@@ -1295,12 +1295,12 @@ describe('AnimationsController – addEventListener / removeEventListener', () =
     });
 
     it('removeEventListener is a no-op when no listeners exist for the event', () => {
-        const ctl = new AnimationsController(new Map());
+        const ctl = new AnimationsController(fakeEngine, new Map());
         expect(() => ctl.removeEventListener('nonexistent', vi.fn())).not.toThrow();
     });
 
     it('removeEventListener is a no-op when the function was never registered', async () => {
-        const ctl = new AnimationsController(new Map());
+        const ctl = new AnimationsController(fakeEngine, new Map());
 
         const registered = vi.fn();
         const unregistered = vi.fn();
@@ -1317,19 +1317,17 @@ describe('AnimationsController – addEventListener / removeEventListener', () =
 describe('AnimationsController – playLastFrame', () => {
     it('warns when spine is unknown', async () => {
         const err = vi.spyOn(console, 'error').mockImplementation(() => {});
-        const ctl = new AnimationsController(new Map());
+        const ctl = new AnimationsController(fakeEngine, new Map());
         await ctl.playLastFrame('missing', 'anim');
         expect(err).toHaveBeenCalledWith('Track spine not found');
     });
 
     it('seeks to the end of the animation via trackEntry.trackTime', async () => {
-        const trackEntry = { trackTime: 0, animationEnd: 5 };
         const hero = createFakeSpine({ animations: [{ name: 'a', duration: 5 }] });
-        hero.state.getTrack = () => trackEntry;
 
-        const ctl = new AnimationsController(asSpineMap({ hero }));
+        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero }));
         await ctl.playLastFrame('hero', 'a');
 
-        expect(trackEntry.trackTime).toBe(5);
+        expect(hero.state.tracks[0]?.trackTime).toBe(5);
     });
 });

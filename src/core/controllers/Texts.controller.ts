@@ -1,6 +1,6 @@
-import { Assets, BitmapFontManager, BitmapText, Container, Text } from 'pixi.js';
-import type { TextStyleOptions } from 'pixi.js';
-import type { Spine, SlotData } from '@esotericsoftware/spine-pixi-v8';
+import type { BitmapInk, Engine, EngineTypes } from '../../engine/Engine';
+import type { SlotDataLike } from '../../engine/runtime';
+import type { TextStyleOf, TextStyleOptionsOf } from '../types';
 import type {
     SpineID,
     TextSetOptions,
@@ -34,9 +34,11 @@ const INK_PROBE = '0';
 /** No shift at all — the common "nothing to compensate" case, shared rather than allocated. */
 const ORIGIN = { x: 0, y: 0 } as const;
 
-export class TextsController {
+type AnyText<T extends EngineTypes> = T['Text'] | T['BitmapText'];
+
+export class TextsController<T extends EngineTypes = EngineTypes> {
     /** Text nodes keyed by their registration key (see {@link configKey}). */
-    private texts: Map<SpineID, Text | BitmapText> = new Map();
+    private texts: Map<SpineID, AnyText<T>> = new Map();
     /** Maps each registration key back to the spine + slot text key it was created from. */
     #meta: Map<string, { spineID?: string; textKey: string }> = new Map();
     #textSettings: TextsJson | undefined;
@@ -72,23 +74,28 @@ export class TextsController {
      *   standalone.
      */
     constructor(
-        private spines: Map<SpineID, Spine>,
+        private engine: Engine<T>,
+        private spines: Map<SpineID, T['Spine']>,
         private multipleInstanceIDs: Set<string> = new Set(),
-        private animations?: AnimationsController,
+        private animations?: AnimationsController<T>,
     ) { }
 
     /** Returns all active text instances (both `Text` and `BitmapText`) keyed by bone name. */
-    getInstances(): Map<SpineID, Text | BitmapText> {
+    getInstances(): Map<SpineID, AnyText<T>> {
         return this.texts;
     }
 
     /** Returns only the `BitmapText` instances, keyed by bone name. */
-    getBitmapInstances(): Map<SpineID, BitmapText> {
-        const result = new Map<SpineID, BitmapText>();
+    getBitmapInstances(): Map<SpineID, T['BitmapText']> {
+        const result = new Map<SpineID, T['BitmapText']>();
         this.texts.forEach((text, key) => {
-            if (text instanceof BitmapText) result.set(key, text);
+            if (this.isBitmap(text)) result.set(key, text);
         });
         return result;
+    }
+
+    private isBitmap(text: AnyText<T>): text is T['BitmapText'] {
+        return this.engine.text.isBitmapText(text);
     }
 
     /** Returns a map of spineID → list of text slot names for each spine that has text slots. */
@@ -417,15 +424,14 @@ export class TextsController {
         const existing = this.texts.get(key);
         if (!existing) return;
 
-        const isCurrentBitmap = existing instanceof BitmapText;
+        const isCurrentBitmap = this.isBitmap(existing);
         const needsBitmap = newType === 'bitmapText';
         if (isCurrentBitmap === needsBitmap) return;
 
         const parent = existing.parent;
         if (!parent) return;
 
-        const newText = needsBitmap ? new BitmapText() : new Text();
-        newText.anchor.set(0.5, 0.5);
+        const newText = this.createText(needsBitmap);
         newText.text = existing.text;
 
         parent.removeChild(existing);
@@ -457,13 +463,13 @@ export class TextsController {
      * A node that is already a `Text` is left alone. It renders through the browser already,
      * and the bitmap glyphs that would have sized it are gone.
      */
-    useSystemFont(boneName: string, style: TextStyleOptions = {}) {
+    useSystemFont(boneName: string, style: TextStyleOptionsOf<T> = {} as TextStyleOptionsOf<T>) {
         this.resolveKeys(boneName).forEach((key) => this.useSystemFontOne(key, style));
     }
 
-    private useSystemFontOne(key: string, style: TextStyleOptions) {
+    private useSystemFontOne(key: string, style: TextStyleOptionsOf<T>) {
         const bitmap = this.texts.get(key);
-        if (!(bitmap instanceof BitmapText)) return;
+        if (!bitmap || !this.isBitmap(bitmap)) return;
 
         // measured first, while there are still glyphs to measure
         const height = this.inkHeight(bitmap);
@@ -479,13 +485,13 @@ export class TextsController {
         // units tall — and mean nothing to a `Text`, which takes both in pixels. The
         // alignment is the one key that carries, and it has to be set here because
         // `applyAlign` only speaks to bitmap nodes.
-        text.style = {
+        this.engine.text.applyStyle(text, {
             align: entry?.align ?? 'center',
-            ...style,
+            ...(style as Record<string, unknown>),
             // a node with nothing measurable keeps pixi's default size, which is at least a
             // word on screen to be seen and fixed
             ...(height && { fontSize: height / INK_PER_EM }),
-        };
+        });
 
         // The node stays exactly where it was, which is now the right answer for either kind:
         // the bitmap glyphs were centred on the bone, and a `Text` centres itself on the same
@@ -498,7 +504,7 @@ export class TextsController {
      * measured against {@link INK_PROBE} when the node's own value has nothing to measure,
      * which is the case whenever the caller has already written the undrawable string into it.
      */
-    private inkHeight(text: BitmapText): number | undefined {
+    private inkHeight(text: T['BitmapText']): number | undefined {
         const measured = this.glyphInk(text);
         if (measured) return measured.height;
 
@@ -510,17 +516,15 @@ export class TextsController {
         return probed?.height;
     }
 
-    /** Applies a partial Pixi.js `TextStyle` to the named text node. */
-    setStyle(boneName: string, style: Partial<Text['style']>) {
+    /** Applies a partial style, in the engine's own terms, to the named text node. */
+    setStyle(boneName: string, style: TextStyleOf<T>) {
         const keys = this.resolveKeys(boneName);
         if (keys.length === 0) {
             console.error(`Text ${boneName} not found, to set style`);
             return;
         }
         keys.forEach((key) => {
-            const textObject = this.texts.get(key)!;
-            if (textObject instanceof BitmapText) style.fill = '#ffffff';
-            textObject.style = style;
+            this.engine.text.applyStyle(this.texts.get(key)!, style as Record<string, unknown>);
         });
     }
 
@@ -536,9 +540,8 @@ export class TextsController {
         // The pixi manifest registers the settings file under its shortcut alias
         // (`texts.json`) and full relative path (`<skin>/settings/texts.json`),
         // never `settings/texts.json`. Try the shortcut first, then fall back.
-        const texts = (Assets.get('texts.json') ?? Assets.get('settings/texts.json')) as
-            | TextsJson
-            | undefined;
+        const { assets } = this.engine;
+        const texts = assets.get<TextsJson>('texts.json') ?? assets.get<TextsJson>('settings/texts.json');
 
         if (texts) this.#textSettings = texts;
     }
@@ -570,7 +573,7 @@ export class TextsController {
      * created outside the normal `texts.json` registration flow (e.g. nodes from
      * {@link buildText}). Logs an error and no-ops if the spine or the slot is not found.
      */
-    addTextToSlot(spineID: string, slotName: string, text: Text | BitmapText) {
+    addTextToSlot(spineID: string, slotName: string, text: AnyText<T>) {
         const spine = this.spines.get(spineID);
         if (!spine) {
             console.error(`Spine "${spineID}" not found`);
@@ -583,7 +586,7 @@ export class TextsController {
             return;
         }
 
-        spine.addSlotObject(slot.name, text);
+        this.engine.spine.attachSlotObject(spine, slot.name, text);
     }
 
     /**
@@ -591,34 +594,31 @@ export class TextsController {
      * for a spine's text slot, without registering or attaching it. Use for nodes added
      * manually to non-`text_` slots (e.g. per-instance reward texts).
      */
-    buildText(spineID: string, textKey: string): Text | BitmapText {
+    buildText(spineID: string, textKey: string): AnyText<T> {
         const entry = this.mergedEntry(spineID, textKey);
         const isBitmap = entry?.type === 'bitmapText';
-        const text = isBitmap ? new BitmapText() : new Text();
-        text.anchor.set(0.5, 0.5);
+        const text = this.createText(isBitmap);
 
         if (entry) {
-            const style: Record<string, unknown> = { ...entry };
-            delete style.type;
-            delete style.value;
-            delete style.uppercase;
-            delete style.animateNumber;
-            delete style.offset;
-            delete style.maxWidth;
+            this.engine.text.applyEntry(text, entry);
             if (isBitmap) {
-                style.fill = '#ffffff';
-                // the box `maxWidth` names is also what the value wraps at, and it has just
-                // been dropped from the style — see wrapWidth. Nothing fits these nodes
-                // afterwards, so the width has to be right here or not at all.
+                // the box `maxWidth` names is also what the value wraps at, and nothing fits
+                // these nodes afterwards — see wrapWidth — so the width has to be right here
+                // or not at all
                 const width = this.wrapWidth(entry as TextsJsonBitmapTextEntry);
-                style.wordWrap = width > 0;
-                if (width > 0) style.wordWrapWidth = width;
+                this.engine.text.setWordWrapWidth(text, width > 0 ? width : undefined);
                 // and the same default a registered node gets — see applyAlign
-                style.align ??= 'center';
+                this.engine.text.mergeStyle(text, { align: entry.align ?? 'center' });
             }
-            text.style = style as Partial<Text['style']>;
         }
 
+        return text;
+    }
+
+    /** A fresh node anchored at its middle, which is where its bone puts it. */
+    private createText(bitmap: boolean): AnyText<T> {
+        const text = bitmap ? this.engine.text.createBitmapText() : this.engine.text.createText();
+        text.anchor.set(0.5, 0.5);
         return text;
     }
 
@@ -635,7 +635,7 @@ export class TextsController {
      * spines the node is keyed `{spineID}_{textKey}` and styled from the per-instance
      * config entry merged over the shared one (see {@link configKey}, {@link mergedEntry}).
      */
-    add(slot: SlotData, spine: Spine, textKey: string, spineID?: string): string {
+    add(slot: SlotDataLike, spine: T['Spine'], textKey: string, spineID?: string): string {
         const key = this.configKey(spineID, textKey);
         const { type, value, ...rest } = this.mergedEntry(spineID, textKey) ?? {};
         const { offset, maxWidth, maxHeight } = rest as Omit<
@@ -643,15 +643,14 @@ export class TextsController {
             'type' | 'uppercase' | 'value'
         >;
 
-        const text = type === 'bitmapText' ? new BitmapText() : new Text();
-        text.anchor.set(0.5, 0.5);
+        const text = this.createText(type === 'bitmapText');
 
         this.texts.set(key, text);
         this.#meta.set(key, { spineID, textKey });
         // before the value, so the first fit centres the node on the spot it will keep rather
         // than on its bone and then again on the offset
         this.setOffset(key, offset ?? ORIGIN);
-        this.setStyle(key, rest);
+        this.setStyle(key, rest as TextStyleOf<T>);
         // registration seeds the configured value — not a change, so no `_change` event
         this.setOne(key, value ?? '', {}, false);
 
@@ -662,9 +661,9 @@ export class TextsController {
         // A text is a view, and a view answers hit-tests with its bounding box: one interactive
         // ancestor, and a label drawn over a button swallows its clicks. A `button_` bone that
         // wraps this slot turns it interactive again (see SceneController.wireButton).
-        const wrapper = new Container({ eventMode: 'none' });
+        const wrapper = this.engine.display.container({ interactive: 'none' });
         wrapper.addChild(text);
-        spine.addSlotObject(slot.name, wrapper);
+        this.engine.spine.attachSlotObject(spine, slot.name, wrapper);
 
         return `${key} -> ${slot.name}`;
     }
@@ -706,7 +705,7 @@ export class TextsController {
      * the shift that brings them back halves with them and the value stays on its bone at every
      * size it is fitted to.
      */
-    private fit(key: string, text: Text | BitmapText) {
+    private fit(key: string, text: AnyText<T>) {
         const settings = this.settingsFor(key);
         if (settings?.type !== 'bitmapText') return;
         const entry = settings as TextsJsonBitmapTextEntry;
@@ -725,7 +724,7 @@ export class TextsController {
         // at whatever the last constrained value fitted to.
         text.scale.set(1);
 
-        const ink = text instanceof BitmapText ? this.glyphInk(text) : undefined;
+        const ink = this.isBitmap(text) ? this.glyphInk(text) : undefined;
         const { maxWidth, maxHeight } = entry;
 
         // only for a bound that is actually set: asking a node how wide it is means laying it
@@ -783,11 +782,10 @@ export class TextsController {
      * is drawing them. An entry authored as `text` never reaches here — {@link fit} turns back
      * before it — and keeps wrapping at its own `wordWrapWidth`.
      */
-    private applyWrapWidth(entry: TextsJsonBitmapTextEntry, text: Text | BitmapText) {
+    private applyWrapWidth(entry: TextsJsonBitmapTextEntry, text: AnyText<T>) {
         const width = this.wrapWidth(entry);
 
-        text.style.wordWrap = width > 0;
-        if (width > 0) text.style.wordWrapWidth = width;
+        this.engine.text.setWordWrapWidth(text, width > 0 ? width : undefined);
     }
 
     /**
@@ -800,7 +798,7 @@ export class TextsController {
      * glyph does not read as tight leading: the second line lands on top of the first, and
      * a two-line message renders as one illegible smear.
      *
-     * So the advance is measured off the glyphs instead — see {@link glyphLineHeight} — and
+     * So the advance is measured off the glyphs instead — see `TextPort.bitmapLineHeight` — and
      * handed back as `style.lineHeight`, which the layout uses in preference to the font's.
      *
      * Only ever for text that has a line to break: single-line text is laid out identically
@@ -808,19 +806,21 @@ export class TextsController {
      * exactly as it does today. An entry that sets its own `lineHeight` is left to it — a
      * number written down in `texts.json` is a decision, not a default to improve on.
      */
-    private applyLineSpacing(entry: TextsJsonBitmapTextEntry, text: Text | BitmapText) {
-        if (!(text instanceof BitmapText) || entry.lineHeight) return;
+    private applyLineSpacing(entry: TextsJsonBitmapTextEntry, text: AnyText<T>) {
+        if (!this.isBitmap(text) || entry.lineHeight) return;
+
+        const style = this.engine.text.getStyle(text);
 
         if (!this.isMultiLine(text)) {
             // back to the font's own spacing, for a field that no longer wraps
-            if (text.style.lineHeight) text.style.lineHeight = 0;
+            if (style.lineHeight) this.engine.text.mergeStyle(text, { lineHeight: 0 });
             return;
         }
 
-        const lineHeight = this.glyphLineHeight(text);
+        const lineHeight = this.engine.text.bitmapLineHeight(text);
 
-        if (lineHeight && text.style.lineHeight !== lineHeight) {
-            text.style.lineHeight = lineHeight;
+        if (lineHeight && style.lineHeight !== lineHeight) {
+            this.engine.text.mergeStyle(text, { lineHeight });
         }
     }
 
@@ -840,12 +840,14 @@ export class TextsController {
      * spend a measurement deciding, and the style is then already right for the moment the
      * value grows a second line.
      */
-    private applyAlign(entry: TextsJsonBitmapTextEntry, text: Text | BitmapText) {
-        if (!(text instanceof BitmapText)) return;
+    private applyAlign(entry: TextsJsonBitmapTextEntry, text: AnyText<T>) {
+        if (!this.isBitmap(text)) return;
 
         const align = entry.align ?? 'center';
 
-        if (text.style.align !== align) text.style.align = align;
+        if (this.engine.text.getStyle(text).align !== align) {
+            this.engine.text.mergeStyle(text, { align });
+        }
     }
 
     /**
@@ -859,52 +861,11 @@ export class TextsController {
      * value, and laying its glyphs out to be told so would cost every field that value
      * changes on.
      */
-    private isMultiLine(text: BitmapText): boolean {
+    private isMultiLine(text: T['BitmapText']): boolean {
         if (text.text.includes('\n')) return true;
-        if (!text.style.wordWrap) return false;
+        if (!this.engine.text.getStyle(text).wordWrap) return false;
 
-        const layout = BitmapFontManager.getLayout(text.text, text.style);
-
-        // the layout always closes with an empty trailing line, so the lines carrying glyphs
-        // are what it has to be counted by
-        return layout.lines.filter((line) => line.charPositions.length > 0).length > 1;
-    }
-
-    /**
-     * How tall one line of this text's glyphs actually is, in the units `style.lineHeight`
-     * is given in — the ink extent of the characters in use, from the highest top to the
-     * lowest bottom, so ascenders and descenders on neighbouring lines meet rather than
-     * overlap.
-     *
-     * Measured from the characters the text actually contains rather than the whole font:
-     * the advance then suits the message being shown, and a font carrying one outsized
-     * glyph does not space out every line that has nothing to do with it.
-     *
-     * `undefined` when there are no glyphs to measure (empty text, or characters the font
-     * does not carry), which leaves the font's own spacing in place.
-     */
-    private glyphLineHeight(text: BitmapText): number | undefined {
-        const font = BitmapFontManager.getFont(text.text, text.style);
-        const layout = BitmapFontManager.getLayout(text.text, text.style);
-
-        let top = Infinity;
-        let bottom = -Infinity;
-
-        layout.lines.forEach((line) =>
-            line.chars.forEach((character) => {
-                const char = font.chars[character];
-                if (!char?.texture) return;
-
-                top = Math.min(top, char.yOffset);
-                bottom = Math.max(bottom, char.yOffset + char.texture.orig.height);
-            }),
-        );
-
-        if (top > bottom) return undefined;
-
-        // the layout takes `style.lineHeight` in display units and divides it back into
-        // font units by this same scale, so the measurement is converted on the way out
-        return (bottom - top) * layout.scale;
+        return this.engine.text.bitmapLineCount(text) > 1;
     }
 
     /**
@@ -916,11 +877,11 @@ export class TextsController {
      * browser-drawn one is asked for its own, which is the ink it drew.
      */
     private heightOverflow(
-        text: Text | BitmapText,
+        text: AnyText<T>,
         maxHeight: number,
         inkHeight: number | undefined,
     ): number | undefined {
-        const height = text instanceof BitmapText ? inkHeight : text.height;
+        const height = this.isBitmap(text) ? inkHeight : text.height;
 
         return height && height > maxHeight ? maxHeight / height : undefined;
     }
@@ -937,98 +898,13 @@ export class TextsController {
      * `maxHeight` measured against it would never trip. `BitmapText.anchor` centres on that
      * same line box, which leaves the glyphs hundreds of units below the origin. The width
      * needs no such help: `text.width` comes from `xAdvance`, already in glyph units.
-     *
-     * Mirrors the glyph placement of pixi's bitmap text render pipe: the layout is measured in
-     * font units, offset by the anchor, then scaled by `fontSize / <font size>`.
      */
-    private glyphInk(
-        text: BitmapText,
-    ): { height: number; centre: { x: number; y: number } } | undefined {
-        // answered without measuring, and without asking pixi for the font: a value with no
-        // characters has no ink wherever it is drawn, and a family whose `.fnt` never loaded
+    private glyphInk(text: T['BitmapText']): BitmapInk | undefined {
+        // answered without measuring, and without asking the engine for the font: a value with
+        // no characters has no ink wherever it is drawn, and a family whose `.fnt` never loaded
         // would have pixi rasterise one from the browser's own fonts to say so
         if (!text.text) return undefined;
 
-        const box = this.glyphBox(text);
-        if (!box) return undefined;
-
-        const { minX, maxX, minY, maxY, layout } = box;
-
-        return {
-            height: (maxY - minY) * layout.scale,
-            centre: {
-                x: ((minX + maxX) / 2 - text.anchor.x * layout.width) * layout.scale,
-                y:
-                    ((minY + maxY) / 2 - text.anchor.y * (layout.height + layout.offsetY)) *
-                    layout.scale,
-            },
-        };
-    }
-
-    /**
-     * The bounding box of a bitmap text's rendered glyphs, in font units, plus the layout it
-     * was measured against — `undefined` when it has none (empty string, or characters
-     * missing from the font).
-     *
-     * `BitmapText.anchor` centres the node on the font's line box (`lineHeight`/`base` from
-     * the `.fnt`), not on its glyph rectangles. Our fonts are exported with the two in
-     * different units — e.g. `size=10 lineHeight=13 base=10` against glyphs ~334 units tall —
-     * so the anchor shifts the text by a handful of units while the glyphs sit hundreds of
-     * units below the origin, leaving it effectively unanchored vertically.
-     *
-     * Mirrors the glyph placement of pixi's bitmap text render pipe: the layout is measured in
-     * font units, offset by the anchor, then scaled by `fontSize / <font size>`.
-     */
-    private glyphBox(
-        text: BitmapText,
-    ):
-        | {
-              minX: number;
-              maxX: number;
-              minY: number;
-              maxY: number;
-              layout: ReturnType<typeof BitmapFontManager.getLayout>;
-          }
-        | undefined {
-        const style = text.style;
-        const font = BitmapFontManager.getFont(text.text, style);
-        const layout = BitmapFontManager.getLayout(text.text, style);
-
-        let fontSize = font.fontMetrics.fontSize;
-        let lineHeight = font.lineHeight;
-        if (style.lineHeight) {
-            fontSize = style.fontSize / layout.scale;
-            lineHeight = style.lineHeight / layout.scale;
-        }
-
-        let lineShift = (lineHeight - fontSize) / 2;
-        if (lineShift - font.baseLineOffset < 0) lineShift = 0;
-
-        let minX = Infinity;
-        let minY = Infinity;
-        let maxX = -Infinity;
-        let maxY = -Infinity;
-        let lineY = font.baseLineOffset;
-
-        layout.lines.forEach((line) => {
-            line.charPositions.forEach((position, index) => {
-                const char = font.chars[line.chars[index]];
-                const texture = char?.texture;
-                if (!texture) return;
-
-                const left = position + char.xOffset;
-                const top = lineY + char.yOffset + lineShift;
-
-                minX = Math.min(minX, left);
-                maxX = Math.max(maxX, left + texture.orig.width);
-                minY = Math.min(minY, top);
-                maxY = Math.max(maxY, top + texture.orig.height);
-            });
-            lineY += lineHeight;
-        });
-
-        if (minX > maxX) return undefined;
-
-        return { minX, maxX, minY, maxY, layout };
+        return this.engine.text.measureBitmap(text);
     }
 }

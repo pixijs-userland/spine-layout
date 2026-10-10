@@ -7,7 +7,7 @@ import type {
     SlotLike,
     AnimationStateLike,
 } from './runtime';
-import type { TextsJsonEntry } from '../config/types';
+import type { TextsJsonEntry } from '../core/config/types';
 
 /**
  * Everything the layout core needs from a rendering stack, as one object with five ports.
@@ -55,10 +55,11 @@ export interface ContainerLike {
     alpha: number;
     x: number;
     y: number;
+    rotation: number;
     position: PointLike & { set(x: number, y?: number): void; copyFrom(point: PointLike): unknown };
-    scale: PointLike & { set(x: number, y?: number): void };
-    addChild<C extends ContainerLike>(child: C): C;
-    removeChild<C extends ContainerLike>(child: C): C;
+    scale: PointLike & { set(x: number, y?: number): void; copyFrom(point: PointLike): unknown };
+    addChild(child: ContainerLike): unknown;
+    removeChild(child: ContainerLike): unknown;
     removeChildren(): ContainerLike[];
     destroy(options?: unknown): void;
     toGlobal<P extends PointLike>(position: PointLike, point?: P, skipUpdate?: boolean): P;
@@ -95,12 +96,16 @@ export interface BonePose extends PointLike {
 
 export type PoseScope = 'all' | 'bones' | 'slots' | 'drawOrder';
 
-/** What one timeline of an animation writes to. `index` is the bone/slot/constraint index. */
+/**
+ * What one timeline of an animation writes to. `index` is the bone/slot/constraint index, and
+ * `id` the runtime's own label for the property: two claims compete exactly when an `id` is in
+ * both, so a bone's rotation and its translation do not collide.
+ */
 export type PoseClaimEntry =
-    | { kind: 'bone'; index: number }
-    | { kind: 'slot'; index: number }
-    | { kind: 'constraint'; index: number }
-    | { kind: 'drawOrder' }
+    | { kind: 'bone'; index: number; id: string }
+    | { kind: 'slot'; index: number; id: string }
+    | { kind: 'constraint'; index: number; id: string }
+    | { kind: 'drawOrder'; id: string }
     | { kind: 'event' };
 
 export interface RegionTextureInfo<Texture> {
@@ -138,16 +143,24 @@ export interface SpinePort<T extends EngineTypes> {
     setupPose(skeleton: SkeletonLike, scope: PoseScope): void;
     boneToSetup(bone: BoneLike): void;
     slotToSetup(slot: SlotLike): void;
+    constraintToSetup(skeleton: SkeletonLike, index: number): void;
     updateWorldTransform(skeleton: SkeletonLike): void;
     drawOrder(skeleton: SkeletonLike): SlotLike[];
 
     claimOf(animation: AnimationLike): PoseClaimEntry[];
 
     /**
-     * The attachment's outline in the slot's bone space, as flat `x, y` pairs — a region's
-     * four corners, an unweighted mesh's hull. `undefined` when the slot shows nothing hittable.
+     * Runs `hook` after the animations are applied and before the world transforms are
+     * computed, after whatever ran there already. Returns what puts the previous hook back.
      */
-    hitPolygon(spine: T['Spine'], slot: SlotLike): number[] | undefined;
+    beforeWorldTransforms(spine: T['Spine'], hook: () => void): () => void;
+
+    /**
+     * `attachment`'s outline as the slot shows it, in the space of an object hung off that slot,
+     * as flat `x, y` pairs — a region's four corners, an unweighted mesh's hull. `undefined` for
+     * anything without one.
+     */
+    hitPolygon(slot: SlotLike, attachment: unknown): number[] | undefined;
     /** The slot's region or mesh attachment image on its page, or `null` for anything else. */
     regionTexture(attachment: unknown): RegionTextureInfo<T['Texture']> | null;
 
@@ -169,12 +182,15 @@ export type PointerEventName =
 
 export interface PointerEventLike {
     global: PointLike;
+    pointerType?: string;
 }
 
 /** Display objects, textures and interaction. */
 export interface DisplayPort<T extends EngineTypes> {
+    /** The engine's container class, which the layout itself is an instance of. */
+    readonly containerClass: new () => T['Container'];
     container(options?: { label?: string; interactive?: InteractiveMode }): T['Container'];
-    sprite(texture: T['Texture']): T['Container'];
+    sprite(texture: T['Texture'], anchor?: number): T['Container'];
     setLabel(view: T['Container'], label: string): void;
     setInteractive(view: T['Container'], mode: InteractiveMode): void;
     setCursor(view: T['Container'], cursor: string): void;
@@ -198,18 +214,11 @@ export interface DisplayPort<T extends EngineTypes> {
     point(x?: number, y?: number): PointLike;
 }
 
-export interface BitmapGlyphBounds {
-    /** Glyph box in text-local pixels, before the node's own scale. */
-    top: number;
-    bottom: number;
-    left: number;
-    right: number;
-}
-
-export interface BitmapMeasure extends BitmapGlyphBounds {
-    width: number;
+/** The glyphs a bitmap node draws, in its own pixels with its anchor applied, before its scale. */
+export interface BitmapInk {
     height: number;
-    lines: { width: number; text: string }[];
+    /** The middle of the glyph box, relative to the node's origin. */
+    centre: PointLike;
 }
 
 export interface TextCapabilities {
@@ -225,11 +234,21 @@ export interface TextPort<T extends EngineTypes> {
     isBitmapText(view: T['Container']): view is T['BitmapText'];
     /** Applies a `texts.json` entry as the engine's own style; keys it has no match for are dropped. */
     applyEntry(text: T['Text'] | T['BitmapText'], entry: TextsJsonEntry): void;
-    /** Applies a partial style in the engine's own terms, as `texts.setStyle` is called with. */
+    /** Replaces the style with one in the engine's own terms, as `texts.setStyle` is called with. */
     applyStyle(text: T['Text'] | T['BitmapText'], style: Record<string, unknown>): void;
+    /** Writes the given keys over the current style, leaving the rest. */
+    mergeStyle(text: T['Text'] | T['BitmapText'], style: Record<string, unknown>): void;
     getStyle(text: T['Text'] | T['BitmapText']): Record<string, unknown>;
     setWordWrapWidth(text: T['Text'] | T['BitmapText'], width: number | undefined): void;
-    measureBitmap(text: T['BitmapText']): BitmapMeasure;
+    /** Where the glyphs land; `undefined` when none are drawn (no value, or none in the font). */
+    measureBitmap(text: T['BitmapText']): BitmapInk | undefined;
+    /** How many laid-out lines carry glyphs. */
+    bitmapLineCount(text: T['BitmapText']): number;
+    /**
+     * One line's ink extent across the characters in use, in the units the style's
+     * `lineHeight` is given in; `undefined` when there are no glyphs.
+     */
+    bitmapLineHeight(text: T['BitmapText']): number | undefined;
     hasBitmapFont(family: string): boolean;
     /** Registers a `.fnt` (text or XML) with its page textures by page file name. */
     registerBitmapFont(fnt: string, pages: Record<string, T['Texture']>): string;

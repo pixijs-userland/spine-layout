@@ -1,31 +1,14 @@
-import {
-    AtlasAttachmentLoader,
-    SkeletonBinary,
-    SkeletonJson,
-    SpineTexture,
-    TextureAtlas,
-    Spine,
-    type BoneData,
-    type Slot,
-    type SlotData,
-} from '@esotericsoftware/spine-pixi-v8';
+import type { Engine, EngineTypes, PointLike } from '../engine/Engine';
+import { isBinarySkeleton, type SkeletonSource } from '../engine/runtime';
 import type {
-    SkeletonSource,
+    ManifestLike,
     SpineID,
     SpineLayoutOptions,
     SpineInstanceData,
     TextSetOptions,
     TextsJson,
 } from './config/types';
-import {
-    Assets,
-    type AssetsManifest,
-    BitmapText,
-    Container,
-    Text,
-    Texture,
-    type Point,
-} from 'pixi.js';
+import type { BoneDataOf, SlotDataOf, SlotOf, TextStyleOf } from './types';
 import { LOG } from './config/logs';
 import { log } from './utils/Log';
 import { ManifestParser, type SpineAssetData } from './utils/ManifestParser';
@@ -38,6 +21,11 @@ import { SpineController } from './controllers/Spine.controller';
 import { PointerController } from './controllers/Pointer.controller';
 import { OrientationController } from './controllers/Orientation.controller';
 import { sounds } from './controllers/Sounds.controller';
+import { LayoutHost } from './LayoutHost';
+
+export type SpineLayoutCoreOptions<T extends EngineTypes> = SpineLayoutOptions & {
+    engine: Engine<T>;
+};
 
 /** The spine the scene is built from, unless the options name another. */
 const DEFAULT_ROOT = 'root';
@@ -47,81 +35,97 @@ const DEFAULT_ROOT = 'root';
  * never asked for can still be built later ({@link SpineLayout.createInstance}), and so a
  * template's clones are read from the skeleton rather than copied off the template.
  */
-type SpineSource = {
-    create: () => Spine;
+type SpineSource<T extends EngineTypes> = {
+    create: () => T['Spine'];
     /** What the source knows about a fresh instance once it is registered: its skins. */
-    registered?: (spineID: SpineID, spine: Spine) => void;
+    registered?: (spineID: SpineID, spine: T['Spine']) => void;
 };
 
-export class SpineLayout extends Container {
-    #spines: Map<SpineID, Spine> = new Map();
+/**
+ * The layout, rendered through whichever engine it is given. It is that engine's own container
+ * (see {@link LayoutHost}): {@link SpineLayoutView} is the type to hold one by.
+ */
+export class SpineLayoutCore<T extends EngineTypes = EngineTypes> extends LayoutHost {
+    protected readonly engine: Engine<T>;
+    #spines: Map<SpineID, T['Spine']> = new Map();
     /** Every skeleton that was loaded, built or not, by the id it would be registered under. */
-    #sources: Map<SpineID, SpineSource> = new Map();
+    #sources: Map<SpineID, SpineSource<T>> = new Map();
     /** Ids of spines created as multiple instances (e.g. `counter_1`). */
     #multipleInstanceIDs: Set<string> = new Set();
-    #animations: AnimationsController;
-    #skins: SkinsController;
-    #texts: TextsController;
-    #spine: SpineController;
-    #scene: SceneController;
-    #pointer: PointerController;
-    #orientation: OrientationController;
+    #animations: AnimationsController<T>;
+    #skins: SkinsController<T>;
+    #texts: TextsController<T>;
+    #spine: SpineController<T>;
+    #scene: SceneController<T>;
+    #pointer: PointerController<T>;
+    #orientation: OrientationController<T>;
+    private options?: SpineLayoutOptions;
 
-    constructor(private options?: SpineLayoutOptions) {
-        super();
+    constructor({ engine, ...options }: SpineLayoutCoreOptions<T>) {
+        super(engine as unknown as Engine);
 
-        log.enabled = !!options?.debug;
-        this.#animations = new AnimationsController(this.#spines);
-        this.#skins = new SkinsController(this.#spines);
+        this.engine = engine;
+        this.options = options;
+
+        log.enabled = !!options.debug;
+        this.#animations = new AnimationsController(engine, this.#spines);
+        this.#skins = new SkinsController(engine, this.#spines);
         this.#texts = new TextsController(
+            engine,
             this.#spines,
             this.#multipleInstanceIDs,
             this.#animations,
         );
-        this.#spine = new SpineController(this.#spines, this.#animations);
+        this.#spine = new SpineController(engine, this.#spines, this.#animations);
         this.#scene = new SceneController(
+            engine,
             this.#spines,
             this.#texts,
             this.#animations,
             this.#spine,
             options,
         );
-        this.#pointer = new PointerController(this.#spines, this);
+        this.#pointer = new PointerController(engine, this.#spines, this.view);
         this.#orientation = new OrientationController(this.#animations);
 
-        if (options?.manifest) {
+        if (options.manifest) {
             this.createInstancesFromManifest(options.manifest);
         }
     }
 
+    /** The layout as the engine's container it is. */
+    private get view(): T['Container'] {
+        return this as unknown as T['Container'];
+    }
+
     // ─── setters / getters ───────────────────────────────────────────────────────
 
-    get spines(): Map<SpineID, Spine> {
+    get spines(): Map<SpineID, T['Spine']> {
         return this.#spines;
     }
     /** Ids of spines created as multiple instances (e.g. `counter_1`, `counter_2`). */
     get multipleInstanceIds(): string[] {
         return [...this.#multipleInstanceIDs];
     }
-    get animations(): AnimationsController {
+    get animations(): AnimationsController<T> {
         return this.#animations;
     }
-    get skins(): SkinsController {
+    get skins(): SkinsController<T> {
         return this.#skins;
     }
-    get scene(): SceneController {
+    get scene(): SceneController<T> {
         return this.#scene;
     }
-    get texts(): TextsController {
+    get texts(): TextsController<T> {
         return this.#texts;
     }
-    get spine(): SpineController {
+    get spine(): SpineController<T> {
         return this.#spine;
     }
-    get pointer(): PointerController {
+    get pointer(): PointerController<T> {
         return this.#pointer;
     }
-    get orientation(): OrientationController {
+    get orientation(): OrientationController<T> {
         return this.#orientation;
     }
 
@@ -161,10 +165,10 @@ export class SpineLayout extends Container {
 
     // ─── Instance creation ───────────────────────────────────────────────────────
 
-    createInstancesFromManifest(manifest: AssetsManifest, folderName?: string) {
+    createInstancesFromManifest(manifest: ManifestLike, folderName?: string) {
         this.openRegistryLogs();
 
-        const sources = new Map<SpineID, SpineSource>();
+        const sources = new Map<SpineID, SpineSource<T>>();
 
         ManifestParser.getSpineAssets(manifest).forEach((asset) => {
             const spineID = asset.skel.replace(/\.[^.]+$/, '');
@@ -185,14 +189,17 @@ export class SpineLayout extends Container {
         this.#orientation.attach();
     }
 
-    createInstancesFromDataArray(data: SpineInstanceData[]) {
+    createInstancesFromDataArray(data: SpineInstanceData<T>[]) {
         this.openRegistryLogs();
 
-        const sources = new Map<SpineID, SpineSource>();
+        const sources = new Map<SpineID, SpineSource<T>>();
 
         data.forEach((item) => {
             sources.set(item.name, {
-                create: () => spineFromData(item),
+                create: () =>
+                    this.engine.spine.create(
+                        this.engine.spine.readSkeleton(item.skeleton, item.atlasText, item.textures),
+                    ),
                 registered: (spineID, spine) => this.registerDataSkins(spineID, spine, item),
             });
         });
@@ -225,7 +232,7 @@ export class SpineLayout extends Container {
      * @returns the instance, already-built ones included, or `undefined` when no skeleton by
      * that name was loaded.
      */
-    createInstance(spineID: SpineID): Spine | undefined {
+    createInstance(spineID: SpineID): T['Spine'] | undefined {
         const existing = this.#spines.get(spineID);
 
         if (existing) return existing;
@@ -264,7 +271,7 @@ export class SpineLayout extends Container {
      *
      * @returns the id the scene is rooted at, or `undefined` when there was no root to build.
      */
-    private build(sources: Map<SpineID, SpineSource>): SpineID | undefined {
+    private build(sources: Map<SpineID, SpineSource<T>>): SpineID | undefined {
         this.#sources = sources;
 
         const rootID = this.options?.root ?? DEFAULT_ROOT;
@@ -335,7 +342,7 @@ export class SpineLayout extends Container {
     }
 
     /** Builds one instance from its source and registers it under `spineID`. */
-    private instantiate(spineID: SpineID, baseID: SpineID = spineID): Spine | undefined {
+    private instantiate(spineID: SpineID, baseID: SpineID = spineID): T['Spine'] | undefined {
         const source = this.#sources.get(baseID);
 
         if (!source) return undefined;
@@ -354,7 +361,7 @@ export class SpineLayout extends Container {
     }
 
     /** Registers the skins a raw-data skeleton exported, and applies its default one. */
-    private registerDataSkins(spineID: SpineID, spine: Spine, data: SpineInstanceData) {
+    private registerDataSkins(spineID: SpineID, spine: T['Spine'], data: SpineInstanceData<T>) {
         skinsOf(data.skeleton).forEach((skin) => {
             const defaultSkin =
                 spine.skeleton.data.findSkin('default') ?? spine.skeleton.data.findSkin('basic');
@@ -364,15 +371,11 @@ export class SpineLayout extends Container {
     }
 
     /** Creates a Spine instance from a manifest asset entry. */
-    private spineFromAsset(asset: SpineAssetData, folderName?: string): Spine {
+    private spineFromAsset(asset: SpineAssetData, folderName?: string): T['Spine'] {
         const skeleton = alias(asset.skel, folderName);
+        const atlas = asset.atlas ? alias(asset.atlas, folderName) : undefined;
 
-        // A skeleton with no atlas is read with an empty one. `Spine.from` cannot: it looks the
-        // atlas up in the asset cache, so a missing one is a warning and then a null attachment
-        // loader, rather than the skeleton of bones and animations that was exported.
-        if (!asset.atlas) return spineFromSkeleton(Assets.get(skeleton), new TextureAtlas(''));
-
-        return Spine.from({ skeleton, atlas: alias(asset.atlas, folderName) });
+        return this.engine.spine.create(this.engine.spine.readSkeletonFromAssets(skeleton, atlas));
     }
 
     /**
@@ -411,7 +414,7 @@ export class SpineLayout extends Container {
         return ids;
     }
 
-    private addSpineInstance(spineID: string, spine: Spine) {
+    private addSpineInstance(spineID: string, spine: T['Spine']) {
         if (this.#spines.has(spineID)) {
             this.#spines.get(spineID)?.destroy();
             this.#spines.delete(spineID);
@@ -432,7 +435,7 @@ export class SpineLayout extends Container {
     }
 
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    protected onSpineRegistered(_spineID: string, _spine: Spine) { }
+    protected onSpineRegistered(_spineID: string, _spine: T['Spine']) { }
 
     /**
      * Registration is done — flush its tables before anything is played, so the console reads in
@@ -456,7 +459,7 @@ export class SpineLayout extends Container {
     private render(rootID?: SpineID) {
         this.#texts.loadSettings();
         this.#scene.attachBones();
-        this.layoutChildren(rootID).forEach((spine) => this.addChild(spine));
+        this.layoutChildren(rootID).forEach((spine) => this.view.addChild(spine));
         this.#scene.attachTexts();
         this.#scene.activateButtonBones();
         this.#scene.syncSlotObjectsWithDrawOrder();
@@ -470,7 +473,7 @@ export class SpineLayout extends Container {
      * one whose slot `skipAttachingSpinesPatterns` held back, which is built and left for the
      * game to place. Without a root, every spine nothing embedded is one.
      */
-    private layoutChildren(rootID?: SpineID): Spine[] {
+    private layoutChildren(rootID?: SpineID): T['Spine'][] {
         if (!rootID) return [...this.#spines.values()].filter((spine) => !spine.parent);
 
         const root = this.#spines.get(rootID);
@@ -493,28 +496,31 @@ export class SpineLayout extends Container {
         this.#sources.clear();
         this.#multipleInstanceIDs.clear();
 
-        this.removeChildren();
+        this.view.removeChildren();
     }
 
     destroy() {
         this.reset();
-        super.destroy();
+        this.destroyHost();
     }
 
     // ─── deprecated methods ──────────────────────────────────────────────────────
 
     // ─── Spine registry ──────────────────────────────────────────────────────────
 
-    getSpines(): Map<SpineID, Spine> {
+    getSpines(): Map<SpineID, T['Spine']> {
         return this.#spines;
     }
-    getSpine(spineID: string): Spine | undefined {
+    getSpine(spineID: string): T['Spine'] | undefined {
         return this.#spines.get(spineID);
     }
-    getSpineByID(spineID: string): Spine | undefined {
+    getSpineByID(spineID: string): T['Spine'] | undefined {
         return this.#spines.get(spineID);
     }
-    getSpinesByNamePattern(pattern: string, options?: { not?: string[] }): Map<string, Spine> {
+    getSpinesByNamePattern(
+        pattern: string,
+        options?: { not?: string[] },
+    ): Map<string, T['Spine']> {
         return this.#spine.getSpinesByNamePattern(pattern, options);
     }
 
@@ -626,11 +632,11 @@ export class SpineLayout extends Container {
     // ─── Text management ─────────────────────────────────────────────────────────
 
     /** @deprecated Use `texts.getInstances()` instead. */
-    getTextInstances(): Map<SpineID, Text | BitmapText> {
+    getTextInstances(): Map<SpineID, T['Text'] | T['BitmapText']> {
         return this.#texts.getInstances();
     }
     /** @deprecated Use `texts.getBitmapInstances()` instead. */
-    getBitmapTextInstances(): Map<SpineID, BitmapText> {
+    getBitmapTextInstances(): Map<SpineID, T['BitmapText']> {
         return this.#texts.getBitmapInstances();
     }
     /** @deprecated Use `texts.getBySpine()` instead. */
@@ -659,104 +665,87 @@ export class SpineLayout extends Container {
         this.#texts.setMaxWidth(boneName, maxWidth);
     }
     /** @deprecated Use `texts.setStyle()` instead. */
-    setTextStyle(boneName: string, style: Partial<Text['style']>) {
+    setTextStyle(boneName: string, style: TextStyleOf<T>) {
         this.#texts.setStyle(boneName, style);
     }
     /** @deprecated Use `texts.setBySpineID()` instead. */
-    setSlotTextBySpineID(spineID: string, slotName: string, text: Text | BitmapText) {
+    setSlotTextBySpineID(spineID: string, slotName: string, text: T['Text'] | T['BitmapText']) {
         this.#texts.addTextToSlot(spineID, slotName, text);
     }
 
     // ─── Spine management ─────────────────────────────────────────────────────────
 
     /** @deprecated Use `SpineController.getBonesByNamePattern()` directly instead. */
-    getBonesByNamePattern(pattern: string): BoneData[] {
+    getBonesByNamePattern(pattern: string): BoneDataOf<T>[] {
         return this.#spine.getBonesByNamePattern(pattern);
     }
     /** @deprecated Use `SpineController.getSlotsByNamePattern()` directly instead. */
-    getSlotsByNamePattern(pattern: string): SlotData[] {
+    getSlotsByNamePattern(pattern: string): SlotDataOf<T>[] {
         return this.#spine.getSlotsByNamePattern(pattern);
     }
     /** @deprecated Use `SpineController.getSlotByName()` directly instead. */
-    getSlotByName(name: string): Slot | undefined {
+    getSlotByName(name: string): SlotOf<T> | undefined {
         return this.#spine.getSlotByName(name);
     }
     /** @deprecated Use `SpineController.getBoneGlobalPosition()` directly instead. */
-    getSpineBoneGlobalPosition(spineID: string, boneName: string): Point | undefined {
+    getSpineBoneGlobalPosition(spineID: string, boneName: string): PointLike | undefined {
         return this.#spine.getBoneGlobalPosition(spineID, boneName);
     }
     /** @deprecated Use `SpineController.getBonesGlobalPositionsByNamePattern()` directly instead. */
-    getBonesGlobalPositionsByNamePattern(pattern: string): Record<string, Point> {
+    getBonesGlobalPositionsByNamePattern(pattern: string): Record<string, PointLike> {
         return this.#spine.getBonesGlobalPositionsByNamePattern(pattern);
     }
     /** @deprecated Use `SpineController.getSlotsGlobalPositionsByNamePattern()` directly instead. */
-    getSlotsGlobalPositionsByNamePattern(pattern: string): Record<string, Point> {
+    getSlotsGlobalPositionsByNamePattern(pattern: string): Record<string, PointLike> {
         return this.#spine.getSlotsGlobalPositionsByNamePattern(pattern);
     }
     /** @deprecated Use `SpineController.getSlotTexture()` directly instead. */
-    getSpineSlotTexture(spineName: string, slotName: string): Texture | null {
+    getSpineSlotTexture(spineName: string, slotName: string): T['Texture'] | null {
         return this.#spine.getSlotTexture(spineName, slotName);
     }
 
     // ─── Manual slot/child wiring ────────────────────────────────────────────────
 
     /** @deprecated Use `scene.addSlotChild()` instead. */
-    addSlotChild(spineID: string, slotName: string, child: Container) {
+    addSlotChild(spineID: string, slotName: string, child: T['Container']) {
         this.#scene.addSlotChild(spineID, slotName, child);
     }
 
     /** @deprecated Use `spine.clone()` instead. */
-    cloneSpine(spine: Spine, newSpineID: string): Spine {
+    cloneSpine(spine: T['Spine'], newSpineID: string): T['Spine'] {
         return this.#spine.clone(spine, newSpineID);
     }
 
     /** Removes attached children from a spine slot (or all slots if a container is given). */
-    removeSlotAttachments(spineID: string, slotOrContainer: number | string | Slot | Container) {
+    removeSlotAttachments(
+        spineID: string,
+        slotOrContainer: number | string | SlotOf<T> | T['Container'],
+    ) {
         const spine = this.#spines.get(spineID);
         if (!spine) {
             console.error(`Spine ${spineID} not found`);
             return;
         }
-        spine.removeSlotObject(slotOrContainer);
+
+        const slots = spine.skeleton.slots;
+        const target =
+            typeof slotOrContainer === 'number'
+                ? slots[slotOrContainer]?.data.name
+                : slots.includes(slotOrContainer as SlotOf<T>)
+                  ? (slotOrContainer as SlotOf<T>).data.name
+                  : (slotOrContainer as string | T['Container']);
+
+        if (target !== undefined) this.engine.spine.detachSlotObject(spine, target);
     }
 }
 
-/** Builds a Spine from raw data: its atlas read from the text, its pages given the textures. */
-function spineFromData(data: SpineInstanceData): Spine {
-    const atlas = new TextureAtlas(data.atlasText);
-
-    for (const page of atlas.pages) {
-        const texture = data.textures[page.name];
-        if (!texture) throw new Error(`Missing texture for page: ${page.name}`);
-        page.setTexture(SpineTexture.from(texture.source));
-    }
-
-    return spineFromSkeleton(data.skeleton, atlas);
-}
-
-/**
- * Reads a skeleton — a parsed `.json` or the bytes of a `.skel` — against an atlas.
- *
- * The atlas may hold no pages: an attachment is what reaches into it, so a skeleton of nothing
- * but bones, slots and animations never looks a region up.
- */
-function spineFromSkeleton(skeleton: SkeletonSource, atlas: TextureAtlas): Spine {
-    const loader = new AtlasAttachmentLoader(atlas);
-
-    return new Spine(
-        isBinarySkeleton(skeleton)
-            ? new SkeletonBinary(loader).readSkeletonData(skeleton)
-            : new SkeletonJson(loader).readSkeletonData(skeleton),
-    );
-}
+/** The layout as it is held: the core and the engine's container in one. */
+export type SpineLayoutView<T extends EngineTypes = EngineTypes> = SpineLayoutCore<T> &
+    T['Container'];
 
 /** The skins a skeleton exported. A skeleton that attaches no image carries no `skins` key. */
 function skinsOf(skeleton: SkeletonSource): { name: string }[] {
     return isBinarySkeleton(skeleton) ? [] : skeleton.skins ?? [];
-}
-
-function isBinarySkeleton(skeleton: SkeletonSource): skeleton is ArrayBuffer | Uint8Array {
-    return skeleton instanceof Uint8Array || skeleton instanceof ArrayBuffer;
 }
 
 function alias(filename: string, folderName?: string): string {
