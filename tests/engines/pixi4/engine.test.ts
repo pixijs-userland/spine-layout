@@ -95,6 +95,19 @@ describe('readSkeleton', () => {
         expect(engine.spine.readSkeletonFromAssets('ready')).toBe(data);
         delete PIXI.loader!.resources.ready;
     });
+
+    it('answers a skeleton added under a bare name by the extension the manifest lists it with', () => {
+        const data = engine.spine.readSkeleton(skeleton(), ATLAS, { 'contract.png': page });
+        PIXI.loader!.resources.hero = { url: 'assets/hero.json', spineData: data } as never;
+        PIXI.loader!.resources.plain = { url: 'assets/plain.json', data: {} } as never;
+
+        expect(engine.spine.readSkeletonFromAssets('hero.json', 'hero.atlas')).toBe(data);
+        expect(engine.spine.readSkeletonFromAssets('hero.skel')).toBe(data);
+        expect(engine.assets.has('plain.json')).toBe(false);
+
+        delete PIXI.loader!.resources.hero;
+        delete PIXI.loader!.resources.plain;
+    });
 });
 
 describe('claimOf', () => {
@@ -214,8 +227,20 @@ describe('attachments', () => {
             (_path: string, load: (base: unknown) => void) => load(page.baseTexture),
         );
         const loader = new PIXI.spine.core.AtlasAttachmentLoader(atlas);
-        const turned = loader.newRegionAttachment(new PIXI.spine.core.Skin('t'), 'square', 'square');
-        Object.assign(turned, { x: 3, y: -4, rotation: 30, scaleX: 2, scaleY: 0.5, width: 40, height: 20 });
+        const turned = loader.newRegionAttachment(
+            new PIXI.spine.core.Skin('t'),
+            'square',
+            'square',
+        );
+        Object.assign(turned, {
+            x: 3,
+            y: -4,
+            rotation: 30,
+            scaleX: 2,
+            scaleY: 0.5,
+            width: 40,
+            height: 20,
+        });
 
         vi.spyOn(console, 'warn').mockImplementation(() => {});
         turned.updateOffset();
@@ -318,6 +343,25 @@ describe('slot objects', () => {
         engine.spine.update(spine, 0);
         expect(slotSprite.visible).toBe(true);
         expect(child.visible).toBe(true);
+    });
+
+    it('shows again once a slot that faded out empties', () => {
+        const spine = spineOf();
+        const child = engine.display.container();
+        const stage = new PIXI.Container();
+        stage.addChild(spine);
+        const slot = spine.skeleton.slots[1];
+
+        engine.spine.attachSlotObject(spine, 'slot_b', child);
+        slot.color.a = 0;
+        engine.spine.update(spine, 0);
+
+        slot.attachment = null;
+        slot.color.a = 1;
+        engine.spine.update(spine, 0);
+        updateTransforms(PIXI, stage);
+
+        expect((child as unknown as { worldAlpha: number }).worldAlpha).toBe(1);
     });
 
     it('hangs off the slot container, so pixi-spine orders it by draw order', () => {
@@ -497,6 +541,28 @@ describe('text', () => {
         expect(engine.text.getStyle(text)).toMatchObject({ wordWrap: true, wordWrapWidth: 120 });
     });
 
+    it("leaves v4's defaults for the fields a stroke or drop shadow leaves out", () => {
+        const text = engine.text.createText();
+        const defaults = new PIXI.TextStyle();
+
+        engine.text.applyEntry(text, {
+            type: 'text',
+            stroke: { color: '#000000' },
+            dropShadow: { color: '#111111' },
+        });
+
+        expect(engine.text.getStyle(text)).toMatchObject({
+            stroke: '#000000',
+            strokeThickness: defaults.strokeThickness,
+            dropShadow: true,
+            dropShadowColor: '#111111',
+            dropShadowAlpha: defaults.dropShadowAlpha,
+            dropShadowAngle: defaults.dropShadowAngle,
+            dropShadowBlur: defaults.dropShadowBlur,
+            dropShadowDistance: defaults.dropShadowDistance,
+        });
+    });
+
     describe('bitmap', () => {
         beforeAll(() => {
             expect(
@@ -592,6 +658,25 @@ describe('text', () => {
                 engine.text.registerBitmapFont(xml, { 'x.png': canvasTexture(PIXI, 32, 32) }),
             ).toBe('XmlFont');
             expect(PIXI.extras.BitmapText.fonts.XmlFont?.chars[65].xAdvance).toBe(22);
+
+            const quoted = xml.replace(/"/g, "'").replace('XmlFont', 'QuotedFont');
+            expect(
+                engine.text.registerBitmapFont(quoted, { 'x.png': canvasTexture(PIXI, 32, 32) }),
+            ).toBe('QuotedFont');
+            expect(PIXI.extras.BitmapText.fonts.QuotedFont?.chars[65].xAdvance).toBe(22);
+        });
+
+        it("spaces letters by letterSpacing in the node's pixels, drawn and measured alike", () => {
+            const node = bitmap('BB', { fontSize: 16, letterSpacing: 4 });
+            node.updateText();
+            const [first, second] = node.children;
+
+            expect(second.x - first.x).toBeCloseTo(20 * 0.5 + 4);
+            expect(engine.text.getStyle(node).letterSpacing).toBe(4);
+
+            const measured = engine.text.measureBitmap(node)!;
+            const drawn = spriteBox(node);
+            expect(measured.centre.x).toBeCloseTo(drawn.centre.x);
         });
     });
 });
@@ -632,6 +717,20 @@ describe('particles', () => {
     it('is absent when pixi-particles is not loaded', () => {
         const { particles: _, ...withoutParticles } = PIXI;
         expect(createPixi4Engine(withoutParticles as LoadedPixi4).particles).toBeUndefined();
+    });
+});
+
+describe('assets', () => {
+    it('finds a spritesheet frame in the texture cache', () => {
+        const frame = canvasTexture(PIXI, 8, 8);
+        PIXI.utils.TextureCache['spark.png'] = frame;
+
+        expect(engine.assets.has('spark.png')).toBe(true);
+        expect(engine.assets.get('spark.png')).toBe(frame);
+        expect(engine.assets.pageTexture('spark.png')).toBe(frame);
+
+        delete PIXI.utils.TextureCache['spark.png'];
+        expect(engine.assets.has('spark.png')).toBe(false);
     });
 });
 

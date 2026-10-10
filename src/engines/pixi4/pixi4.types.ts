@@ -139,6 +139,8 @@ export interface Pixi4BitmapText extends Pixi4Container, TextLike {
     tint: number;
     maxWidth: number;
     letterSpacing: number;
+    /** What `letterSpacing` sets, without marking the node dirty. */
+    _letterSpacing: number;
     readonly textWidth: number;
     readonly textHeight: number;
     dirty: boolean;
@@ -405,6 +407,7 @@ export interface Pixi4Namespace {
     Matrix: new () => Pixi4Matrix;
     extras: { BitmapText: Pixi4BitmapTextClass };
     loader?: Pixi4Loader;
+    utils?: { TextureCache: Record<string, Pixi4Texture | undefined> };
     spine: {
         Spine: { new (data: Spine38SkeletonData): Pixi4Spine; prototype: Pixi4Spine };
         core: Spine38Core;

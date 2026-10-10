@@ -111,21 +111,20 @@ export const displayPort: DisplayPort<Pixi8Types> = {
     // thing on a full-size page and a factor of two apart on a `@0.5x` one, where an unscaled
     // frame lands at half the position and half the size — a 1px hit area comes out as a
     // block of whatever art sits a quarter of the way into the atlas.
+    // libGDX packs a turned region counter-clockwise: groupD8 direction 6, as pixi-spine's own
+    // region textures have it, with `orig` the region upright.
     subTexture(page, frame, rotate) {
         const { resolution } = page.source;
-        const texture = new Texture({
+        const turned = rotate % 180 !== 0;
+        const width = frame.width / resolution;
+        const height = frame.height / resolution;
+
+        return new Texture({
             source: page.source,
-            frame: new Rectangle(
-                frame.x / resolution,
-                frame.y / resolution,
-                frame.width / resolution,
-                frame.height / resolution,
-            ),
-        }) as Texture & { rotate: number };
-
-        if (rotate === 90) texture.rotate = 2;
-
-        return texture;
+            frame: new Rectangle(frame.x / resolution, frame.y / resolution, width, height),
+            orig: new Rectangle(0, 0, turned ? height : width, turned ? width : height),
+            rotate: rotate ? (((720 - rotate) % 360) / 45) % 8 : 0,
+        });
     },
 
     textureFromImage: (image) => Texture.from(image),

@@ -1,6 +1,12 @@
 import type { TextPort } from '../../engine/Engine';
 import { fontDocumentOf, glyphSize, layoutBitmapText, type BitmapLayout } from './bitmapFont';
-import type { Pixi4BitmapText, Pixi4Namespace, Pixi4Text, Pixi4Types } from './pixi4.types';
+import type {
+    Pixi4BitmapFontData,
+    Pixi4BitmapText,
+    Pixi4Namespace,
+    Pixi4Text,
+    Pixi4Types,
+} from './pixi4.types';
 
 type Style = Record<string, unknown>;
 
@@ -39,6 +45,12 @@ const NO_FONT = 'spine-layout:no-font';
 
 const isObject = (value: unknown): value is Style => typeof value === 'object' && value !== null;
 
+function copyDefined(target: Style, fields: Record<string, unknown>) {
+    Object.entries(fields).forEach(([key, value]) => {
+        if (value !== undefined) target[key] = value;
+    });
+}
+
 function colorOf(value: unknown): number | undefined {
     if (typeof value === 'number') return value;
     if (typeof value !== 'string') return undefined;
@@ -61,17 +73,18 @@ function textStyleOf(source: Style): Style {
     const { stroke, dropShadow } = source;
 
     if (isObject(stroke)) {
-        style.stroke = stroke.color;
-        style.strokeThickness = stroke.width;
+        copyDefined(style, { stroke: stroke.color, strokeThickness: stroke.width });
     } else if (stroke !== undefined) style.stroke = stroke;
 
     if (isObject(dropShadow)) {
         style.dropShadow = true;
-        style.dropShadowColor = dropShadow.color;
-        style.dropShadowAlpha = dropShadow.alpha;
-        style.dropShadowBlur = dropShadow.blur;
-        style.dropShadowAngle = dropShadow.angle;
-        style.dropShadowDistance = dropShadow.distance;
+        copyDefined(style, {
+            dropShadowColor: dropShadow.color,
+            dropShadowAlpha: dropShadow.alpha,
+            dropShadowBlur: dropShadow.blur,
+            dropShadowAngle: dropShadow.angle,
+            dropShadowDistance: dropShadow.distance,
+        });
     } else if (dropShadow !== undefined) style.dropShadow = dropShadow;
 
     return style;
@@ -80,6 +93,7 @@ function textStyleOf(source: Style): Style {
 export function createTextPort(PIXI: Pixi4Namespace): TextPort<Pixi4Types> {
     const { BitmapText } = PIXI.extras;
     const lineHeights = new WeakMap<Pixi4BitmapText, number>();
+    const letterSpacings = new WeakMap<Pixi4BitmapText, number>();
 
     BitmapText.fonts[NO_FONT] ??= { font: NO_FONT, size: 1, lineHeight: 0, chars: {} };
 
@@ -93,6 +107,12 @@ export function createTextPort(PIXI: Pixi4Namespace): TextPort<Pixi4Types> {
         if (!font) return undefined;
 
         return own ? own / (node.font.size / font.size) : font.lineHeight;
+    }
+
+    /** v4 adds `letterSpacing` in font units; the contract's, like v8's, is in the node's pixels. */
+    function letterSpacingOf(node: Pixi4BitmapText, font: Pixi4BitmapFontData): number {
+        const pixels = letterSpacings.get(node);
+        return pixels === undefined ? node.letterSpacing : (pixels * font.size) / node.font.size;
     }
 
     /**
@@ -119,6 +139,7 @@ export function createTextPort(PIXI: Pixi4Namespace): TextPort<Pixi4Types> {
 
             const fontLineHeight = font.lineHeight;
             font.lineHeight = lineHeightOf(node) ?? fontLineHeight;
+            node._letterSpacing = letterSpacingOf(node, font);
             try {
                 updateText.call(node);
             } finally {
@@ -140,7 +161,10 @@ export function createTextPort(PIXI: Pixi4Namespace): TextPort<Pixi4Types> {
         }
         if (typeof style.align === 'string')
             node.align = style.align === 'justify' ? 'left' : style.align;
-        if (typeof style.letterSpacing === 'number') node.letterSpacing = style.letterSpacing;
+        if (typeof style.letterSpacing === 'number') {
+            letterSpacings.set(node, style.letterSpacing);
+            node.dirty = true;
+        }
 
         const tint = colorOf(style.tint ?? style.fill);
         if (tint !== undefined) node.tint = tint;
@@ -160,6 +184,7 @@ export function createTextPort(PIXI: Pixi4Namespace): TextPort<Pixi4Types> {
     function resetBitmapStyle(node: Pixi4BitmapText) {
         node.align = 'left';
         node.letterSpacing = 0;
+        letterSpacings.delete(node);
         node.tint = 0xffffff;
         node.maxWidth = 0;
         lineHeights.delete(node);
@@ -181,7 +206,7 @@ export function createTextPort(PIXI: Pixi4Namespace): TextPort<Pixi4Types> {
         const lineHeight = lineHeightOf(node);
         if (!font || lineHeight === undefined) return undefined;
 
-        const layout = layoutBitmapText(node, font, lineHeight);
+        const layout = layoutBitmapText(node, font, lineHeight, letterSpacingOf(node, font));
         layout.glyphs = layout.glyphs.filter(({ char }) => {
             const size = glyphSize(char.texture);
             return size.width > 0 && size.height > 0;
@@ -230,7 +255,7 @@ export function createTextPort(PIXI: Pixi4Namespace): TextPort<Pixi4Types> {
                     fontFamily: text.font.name,
                     fontSize: text.font.size,
                     align: text.align,
-                    letterSpacing: text.letterSpacing,
+                    letterSpacing: letterSpacings.get(text) ?? text.letterSpacing,
                     fill: text.tint,
                     wordWrap: text.maxWidth > 0,
                     wordWrapWidth: text.maxWidth,

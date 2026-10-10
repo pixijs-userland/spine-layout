@@ -26,3 +26,5 @@ Public type changes:
 - `SpineLayout` is no longer `instanceof`-checkable against `SpineLayoutCore` subclasses such as
   `MagicLayout`.
 - `SpineInstanceData` is generic over the engine's types and defaults to pixi8.
+- `getSlotTexture` on pixi8 cuts a rotated region turned the way the atlas packed it, upright
+  and at its own size: it was turned the other way, with width and height swapped.

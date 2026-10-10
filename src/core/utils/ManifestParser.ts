@@ -3,7 +3,7 @@ import type { ManifestAssetLike, ManifestLike } from '../config/types';
 type Bundle = ManifestLike['bundles'][number];
 
 /** A `PIXI.loader` resource, down to what tells a pixi-spine skeleton from any other file. */
-export type LoaderResourceLike = { url?: string; spineData?: unknown };
+export type LoaderResourceLike = { url?: string; data?: unknown; spineData?: unknown };
 
 export type SpineAssetData = {
     skel: string;
@@ -69,7 +69,9 @@ export class ManifestParser {
      * A manifest over what a `PIXI.loader` holds. pixi-spine's middleware reads a skeleton's
      * atlas and pages under names of its own, so a skeleton it parsed is listed with the
      * `.atlas` and `.png` aliases the pairing looks for; the assets port answers them from the
-     * `spineData` the loader already built.
+     * `spineData` the loader already built. A skeleton added under a bare name, as pixi-spine's
+     * own examples do (`loader.add('hero', 'hero.json')`), is listed under that name with the
+     * extension its data has.
      */
     static fromLoaderResources(resources: Record<string, LoaderResourceLike>): ManifestLike {
         const assets: ManifestAssetLike[] = [];
@@ -77,11 +79,17 @@ export class ManifestParser {
         Object.entries(resources).forEach(([name, resource]) => {
             if (/_atlas($|_page_)/.test(name)) return;
 
-            assets.push({ alias: [name], src: resource.url });
+            if (!resource.spineData) {
+                assets.push({ alias: [name], src: resource.url });
+                return;
+            }
 
-            if (!resource.spineData) return;
+            const skeleton = /\.[^./]+$/.test(name)
+                ? name
+                : `${name}.${skeletonExtension(resource)}`;
+            const id = trimExtension(skeleton);
 
-            const id = trimExtension(name);
+            assets.push({ alias: [skeleton], src: resource.url });
 
             ['atlas', 'png'].forEach((type) => {
                 const alias = `${id}.${type}`;
@@ -125,6 +133,10 @@ function basename(alias: string): string {
 
 function directory(alias: string): string {
     return alias.includes('/') ? alias.slice(0, alias.lastIndexOf('/')) : '';
+}
+
+function skeletonExtension({ data }: LoaderResourceLike): string {
+    return data instanceof ArrayBuffer || ArrayBuffer.isView(data) ? 'skel' : 'json';
 }
 
 function trimExtension(filename: string): string {

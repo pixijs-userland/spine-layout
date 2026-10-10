@@ -22,13 +22,13 @@ function attributesOf(source: string, pattern: RegExp): Record<string, string> {
 
 function parseFnt(fnt: string): FntElement[] {
     if (fnt.trimStart().startsWith('<')) {
-        return [...fnt.matchAll(/<(\w+)((?:\s+[\w-]+\s*=\s*"[^"]*")*)\s*\/?>/g)].map(
+        return [...fnt.matchAll(/<(\w+)((?:\s+[\w-]+\s*=\s*(?:"[^"]*"|'[^']*'))*)\s*\/?>/g)].map(
             ([, tag, body]) => ({
                 tag,
                 attributes: Object.fromEntries(
-                    Object.entries(attributesOf(body, /([\w-]+)\s*=\s*"([^"]*)"/g)).map(
-                        ([key, value]) => [key, decode(value)],
-                    ),
+                    Object.entries(
+                        attributesOf(body, /([\w-]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g),
+                    ).map(([key, value]) => [key, decode(value)]),
                 ),
             }),
         );
@@ -82,9 +82,9 @@ export function layoutBitmapText(
     node: Pixi4BitmapText,
     data: Pixi4BitmapFontData,
     lineHeight: number,
+    letterSpacing: number,
 ): BitmapLayout {
     const scale = node.font.size / data.size;
-    const letterSpacing = node.letterSpacing;
     const text = node.text.replace(/(?:\r\n|\r)/g, '\n');
     const maxWidth = (node.maxWidth * data.size) / node.font.size;
     const chars: { char: Pixi4BitmapFontChar; line: number; x: number; y: number }[] = [];

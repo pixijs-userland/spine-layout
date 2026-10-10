@@ -175,6 +175,20 @@ describe('ManifestParser.fromLoaderResources', () => {
         });
     });
 
+    it('names a skeleton added under a bare name by its data: JSON, or binary .skel', () => {
+        const manifest = ManifestParser.fromLoaderResources({
+            hero: { url: 'assets/hero.json', data: {}, spineData: {} },
+            hero_atlas: { url: 'assets/hero.atlas' },
+            'hero_atlas_page_hero.png': { url: 'assets/hero.png' },
+            'spines/boss': { url: 'assets/boss.skel', data: new ArrayBuffer(4), spineData: {} },
+        });
+
+        expect(ManifestParser.getSpineAssets(manifest)).toEqual([
+            { atlas: 'hero.atlas', skel: 'hero.json', texture: 'hero.png' },
+            { atlas: 'boss.atlas', skel: 'boss.skel', texture: 'boss.png' },
+        ]);
+    });
+
     it('leaves a resource the loader holds under a real atlas alias alone', () => {
         const manifest = ManifestParser.fromLoaderResources({
             'spines/root.json': { spineData: {} },

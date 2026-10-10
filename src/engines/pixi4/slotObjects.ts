@@ -70,6 +70,7 @@ export function createSlotObjects(PIXI: Pixi4Namespace) {
                 hidden.add(view);
             });
             container.visible = true;
+            container.alpha = 1;
         } else if (hidden.size) {
             hidden.forEach((view) => {
                 if (isCurrent(slot, view)) view.visible = true;
@@ -107,7 +108,9 @@ export function createSlotObjects(PIXI: Pixi4Namespace) {
 
         const objects = new Map<number, SlotObject>();
 
-        onSpineUpdate(spine, () => objects.forEach((entry, index) => syncSlot(spine, index, entry)));
+        onSpineUpdate(spine, () =>
+            objects.forEach((entry, index) => syncSlot(spine, index, entry)),
+        );
         registry.set(spine, objects);
 
         return objects;

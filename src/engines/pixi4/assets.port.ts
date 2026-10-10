@@ -22,10 +22,20 @@ const asTexture = (value: unknown) =>
 
 export function createAssetsPort(PIXI: Pixi4Namespace): AssetsRegistry {
     const registry = new Map<string, unknown>();
-    const resource = (alias: string) => PIXI.loader?.resources[alias];
+
+    function resource(alias: string): Pixi4LoaderResource | undefined {
+        const resources = PIXI.loader?.resources;
+        if (!resources) return undefined;
+        if (resources[alias]) return resources[alias];
+
+        const bare = /^(.+)\.(?:json|skel)$/.exec(alias)?.[1];
+        return bare && resources[bare]?.spineData ? resources[bare] : undefined;
+    }
+
+    const cached = (alias: string) => PIXI.utils?.TextureCache[alias];
 
     function textureAt(alias: string): Pixi4Texture | undefined {
-        return resource(alias)?.texture ?? asTexture(registry.get(alias));
+        return resource(alias)?.texture ?? asTexture(registry.get(alias)) ?? cached(alias);
     }
 
     return {
@@ -33,9 +43,9 @@ export function createAssetsPort(PIXI: Pixi4Namespace): AssetsRegistry {
             const loaded = resource(alias);
             if (loaded) return (loaded.texture ?? loaded.data) as A;
 
-            return registry.get(alias) as A | undefined;
+            return (registry.get(alias) ?? cached(alias)) as A | undefined;
         },
-        has: (alias) => !!resource(alias) || registry.has(alias),
+        has: (alias) => !!resource(alias) || registry.has(alias) || !!cached(alias),
         set: (alias, value) => void registry.set(alias, value),
         delete: (alias) => void registry.delete(alias),
         resource,

@@ -1,6 +1,12 @@
 import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it } from 'vitest';
-import type { ContainerLike, Engine, EngineName, EngineTypes, SpineLike } from '../../src/engine/Engine';
+import type {
+    ContainerLike,
+    Engine,
+    EngineName,
+    EngineTypes,
+    SpineLike,
+} from '../../src/engine/Engine';
 import type { SkeletonDataLike } from '../../src/engine/runtime';
 
 /**
@@ -13,7 +19,81 @@ export const CONTRACT_FIXTURES: Record<EngineName, { skeleton: string; atlas: st
     pixi4: { skeleton: 'contract-3.8.json', atlas: 'contract-3.8.atlas' },
 };
 
-const fixture = (name: string) => readFileSync(new URL(`../fixtures/${name}`, import.meta.url), 'utf8');
+/** The fixtures' page with its `square` region packed turned, in a format both runtimes read. */
+const TURNED_ATLAS = `contract.png
+size: 64,32
+format: RGBA8888
+filter: Linear,Linear
+repeat: none
+square
+  rotate: true
+  xy: 2, 4
+  size: 20, 10
+  orig: 20, 10
+  offset: 0, 0
+  index: -1
+`;
+
+type Uvs = {
+    x0: number;
+    y0: number;
+    x1: number;
+    y1: number;
+    x2: number;
+    y2: number;
+    x3: number;
+    y3: number;
+};
+type InspectedTexture = {
+    width: number;
+    height: number;
+    uvs?: Uvs;
+    _uvs?: Uvs;
+    updateUvs?(): void;
+    _updateUvs?(): void;
+};
+
+/** A texture's corners, top-left clockwise, in its page's pixels; v8 names its UVs `uvs`, v4 `_uvs`. */
+function cornersOf(texture: unknown, page: unknown): number[] {
+    const inspected = texture as InspectedTexture;
+    const { width, height } = page as InspectedTexture;
+    inspected.updateUvs?.();
+    inspected._updateUvs?.();
+    const uvs = (inspected.uvs ?? inspected._uvs)!;
+
+    return [
+        uvs.x0 * width,
+        uvs.y0 * height,
+        uvs.x1 * width,
+        uvs.y1 * height,
+        uvs.x2 * width,
+        uvs.y2 * height,
+        uvs.x3 * width,
+        uvs.y3 * height,
+    ];
+}
+
+/**
+ * Where the runtime samples a region attachment, as {@link cornersOf} reads a texture.
+ * pixi-spine draws a region as a sprite of its own region texture; spine-pixi-v8 draws the
+ * attachment's UVs, which run bottom-left, top-left, top-right, bottom-right and in 4.3 live on
+ * its sequence.
+ */
+function attachmentCornersOf(attachment: unknown, page: unknown): number[] {
+    const region = attachment as {
+        region?: { texture?: { _uvs?: Uvs } };
+        sequence?: { uvs?: ArrayLike<number>[] };
+    };
+    if (region.region?.texture?._uvs) return cornersOf(region.region.texture, page);
+
+    const uvs = region.sequence!.uvs![0];
+    const vertex = (i: number) => [uvs[i * 2] * 64, uvs[i * 2 + 1] * 32];
+
+    return [1, 2, 3, 0].flatMap(vertex);
+}
+
+const fixture = (name: string) =>
+    readFileSync(new URL(`../fixtures/${name}`, import.meta.url), 'utf8');
 
 /**
  * The port semantics every engine owes the layout core, checked against the real runtime.
@@ -27,7 +107,8 @@ export function engineContract(name: string, load: () => Promise<Engine>) {
         const spines: SpineLike[] = [];
 
         const pages = () => ({ 'contract.png': engine.display.whiteTexture });
-        const read = (): SkeletonDataLike => engine.spine.readSkeleton(skeleton, atlasText, pages());
+        const read = (): SkeletonDataLike =>
+            engine.spine.readSkeleton(skeleton, atlasText, pages());
         const create = () => {
             const spine = engine.spine.create(read());
             spines.push(spine);
@@ -101,7 +182,8 @@ export function engineContract(name: string, load: () => Promise<Engine>) {
             it('puts the draw order back with its own setup pose', async () => {
                 await setUp();
                 const spine = create();
-                const order = () => engine.spine.drawOrder(spine.skeleton).map((slot) => slot.data.name);
+                const order = () =>
+                    engine.spine.drawOrder(spine.skeleton).map((slot) => slot.data.name);
 
                 spine.state.setAnimation(0, 'move', false);
                 engine.spine.update(spine, 0.75);
@@ -120,7 +202,10 @@ export function engineContract(name: string, load: () => Promise<Engine>) {
                 engine.spine.updateWorldTransform(spine.skeleton);
 
                 const pose = engine.spine.bonePose(bone);
-                const local = pose.worldToParent({ x: pose.worldX, y: pose.worldY }, spine.skeleton);
+                const local = pose.worldToParent(
+                    { x: pose.worldX, y: pose.worldY },
+                    spine.skeleton,
+                );
                 const setup = engine.spine.boneSetup(bone);
 
                 expect(local.x).toBeCloseTo(setup.x, 4);
@@ -149,7 +234,7 @@ export function engineContract(name: string, load: () => Promise<Engine>) {
         });
 
         describe('attachments', () => {
-            it("outlines a region as four corners", async () => {
+            it('outlines a region as four corners', async () => {
                 await setUp();
                 const spine = create();
                 const slot = spine.skeleton.findSlot('slot_a')!;
@@ -166,6 +251,29 @@ export function engineContract(name: string, load: () => Promise<Engine>) {
                 const region = engine.spine.regionTexture(engine.spine.slotAttachment(slot));
 
                 expect(region).toMatchObject({ x: 0, y: 0, width: 40, height: 20, rotate: 0 });
+            });
+
+            it("cuts a turned region upright, sampling the runtime's own pixels", async () => {
+                await setUp();
+                const data = engine.spine.readSkeleton(skeleton, TURNED_ATLAS, pages());
+                const spine = engine.spine.create(data);
+                spines.push(spine);
+                const attachment = engine.spine.slotAttachment(spine.skeleton.findSlot('slot_a')!);
+                const region = engine.spine.regionTexture(attachment)!;
+
+                expect(region).toMatchObject({ x: 2, y: 4, width: 20, height: 10, rotate: 90 });
+
+                const cut = engine.display.subTexture(
+                    region.page,
+                    { x: region.x, y: region.y, width: region.height, height: region.width },
+                    region.rotate,
+                );
+                const sprite = engine.display.sprite(cut, 0);
+
+                expect([sprite.width, sprite.height]).toEqual([20, 10]);
+                cornersOf(cut, region.page).forEach((value, i) =>
+                    expect(value).toBeCloseTo(attachmentCornersOf(attachment, region.page)[i], 4),
+                );
             });
 
             it('answers nothing for no attachment', async () => {
@@ -287,7 +395,11 @@ export function engineContract(name: string, load: () => Promise<Engine>) {
                 expect(family).toBe('Contract');
                 expect(engine.text.hasBitmapFont(family)).toBe(true);
 
-                engine.text.applyEntry(text, { type: 'bitmapText', fontFamily: family, fontSize: 32 });
+                engine.text.applyEntry(text, {
+                    type: 'bitmapText',
+                    fontFamily: family,
+                    fontSize: 32,
+                });
                 text.text = 'AA';
 
                 const ink = engine.text.measureBitmap(text);
@@ -297,6 +409,26 @@ export function engineContract(name: string, load: () => Promise<Engine>) {
                 expect(Number.isFinite(ink!.centre.x)).toBe(true);
                 expect(Number.isFinite(ink!.centre.y)).toBe(true);
                 expect(engine.text.bitmapLineCount(text)).toBe(1);
+            });
+
+            it("spaces bitmap letters by letterSpacing in the node's pixels", async () => {
+                await setUp();
+                const family = engine.text.registerBitmapFont(fixture('contract.fnt'), pages());
+                const centreOf = (value: string) => {
+                    const text = engine.text.createBitmapText();
+                    engine.text.applyEntry(text, {
+                        type: 'bitmapText',
+                        fontFamily: family,
+                        fontSize: 16,
+                        letterSpacing: 4,
+                    });
+                    text.text = value;
+                    expect(engine.text.getStyle(text).letterSpacing).toBe(4);
+                    return engine.text.measureBitmap(text)!.centre.x;
+                };
+
+                // the font is 32 units with an 18-unit advance: 9px at 16px, then the spacing
+                expect(2 * (centreOf('AA') - centreOf('A'))).toBeCloseTo(9 + 4, 4);
             });
         });
 
@@ -322,7 +454,11 @@ export function engineContract(name: string, load: () => Promise<Engine>) {
                 if (!engine.particles) return context.skip();
 
                 const parent = engine.display.container({ label: 'emitter' });
-                const emitter = engine.particles.createEmitter(parent, [engine.display.whiteTexture], config);
+                const emitter = engine.particles.createEmitter(
+                    parent,
+                    [engine.display.whiteTexture],
+                    config,
+                );
 
                 emitter.emit = true;
                 expect(emitter.emit).toBe(true);
@@ -342,7 +478,11 @@ export function engineContract(name: string, load: () => Promise<Engine>) {
                 if (!engine.particles) return context.skip();
 
                 const parent = engine.display.container({ label: 'emitter' });
-                const emitter = engine.particles.createEmitter(parent, [engine.display.whiteTexture], config);
+                const emitter = engine.particles.createEmitter(
+                    parent,
+                    [engine.display.whiteTexture],
+                    config,
+                );
 
                 emitter.emit = false;
                 emitter.playOnce();
