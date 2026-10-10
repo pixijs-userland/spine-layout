@@ -1,0 +1,12 @@
+contract.png
+size: 64,32
+format: RGBA8888
+filter: Linear,Linear
+repeat: none
+square
+  rotate: false
+  xy: 0, 0
+  size: 40, 20
+  orig: 40, 20
+  offset: 0, 0
+  index: -1

@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>spine-layout on PIXI v4</title>
+        <style>
+            html,
+            body {
+                margin: 0;
+                height: 100%;
+                background: #1d1f24;
+                color: #c9ccd3;
+                font:
+                    14px/1.4 system-ui,
+                    sans-serif;
+            }
+            #status {
+                position: fixed;
+                left: 12px;
+                bottom: 12px;
+            }
+        </style>
+        <script src="../../node_modules/pixi.js-v4/dist/pixi.js"></script>
+        <script src="../../node_modules/pixi-spine-v4/dist/pixi-spine.js"></script>
+        <script src="../../node_modules/pixi-particles/dist/pixi-particles.js"></script>
+    </head>
+    <body>
+        <div id="status">loading…</div>
+        <script type="module" src="./main.js"></script>
+    </body>
+</html>
