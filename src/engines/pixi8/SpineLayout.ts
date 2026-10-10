@@ -13,8 +13,8 @@ export interface SpineLayout extends Container {}
 
 // eslint-disable-next-line @typescript-eslint/no-unsafe-declaration-merging
 export class SpineLayout extends SpineLayoutCore<Pixi8Types> {
-    constructor({ engine = pixi8Engine, ...options }: SpineLayoutPixi8Options = {}) {
-        super({ ...options, engine });
+    constructor(options: SpineLayoutPixi8Options = {}) {
+        super(Object.assign(options, { engine: options.engine ?? pixi8Engine }));
     }
 
     override destroy() {

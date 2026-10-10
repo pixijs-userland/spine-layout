@@ -5,6 +5,7 @@ import type {
     Pixi4Spine,
     Spine38Slot,
 } from './pixi4.types';
+import { onSpineUpdate } from './updateHooks';
 
 type SlotObject = {
     child: Pixi4Container;
@@ -105,12 +106,8 @@ export function createSlotObjects(PIXI: Pixi4Namespace) {
         if (existing) return existing;
 
         const objects = new Map<number, SlotObject>();
-        const update = spine.update;
 
-        spine.update = (dt: number) => {
-            update.call(spine, dt);
-            objects.forEach((entry, index) => syncSlot(spine, index, entry));
-        };
+        onSpineUpdate(spine, () => objects.forEach((entry, index) => syncSlot(spine, index, entry)));
         registry.set(spine, objects);
 
         return objects;

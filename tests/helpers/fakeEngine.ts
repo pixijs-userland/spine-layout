@@ -10,6 +10,7 @@ import type {
     SpinePort,
 } from '../../src/engine/Engine';
 import { classifyPropertyId, pixi8Engine, type Pixi8Types } from '../../src/engines/pixi8';
+import { createHookSet } from '../../src/engines/shared/hookSet';
 
 export type FakeAnimation = {
     name: string;
@@ -44,7 +45,8 @@ export type FakeSlot = {
  * parent link, and the pose that gets written while animating.
  *
  * `worldToParent` mirrors the runtime for an unrotated, unscaled parent — it subtracts the
- * parent's world position — which is all the bone maths under test needs.
+ * parent's world position, or undoes the skeleton's offset and scale for a root — which is all
+ * the bone maths under test needs.
  */
 export type FakeSkeletonBone = {
     data: { name: string; setupPose: { x: number; y: number } };
@@ -54,7 +56,10 @@ export type FakeSkeletonBone = {
         y: number;
         worldX: number;
         worldY: number;
-        worldToParent: (point: { x: number; y: number }) => { x: number; y: number };
+        worldToParent: (
+            point: { x: number; y: number },
+            skeleton: { x: number; y: number; scaleX: number; scaleY: number },
+        ) => { x: number; y: number };
     };
     /** Puts just this bone back to setup — what a scoped revert calls, one bone at a time. */
     setupPose: () => void;
@@ -276,11 +281,14 @@ export function createFakeSpine(options: FakeSpineOptions = {}): FakeSpine {
                 y: bone.setupY ?? 0,
                 worldX: bone.worldX ?? 0,
                 worldY: bone.worldY ?? 0,
-                worldToParent: (point) => {
+                worldToParent: (point, skeleton) => {
                     const parent = skeletonBone.parent;
                     if (parent) {
                         point.x -= parent.pose.worldX;
                         point.y -= parent.pose.worldY;
+                    } else {
+                        point.x = (point.x - skeleton.x) / skeleton.scaleX;
+                        point.y = (point.y - skeleton.y) / skeleton.scaleY;
                     }
                     return point;
                 },
@@ -400,6 +408,19 @@ const RUNTIME_PROPERTY_ID = /^\d+(\|\d+)?$/;
  * records. Attachments are the runtime's own in the tests that use them, so those are left to
  * the pixi8 port, and so is building a `Spine`, which a test mocks where it needs to.
  */
+const fakeUpdateHooks = createHookSet<Spine, [number]>((spine, run) => {
+    const previous = spine.update;
+
+    spine.update = (dt: number) => {
+        previous.call(spine, dt);
+        run(dt);
+    };
+
+    return () => {
+        spine.update = previous;
+    };
+});
+
 const fakeSpinePort: SpinePort<FakeTypes> = {
     ...pixi8Engine.spine,
 
@@ -436,18 +457,7 @@ const fakeSpinePort: SpinePort<FakeTypes> = {
             ),
         ),
 
-    onUpdate(spine, hook) {
-        const previous = spine.update;
-
-        spine.update = (dt: number) => {
-            previous.call(spine, dt);
-            hook(dt);
-        };
-
-        return () => {
-            spine.update = previous;
-        };
-    },
+    onUpdate: fakeUpdateHooks,
 
     attachSlotObject: (spine, slotName, child) => spine.addSlotObject(slotName, child),
     getSlotObject: (spine, slotName) => spine.getSlotObject(slotName),

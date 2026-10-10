@@ -958,6 +958,22 @@ describe('AnimationsController – animation-triggered FX', () => {
         await vi.runAllTimersAsync();
     });
 
+    it('hands only particles_<key>_start|_stop|_once to the particles, and plays any other particles_ event', () => {
+        const hero = makeSpineWithFX();
+        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero }));
+        const handleEvent = vi.fn();
+        ctl.particles = { handleEvent } as never;
+        ctl.registerSpine('hero', hero as never);
+
+        hero.triggerEvent('particles_sparks_once');
+        hero.triggerEvent('particles_whoosh');
+
+        expect(handleEvent).toHaveBeenCalledTimes(1);
+        expect(handleEvent).toHaveBeenCalledWith('particles_sparks_once', 'hero');
+        expect(soundsMock.playFX).toHaveBeenCalledWith('particles_whoosh', false);
+        expect(soundsMock.playFX).toHaveBeenCalledTimes(1);
+    });
+
     it('treats a *_loop event as a looping FX, not music, and stops it with the animation', async () => {
         const hero = makeSpineWithFX();
         const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero }));

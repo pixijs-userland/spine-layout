@@ -13,6 +13,10 @@ import { claimsCollide, EMPTY_CLAIM, poseClaims, type AnimationClaim } from '../
 import { sounds } from './Sounds.controller';
 import type { ParticlesController } from './Particles.controller';
 
+const isParticleEvent = (name: string) =>
+    name.startsWith(parcePointers.slot.particles) &&
+    Object.values(parcePointers.particleEvent).some((suffix) => name.endsWith(suffix));
+
 type EventsListeners<T extends EngineTypes> = Map<
     string,
     ((spineID: string, spine?: T['Spine'], event?: unknown) => void)[]
@@ -85,7 +89,7 @@ export class AnimationsController<T extends EngineTypes = EngineTypes> {
                     ? event.data.name.slice(0, -parcePointers.mod.loop.length)
                     : event.data.name;
 
-                if (event.data.name.startsWith(parcePointers.slot.particles)) {
+                if (isParticleEvent(event.data.name)) {
                     this.particles?.handleEvent(event.data.name, spineID);
                 } else if (sound.includes(parcePointers.sound.music)) {
                     sounds.playMusic(sound);

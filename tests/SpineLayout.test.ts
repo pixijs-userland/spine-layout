@@ -18,6 +18,25 @@ const manifest = (aliases: string[]): AssetsManifest =>
         bundles: [{ name: 'default', assets: aliases.map((alias) => ({ alias: [alias] })) }],
     }) as unknown as AssetsManifest;
 
+describe('SpineLayout — options', () => {
+    it("keeps the caller's options object, so debug writes back to it and controllers read it live", () => {
+        const options: { debug?: boolean; skipAttachingSpinesPatterns?: string[] } = {};
+        const layout = new SpineLayout(options);
+
+        layout.debug = true;
+        expect(options.debug).toBe(true);
+        layout.debug = false;
+
+        options.skipAttachingSpinesPatterns = ['bg'];
+        layout.createInstancesFromDataArray([
+            { name: 'root', skeleton: bonesOnly, atlasText: '', textures: {} },
+            { name: 'bg', skeleton: { ...bonesOnly, bones: [{ name: 'root' }], slots: [] }, atlasText: '', textures: {} },
+        ]);
+
+        expect(layout.spines.get('bg')?.parent).toBeFalsy();
+    });
+});
+
 describe('SpineLayout — a skeleton with no atlas', () => {
     afterEach(() => vi.restoreAllMocks());
 

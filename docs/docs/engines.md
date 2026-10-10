@@ -160,7 +160,7 @@ the core degrades instead of throwing.
 | `spine`     | Reads skeletons, creates and updates the `Spine`, and exposes bones, slots, setup poses, track claims and slot objects     |
 | `display`   | The container class the layout is an instance of, plus sprites, textures, hit areas, pointer events and hit-test shielding |
 | `text`      | `Text` and `BitmapText` nodes, `texts.json` entry to style translation, bitmap fonts and measuring, and its `capabilities` |
-| `assets`    | `get(alias)`, the engine's asset cache                                                                                     |
+| `assets`    | `get(alias)` and `has(alias)`, the engine's asset cache                                                                    |
 | `particles` | Optional. `createEmitter(parent, textures, config)` returning an emitter with `emit`, `update`, `playOnce` and `destroy`   |
 
 Boundaries the repo enforces:

@@ -224,9 +224,14 @@ Configuration lives in `settings/particles.json`, keyed by spine id like `texts.
 ```
 
 `textures` are asset aliases; `config` is handed to the engine's emitter as it is (a
-pixi-particles config on `pixi4`). Emitters advance with their spine, scaled by the layout
-`speed`. On a multiple-instance spine the key is `<spineID>_<key>`, and the instance's section is
-merged over the base spine's.
+pixi-particles config on `pixi4`). Emitters advance with their spine, at its `state.timeScale`
+— the layout `speed`, a per-spine speed, a pause. On a multiple-instance spine the key is
+`<spineID>_<key>`, and the instance's section is merged over the base spine's. A bare key with no
+spine id reaches that key on every spine.
+
+`emitOnce` plays a config with an `emitterLifetime` for that lifetime; a looping one
+(`emitterLifetime` unset or `<= 0`) spawns a single wave and stops. An emitter already emitting
+keeps going.
 
 ```typescript
 layout.particles.play('sparks'); // or play('sparks', 'hero')

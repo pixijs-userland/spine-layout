@@ -120,12 +120,31 @@ export function engineContract(name: string, load: () => Promise<Engine>) {
                 engine.spine.updateWorldTransform(spine.skeleton);
 
                 const pose = engine.spine.bonePose(bone);
-                const local = pose.worldToParent({ x: pose.worldX, y: pose.worldY });
+                const local = pose.worldToParent({ x: pose.worldX, y: pose.worldY }, spine.skeleton);
                 const setup = engine.spine.boneSetup(bone);
 
                 expect(local.x).toBeCloseTo(setup.x, 4);
                 expect(local.y).toBeCloseTo(setup.y, 4);
                 expect([setup.x, setup.y]).toEqual([10, 20]);
+            });
+            it("converts a root bone's world position back into skeleton space", async () => {
+                await setUp();
+                const spine = create();
+                const { skeleton: target } = spine;
+                const root = target.findBone('root')!;
+                const pose = engine.spine.bonePose(root);
+
+                Object.assign(target, { x: 100, y: -40, scaleX: 2 });
+                target.scaleY *= 3;
+                pose.x = 12;
+                pose.y = 34;
+                engine.spine.updateWorldTransform(target);
+
+                expect(pose.worldX).toBeCloseTo(100 + 12 * 2);
+                const local = pose.worldToParent({ x: pose.worldX, y: pose.worldY }, target);
+
+                expect(local.x).toBeCloseTo(12, 4);
+                expect(local.y).toBeCloseTo(34, 4);
             });
         });
 
@@ -170,6 +189,71 @@ export function engineContract(name: string, load: () => Promise<Engine>) {
             engine.spine.update(spine, 0.5);
 
             expect(seen).toEqual([0.25]);
+        });
+
+        describe('hooks removed in any order', () => {
+            const order = (
+                add: (spine: SpineLike, hook: () => void) => () => void,
+                run: (spine: SpineLike) => void,
+            ) => {
+                const spine = create();
+                const seen: string[] = [];
+                const fired = () => seen.splice(0);
+
+                const removeA = add(spine, () => seen.push('A'));
+                const removeB = add(spine, () => seen.push('B'));
+                run(spine);
+                expect(fired()).toEqual(['A', 'B']);
+
+                removeA();
+                run(spine);
+                expect(fired()).toEqual(['B']);
+
+                removeB();
+                run(spine);
+                expect(fired()).toEqual([]);
+
+                removeA();
+                const removeAgain = add(spine, () => seen.push('A'));
+                run(spine);
+                expect(fired()).toEqual(['A']);
+                removeAgain();
+            };
+
+            it('onUpdate', async () => {
+                await setUp();
+                order(
+                    (spine, hook) => engine.spine.onUpdate(spine, hook),
+                    (spine) => engine.spine.update(spine, 0.1),
+                );
+            });
+
+            it('beforeWorldTransforms', async () => {
+                await setUp();
+                order(
+                    (spine, hook) => engine.spine.beforeWorldTransforms(spine, hook),
+                    (spine) => engine.spine.update(spine, 0.1),
+                );
+            });
+
+            it('leaves a slot object following its bone when an update hook goes', async () => {
+                await setUp();
+                const spine = create();
+                const child = engine.display.container({ label: 'child' });
+                const bone = spine.skeleton.findBone('bone_a')!;
+
+                const remove = engine.spine.onUpdate(spine, () => {});
+                engine.spine.attachSlotObject(spine, 'slot_b', child);
+                remove();
+
+                engine.spine.beforeWorldTransforms(spine, () => {
+                    engine.spine.bonePose(bone).x = 33;
+                });
+                engine.spine.update(spine, 0);
+
+                const origin = spine.toLocal(child.toGlobal(engine.display.point(0, 0)));
+                expect(origin.x).toBeCloseTo(33);
+            });
         });
 
         it('hangs an object off a slot, and takes it off again', async () => {
@@ -250,6 +334,27 @@ export function engineContract(name: string, load: () => Promise<Engine>) {
                 expect(() => emitter.playOnce()).not.toThrow();
                 expect(() => emitter.update(0.1)).not.toThrow();
                 expect(() => emitter.destroy()).not.toThrow();
+                parent.destroy();
+            });
+
+            it('bursts a looping config once on playOnce, then stops emitting', async (context) => {
+                await setUp();
+                if (!engine.particles) return context.skip();
+
+                const parent = engine.display.container({ label: 'emitter' });
+                const emitter = engine.particles.createEmitter(parent, [engine.display.whiteTexture], config);
+
+                emitter.emit = false;
+                emitter.playOnce();
+                emitter.update(0.005);
+                const spawned = parent.children.length;
+                for (let i = 0; i < 5; i++) emitter.update(0.05);
+
+                expect(spawned).toBeGreaterThan(0);
+                expect(emitter.emit).toBe(false);
+                expect(parent.children.length).toBeLessThanOrEqual(spawned);
+
+                emitter.destroy();
                 parent.destroy();
             });
         });

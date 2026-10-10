@@ -1,5 +1,5 @@
 import type { Engine, EngineTypes, PointLike } from '../../engine/Engine';
-import type { BoneLike, SkeletonLike } from '../../engine/runtime';
+import type { BoneLike } from '../../engine/runtime';
 import type { SpineID } from '../config/types';
 import { parcePointers } from '../config/parcePointers';
 import { LOG } from '../config/logs';
@@ -196,25 +196,13 @@ export class PointerController<T extends EngineTypes = EngineTypes> {
         target.x = inSpine.x;
         target.y = inSpine.y;
 
-        if (bone.parent) pose.worldToParent(target);
-        else this.skeletonToRoot(spine.skeleton, target);
+        pose.worldToParent(target, spine.skeleton);
 
         const setupPose = this.engine.spine.boneSetup(bone);
         const strength = this.strengths.get(bone.data.name) ?? this._strength;
 
         pose.x = setupPose.x + (target.x - setupPose.x) * strength;
         pose.y = setupPose.y + (target.y - setupPose.y) * strength;
-    }
-
-    /**
-     * A root bone has no parent to be posed against: it is posed in skeleton space, scaled
-     * and offset by the skeleton itself (see `BonePose.updateWorldTransform`).
-     */
-    private skeletonToRoot(skeleton: SkeletonLike, point: PointLike) {
-        const { scaleX, scaleY } = skeleton;
-
-        point.x = scaleX ? (point.x - skeleton.x) / scaleX : 0;
-        point.y = scaleY ? (point.y - skeleton.y) / scaleY : 0;
     }
 
     private listen() {

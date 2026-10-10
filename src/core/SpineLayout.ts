@@ -64,7 +64,8 @@ export class SpineLayoutCore<T extends EngineTypes = EngineTypes> extends Layout
     #orientation: OrientationController<T>;
     private options?: SpineLayoutOptions;
 
-    constructor({ engine, ...options }: SpineLayoutCoreOptions<T>) {
+    constructor(options: SpineLayoutCoreOptions<T>) {
+        const { engine } = options;
         super(engine as unknown as Engine);
 
         this.engine = engine;
@@ -79,12 +80,7 @@ export class SpineLayoutCore<T extends EngineTypes = EngineTypes> extends Layout
             this.#multipleInstanceIDs,
             this.#animations,
         );
-        this.#particles = new ParticlesController(
-            engine,
-            this.#spines,
-            this.#multipleInstanceIDs,
-            this.#animations,
-        );
+        this.#particles = new ParticlesController(engine, this.#spines, this.#multipleInstanceIDs);
         this.#animations.particles = this.#particles;
         this.#spine = new SpineController(engine, this.#spines, this.#animations);
         this.#scene = new SceneController(
@@ -438,6 +434,7 @@ export class SpineLayoutCore<T extends EngineTypes = EngineTypes> extends Layout
 
     private addSpineInstance(spineID: string, spine: T['Spine']) {
         if (this.#spines.has(spineID)) {
+            this.#particles.detachSpine(spineID);
             this.#spines.get(spineID)?.destroy();
             this.#spines.delete(spineID);
         }
@@ -451,6 +448,7 @@ export class SpineLayoutCore<T extends EngineTypes = EngineTypes> extends Layout
         const spine = this.#spines.get(spineID);
         if (!spine) return;
 
+        this.#particles.detachSpine(spineID);
         spine.destroy();
         this.#spines.delete(spineID);
         this.#animations.unregisterSpine(spineID);

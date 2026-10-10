@@ -151,7 +151,7 @@ export class SpineController<T extends EngineTypes = EngineTypes> {
 
         if (!region) return null;
 
-        const rotated = region.rotate === 90;
+        const rotated = region.rotate % 180 !== 0;
 
         return this.engine.display.subTexture(
             region.page,

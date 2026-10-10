@@ -208,6 +208,14 @@ describe('SpineController', () => {
         expect((tex as unknown as { rotate: number }).rotate).toBe(2);
     });
 
+    it('getSlotTexture swaps frame dimensions for a region turned 270 degrees too', () => {
+        const region = makeRegion({ x: 5, y: 6, width: 30, height: 40, degrees: 270 });
+        const hero = createFakeSpine({ slots: [{ name: 'icon', attachment: region }] });
+        const ctl = new SpineController(fakeEngine, asSpineMap({ hero }), new AnimationsController(fakeEngine, new Map()));
+
+        expect(ctl.getSlotTexture('hero', 'icon')?.frame).toMatchObject({ x: 5, y: 6, width: 40, height: 30 });
+    });
+
     it('getSlotTexture scales a reduced page from its own pixels into logical units', () => {
         // A `@0.5x` page: the region is measured in its 95x94 pixels, the frame in the source's
         // logical 190x188, so an unscaled frame would sample half-way into the atlas.

@@ -26,6 +26,7 @@ import {
     type SkeletonSource,
     type SlotLike,
 } from '../../engine/runtime';
+import { createHookSet } from '../shared/hookSet';
 import type { Pixi8Types } from './types';
 
 /**
@@ -83,6 +84,75 @@ export function classifyPropertyId(id: string): PoseClaimEntry {
 
 type SpineUpdateInternals = { _updateAndApplyState(time: number): void };
 
+const beforeWorldTransformHooks = createHookSet<Spine, []>((spine, run) => {
+    const previous = spine.beforeUpdateWorldTransforms;
+
+    spine.beforeUpdateWorldTransforms = (target) => {
+        previous(target);
+        run();
+    };
+
+    return () => {
+        spine.beforeUpdateWorldTransforms = previous;
+    };
+});
+
+// `_updateAndApplyState` is where the ticker's `internalUpdate` and `update(dt)` both land;
+// the ticker holds its own reference to `internalUpdate`, so wrapping that would miss it.
+const updateHooks = createHookSet<Spine, [number]>((spine, run) => {
+    const target = spine as unknown as SpineUpdateInternals;
+    const previous = target._updateAndApplyState;
+
+    target._updateAndApplyState = function (this: SpineUpdateInternals, time: number) {
+        previous.call(this, time);
+        run(time);
+    };
+
+    return () => {
+        target._updateAndApplyState = previous;
+    };
+});
+
+const rootPoses = new WeakMap<Bone, BonePose>();
+
+/** A root bone is posed in skeleton space: offset and scaled by the skeleton, yDown flip included. */
+function rootPose(bone: Bone): BonePose {
+    let pose = rootPoses.get(bone);
+    if (pose) return pose;
+
+    const local = bone.pose;
+
+    pose = {
+        get x() {
+            return local.x;
+        },
+        set x(value) {
+            local.x = value;
+        },
+        get y() {
+            return local.y;
+        },
+        set y(value) {
+            local.y = value;
+        },
+        get worldX() {
+            return local.worldX;
+        },
+        get worldY() {
+            return local.worldY;
+        },
+        worldToParent(point, skeleton) {
+            const { x, y, scaleX, scaleY } = skeleton;
+            point.x = scaleX ? (point.x - x) / scaleX : 0;
+            point.y = scaleY ? (point.y - y) / scaleY : 0;
+            return point;
+        },
+    };
+    rootPoses.set(bone, pose);
+
+    return pose;
+}
+
 const slotOf = (slot: SlotLike) => slot as Slot;
 const boneOf = (bone: BoneLike) => bone as Bone;
 const skeletonOf = (skeleton: SkeletonLike) => skeleton as unknown as Skeleton;
@@ -112,7 +182,10 @@ export const spinePort: SpinePort<Pixi8Types> = {
     create: (data) => new Spine(data as unknown as SkeletonData),
     update: (spine, dt) => spine.update(dt),
 
-    bonePose: (bone) => boneOf(bone).pose as unknown as BonePose,
+    bonePose(target) {
+        const bone = boneOf(target);
+        return bone.parent ? (bone.pose as unknown as BonePose) : rootPose(bone);
+    },
     boneSetup: (bone) => boneOf(bone).data.setupPose,
     slotAttachment: (slot) => slotOf(slot).pose.attachment,
     slotAlpha: (slot) => slotOf(slot).pose.color.a,
@@ -136,34 +209,8 @@ export const spinePort: SpinePort<Pixi8Types> = {
             (timeline.propertyIds ?? []).map(classifyPropertyId),
         ),
 
-    beforeWorldTransforms(spine, hook) {
-        const previous = spine.beforeUpdateWorldTransforms;
-
-        spine.beforeUpdateWorldTransforms = (target) => {
-            previous(target);
-            hook();
-        };
-
-        return () => {
-            spine.beforeUpdateWorldTransforms = previous;
-        };
-    },
-
-    // `_updateAndApplyState` is where the ticker's `internalUpdate` and `update(dt)` both land;
-    // the ticker holds its own reference to `internalUpdate`, so wrapping that would miss it.
-    onUpdate(spine, hook) {
-        const target = spine as unknown as SpineUpdateInternals;
-        const previous = target._updateAndApplyState;
-
-        target._updateAndApplyState = function (this: SpineUpdateInternals, time: number) {
-            previous.call(this, time);
-            hook(time);
-        };
-
-        return () => {
-            target._updateAndApplyState = previous;
-        };
-    },
+    beforeWorldTransforms: beforeWorldTransformHooks,
+    onUpdate: updateHooks,
 
     hitPolygon(slot, attachment) {
         let vertices: ArrayLike<number> | undefined;

@@ -1,10 +1,12 @@
-import type { BonePose, PoseClaimEntry, SpinePort } from '../../engine/Engine';
+import type { BonePose, PointLike, PoseClaimEntry, SpinePort } from '../../engine/Engine';
 import { isBinarySkeleton, type SkeletonSource } from '../../engine/runtime';
+import { createHookSet } from '../shared/hookSet';
 import type { AssetsRegistry } from './assets.port';
 import { degreesOf } from './groupD8';
 import type {
     Pixi4BaseTexture,
     Pixi4Namespace,
+    Pixi4Spine,
     Pixi4Texture,
     Pixi4Types,
     Spine38Animation,
@@ -18,6 +20,21 @@ import type {
     Spine38Timeline,
 } from './pixi4.types';
 import type { SlotObjects } from './slotObjects';
+import { onSpineUpdate } from './updateHooks';
+
+const beforeWorldTransforms = createHookSet<Pixi4Spine['state'], []>((state, run) => {
+    const previous = state.apply;
+
+    state.apply = (skeleton) => {
+        const applied = previous.call(state, skeleton);
+        run();
+        return applied;
+    };
+
+    return () => {
+        state.apply = previous;
+    };
+});
 
 const skeletonOf = (skeleton: unknown) => skeleton as Spine38Skeleton;
 const boneOf = (bone: unknown) => bone as Spine38Bone;
@@ -56,31 +73,89 @@ export function createSpinePort(
         });
     }
 
+    // pixi-spine flips y inside `updateWorldTransformWith`, so `skeleton.scaleY` stays positive
+    function skeletonToRoot<P extends PointLike>(skeleton: Spine38Skeleton, point: P): P {
+        const { x, y, scaleX, scaleY } = skeleton;
+        const sy = core.Bone.yDown ? -scaleY : scaleY;
+
+        point.x = scaleX ? (point.x - x) / scaleX : 0;
+        point.y = sy ? (point.y - y) / sy : 0;
+        return point;
+    }
+
+    /**
+     * `RegionAttachment.updateOffset`, reading `spineOffsetY` where it reads the deprecated
+     * `offsetY`, which warns on every read.
+     */
+    function regionCorners(attachment: Spine38RegionAttachment): number[] | undefined {
+        const { region, width, height, scaleX, scaleY, x, y, rotation } = attachment;
+        if (!region) return undefined;
+
+        const regionScaleX = (width / region.originalWidth) * scaleX;
+        const regionScaleY = (height / region.originalHeight) * scaleY;
+        const left = (-width / 2) * scaleX + region.offsetX * regionScaleX;
+        const bottom = (-height / 2) * scaleY + region.spineOffsetY * regionScaleY;
+        const right = left + region.width * regionScaleX;
+        const top = bottom + region.height * regionScaleY;
+        const radians = (rotation * Math.PI) / 180;
+        const cos = Math.cos(radians);
+        const sin = Math.sin(radians);
+        const corner = (cx: number, cy: number) => [
+            cx * cos - cy * sin + x,
+            cy * cos + cx * sin + y,
+        ];
+
+        return [
+            ...corner(left, bottom),
+            ...corner(left, top),
+            ...corner(right, top),
+            ...corner(right, bottom),
+        ];
+    }
+
     function claim(
         timeline: Spine38Timeline,
         data: Spine38SkeletonData | undefined,
-    ): PoseClaimEntry {
+    ): PoseClaimEntry[] {
         const id = `${timeline.getPropertyId()}`;
         const ik = data?.ikConstraints.length ?? 0;
         const transform = data?.transformConstraints.length ?? 0;
 
         if (timeline.boneIndex !== undefined)
-            return { kind: 'bone', index: timeline.boneIndex, id };
-        if (timeline.slotIndex !== undefined)
-            return { kind: 'slot', index: timeline.slotIndex, id };
+            return [{ kind: 'bone', index: timeline.boneIndex, id }];
+        if (timeline.slotIndex !== undefined) {
+            const index = timeline.slotIndex;
+
+            // 4.3 keys color and two-color alike, so they compete as they do on pixi8
+            if (timeline instanceof core.TwoColorTimeline) {
+                const color = `${(core.TimelineType.color << 24) + index}`;
+                return [
+                    { kind: 'slot', index, id },
+                    { kind: 'slot', index, id: color },
+                ];
+            }
+            // 3.8 sums slot and attachment into one number, which lets different pairs collide
+            if (timeline instanceof core.DeformTimeline) {
+                return [{ kind: 'slot', index, id: `deform|${index}|${timeline.attachment?.id}` }];
+            }
+
+            return [{ kind: 'slot', index, id }];
+        }
         if (timeline.ikConstraintIndex !== undefined) {
-            return { kind: 'constraint', index: timeline.ikConstraintIndex, id };
+            return [{ kind: 'constraint', index: timeline.ikConstraintIndex, id }];
         }
         if (timeline.transformConstraintIndex !== undefined) {
-            return { kind: 'constraint', index: ik + timeline.transformConstraintIndex, id };
+            return [{ kind: 'constraint', index: ik + timeline.transformConstraintIndex, id }];
         }
         if (timeline.pathConstraintIndex !== undefined) {
-            return { kind: 'constraint', index: ik + transform + timeline.pathConstraintIndex, id };
+            return [
+                { kind: 'constraint', index: ik + transform + timeline.pathConstraintIndex, id },
+            ];
         }
         if (timeline.getPropertyId() === core.TimelineType.drawOrder << 24)
-            return { kind: 'drawOrder', id };
+            return [{ kind: 'drawOrder', id }];
 
-        return { kind: 'event' };
+        return [{ kind: 'event' }];
     }
 
     return {
@@ -109,18 +184,7 @@ export function createSpinePort(
         create: (data) => new PIXI.spine.Spine(remember(data as Spine38SkeletonData)),
         update: (spine, dt) => spine.update(dt),
 
-        onUpdate(spine, hook) {
-            const previous = spine.update;
-
-            spine.update = (dt: number) => {
-                previous.call(spine, dt);
-                hook(dt);
-            };
-
-            return () => {
-                spine.update = previous;
-            };
-        },
+        onUpdate: onSpineUpdate,
 
         bonePose(target) {
             const bone = boneOf(target);
@@ -146,8 +210,10 @@ export function createSpinePort(
                     get worldY() {
                         return bone.worldY;
                     },
-                    worldToParent: (point) =>
-                        bone.parent ? bone.parent.worldToLocal(point) : point,
+                    worldToParent: (point, skeleton) =>
+                        bone.parent
+                            ? bone.parent.worldToLocal(point)
+                            : skeletonToRoot(skeletonOf(skeleton), point),
                 };
                 poses.set(bone, pose);
             }
@@ -200,32 +266,16 @@ export function createSpinePort(
             const animation = target as Spine38Animation;
             const data = owners.get(animation);
 
-            return animation.timelines.map((timeline) => claim(timeline, data));
+            return animation.timelines.flatMap((timeline) => claim(timeline, data));
         },
 
-        beforeWorldTransforms(spine, hook) {
-            const { state } = spine;
-            const previous = state.apply;
-
-            state.apply = (skeleton) => {
-                const applied = previous.call(state, skeleton);
-                hook();
-                return applied;
-            };
-
-            return () => {
-                state.apply = previous;
-            };
-        },
+        beforeWorldTransforms: (spine, hook) => beforeWorldTransforms(spine.state, hook),
 
         hitPolygon(_slot, attachment) {
             let vertices: ArrayLike<number> | undefined;
 
             if (attachment instanceof core.RegionAttachment) {
-                const region = attachment as Spine38RegionAttachment;
-                // pixi-spine positions its sprites without the offsets, so nothing else computes them
-                if (region.region) region.updateOffset();
-                vertices = region.offset;
+                vertices = regionCorners(attachment as Spine38RegionAttachment);
             } else if (attachment instanceof core.MeshAttachment) {
                 const mesh = attachment as Spine38MeshAttachment;
                 if (!mesh.bones) vertices = Array.from(mesh.vertices).slice(0, mesh.hullLength);

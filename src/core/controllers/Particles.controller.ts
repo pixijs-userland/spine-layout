@@ -3,7 +3,6 @@ import type { ParticlesJson, ParticlesJsonEntry, SpineID } from '../config/types
 import { parcePointers } from '../config/parcePointers';
 import { LOG } from '../config/logs';
 import { log } from '../utils/Log';
-import type { AnimationsController } from './Animations.controller';
 
 type Emitter<T extends EngineTypes> = {
     spineID: SpineID;
@@ -30,7 +29,6 @@ export class ParticlesController<T extends EngineTypes = EngineTypes> {
         private engine: Engine<T>,
         private spines: Map<SpineID, T['Spine']>,
         private multipleInstanceIDs: Set<string> = new Set(),
-        private animations?: AnimationsController<T>,
     ) {}
 
     set settings(settings: ParticlesJson) {
@@ -45,11 +43,9 @@ export class ParticlesController<T extends EngineTypes = EngineTypes> {
         if (this.#settings) return;
 
         const { assets } = this.engine;
-        const particles =
-            assets.get<ParticlesJson>('particles.json') ??
-            assets.get<ParticlesJson>('settings/particles.json');
+        const alias = ['particles.json', 'settings/particles.json'].find((name) => assets.has(name));
 
-        if (particles) this.#settings = particles;
+        if (alias) this.#settings = assets.get<ParticlesJson>(alias);
     }
 
     attach(only?: Set<SpineID>) {
@@ -148,6 +144,13 @@ export class ParticlesController<T extends EngineTypes = EngineTypes> {
         });
     }
 
+    /** Takes down every emitter on `spineID`, before that spine is destroyed or replaced. */
+    detachSpine(spineID: SpineID) {
+        this.#emitters.forEach((record, key) => {
+            if (record.spineID === spineID) this.remove(key);
+        });
+    }
+
     clear() {
         [...this.#emitters.keys()].forEach((key) => this.remove(key));
         this.#settings = undefined;
@@ -159,6 +162,9 @@ export class ParticlesController<T extends EngineTypes = EngineTypes> {
         slotName: string,
         particleKey: string,
     ): string | undefined {
+        const key = this.registrationKey(spineID, particleKey);
+        this.remove(key);
+
         const entry = this.mergedEntry(spineID, particleKey);
         if (!entry) return undefined;
 
@@ -167,9 +173,6 @@ export class ParticlesController<T extends EngineTypes = EngineTypes> {
 
         const textures = this.texturesFor(entry, particleKey);
         if (!textures) return undefined;
-
-        const key = this.registrationKey(spineID, particleKey);
-        this.remove(key);
 
         const container = this.engine.display.container({ label: slotName, interactive: 'none' });
         this.engine.spine.attachSlotObject(spine, slotName, container);
@@ -185,7 +188,7 @@ export class ParticlesController<T extends EngineTypes = EngineTypes> {
 
         record.emitter.emit = !!entry.autoplay;
         record.stopUpdates = this.engine.spine.onUpdate(spine, (dt) =>
-            record.emitter.update(dt * this.timeScaleFor(spineID)),
+            record.emitter.update(dt * spine.state.timeScale),
         );
 
         this.#emitters.set(key, record);
@@ -241,13 +244,15 @@ export class ParticlesController<T extends EngineTypes = EngineTypes> {
         return undefined;
     }
 
+    /** `name` is a particle key or a registration key; a particle key reaches every spine's. */
     private resolve(name: string, spineID?: SpineID): Emitter<T>[] {
         const exact = this.#emitters.get(name);
-        if (exact && (!spineID || exact.spineID === spineID)) return [exact];
-
-        return [...this.#emitters.values()].filter(
+        const byKey = [...this.#emitters.values()].filter(
             (record) => record.particleKey === name && (!spineID || record.spineID === spineID),
         );
+
+        if (byKey.length > 0) return byKey;
+        return exact && (!spineID || exact.spineID === spineID) ? [exact] : [];
     }
 
     private port(): ParticlesPort<T> | undefined {
@@ -259,9 +264,5 @@ export class ParticlesController<T extends EngineTypes = EngineTypes> {
         }
 
         return particles;
-    }
-
-    private timeScaleFor(spineID: SpineID): number {
-        return this.animations?.timeScaleFor(spineID) ?? 1;
     }
 }

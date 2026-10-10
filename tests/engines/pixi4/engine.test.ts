@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 import fixture from '../../fixtures/contract-3.8.json';
 import { createPixi4Engine, type Pixi4Engine } from '../../../src/engines/pixi4';
 import type { Pixi4Container, Pixi4Texture } from '../../../src/engines/pixi4/pixi4.types';
@@ -110,6 +110,26 @@ describe('claimOf', () => {
             if (claim.kind !== 'event') expect(claim.id).toMatch(/^\d+$/);
         });
     });
+
+    it('lets two-color compete with color, and keeps deform ids apart by slot and attachment', () => {
+        const { core } = PIXI.spine;
+        const slotTimeline = <T extends object>(timeline: T, slotIndex: number, extra = {}) =>
+            Object.assign(timeline, { slotIndex, ...extra });
+        const ids = (...timelines: object[]) =>
+            engine.spine
+                .claimOf(new core.Animation('probe', timelines, 1))
+                .map((claim) => ('id' in claim ? claim.id : claim.kind));
+
+        const color = ids(slotTimeline(new core.ColorTimeline(1), 1));
+        const twoColor = ids(slotTimeline(new core.TwoColorTimeline(1), 1));
+        expect(twoColor).toEqual(expect.arrayContaining(color));
+        expect(twoColor).toHaveLength(2);
+
+        const deformA = ids(slotTimeline(new core.DeformTimeline(1), 0, { attachment: { id: 2 } }));
+        const deformB = ids(slotTimeline(new core.DeformTimeline(1), 1, { attachment: { id: 1 } }));
+        expect(deformA).toEqual(['deform|0|2']);
+        expect(deformB).toEqual(['deform|1|1']);
+    });
 });
 
 describe('poses', () => {
@@ -155,7 +175,7 @@ describe('poses', () => {
         pose.x = 15;
         engine.spine.updateWorldTransform(spine.skeleton);
         expect(pose.worldX).toBeCloseTo(15);
-        const local = pose.worldToParent({ x: 15, y: -20 });
+        const local = pose.worldToParent({ x: 15, y: -20 }, spine.skeleton);
         expect(local.x).toBeCloseTo(15);
         expect(local.y).toBeCloseTo(20);
     });
@@ -181,10 +201,30 @@ describe('attachments', () => {
     it('outlines a region as the four corners an object on its slot sees', () => {
         const spine = spineOf();
         const slot = spine.skeleton.findSlot('slot_a')!;
+        const warn = vi.spyOn(console, 'warn');
 
         expect(engine.spine.hitPolygon(slot, engine.spine.slotAttachment(slot))).toEqual([
             -20, 10, -20, -10, 20, -10, 20, 10,
         ]);
+        expect(warn).not.toHaveBeenCalled();
+        warn.mockRestore();
+
+        const atlas = new PIXI.spine.core.TextureAtlas(
+            ATLAS,
+            (_path: string, load: (base: unknown) => void) => load(page.baseTexture),
+        );
+        const loader = new PIXI.spine.core.AtlasAttachmentLoader(atlas);
+        const turned = loader.newRegionAttachment(new PIXI.spine.core.Skin('t'), 'square', 'square');
+        Object.assign(turned, { x: 3, y: -4, rotation: 30, scaleX: 2, scaleY: 0.5, width: 40, height: 20 });
+
+        vi.spyOn(console, 'warn').mockImplementation(() => {});
+        turned.updateOffset();
+        vi.restoreAllMocks();
+        const own = Array.from(turned.offset as ArrayLike<number>);
+
+        engine.spine.hitPolygon(slot, turned)!.forEach((value, i) => {
+            expect(value).toBeCloseTo(i % 2 ? -own[i] : own[i]);
+        });
         expect(engine.spine.hitPolygon(slot, null)).toBeUndefined();
     });
 

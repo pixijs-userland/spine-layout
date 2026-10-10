@@ -4,5 +4,5 @@
         "types": [],
         "tsBuildInfoFile": "dist/.tsbuildinfo/core.tsbuildinfo"
     },
-    "include": ["src/core", "src/engine", "src/core.ts"]
+    "include": ["src/core", "src/engine", "src/engines/shared", "src/core.ts"]
 }

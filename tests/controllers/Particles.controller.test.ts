@@ -24,7 +24,10 @@ function engineWith(
 ): Engine<FakeTypes> {
     return {
         ...createFakeEngine({ particles }),
-        assets: { get: (alias) => textures[alias] as never },
+        assets: {
+            get: (alias) => textures[alias] as never,
+            has: (alias) => alias in textures,
+        },
     };
 }
 
@@ -41,7 +44,7 @@ function setUp(spines: Record<string, FakeSpine>, json: ParticlesJson = settings
     const engine = engineWith(port);
     const map = asSpineMap(spines);
     const animations = new AnimationsController(engine, map);
-    const ctl = new ParticlesController(engine, map, new Set(), animations);
+    const ctl = new ParticlesController(engine, map);
 
     ctl.settings = json;
     return { port, engine, animations, ctl };
@@ -122,6 +125,16 @@ describe('ParticlesController – attaching from particles.json', () => {
         expect(ctl.getAll()).toEqual(['sparks']);
     });
 
+    it('looks for particles.json without the warning a cache miss logs', () => {
+        const warn = vi.spyOn(console, 'warn');
+        const ctl = new ParticlesController(createFakeEngine(), new Map());
+
+        ctl.loadSettings();
+
+        expect(ctl.settings).toBeUndefined();
+        expect(warn).not.toHaveBeenCalled();
+    });
+
     it('keeps settings that were set over the ones in the asset cache', () => {
         const engine = engineWith(createFakeParticlesPort(), { 'particles.json': { other: {} } });
         const ctl = new ParticlesController(engine, new Map());
@@ -177,9 +190,27 @@ describe('ParticlesController – playing', () => {
         hero.update(0.1);
         animations.setSpineSpeed('hero', 0.5);
         hero.update(0.1);
+        animations.pauseBySpineID('hero');
+        hero.update(0.1);
 
-        expect(port.emitters[0].updates).toEqual([0.1, 0.2, 0.1]);
-        expect(port.emitters[1].updates).toEqual([0.1, 0.2, 0.1]);
+        expect(port.emitters[0].updates).toEqual([0.1, 0.2, 0.1, 0]);
+        expect(port.emitters[1].updates).toEqual([0.1, 0.2, 0.1, 0]);
+    });
+
+    it('takes the old emitter down on a re-attach that no longer configures it', () => {
+        const hero = heroSpine();
+        const { port, ctl } = setUp({ hero });
+        ctl.attach();
+
+        ctl.settings = { hero: { smoke: settings().hero.smoke } };
+        ctl.attach();
+
+        expect(port.emitters[0].destroyed).toBe(true);
+        expect(ctl.getAll()).toEqual(['smoke']);
+        expect(hero.__slotChildren.has('particles_sparks')).toBe(false);
+
+        hero.update(0.1);
+        expect(port.emitters[0].updates).toEqual([]);
     });
 
     it('rebuilds an emitter on setConfig, still emitting, and keeps the config in the settings', () => {
@@ -249,6 +280,10 @@ describe('ParticlesController – multiple instances', () => {
         expect(ctl.getAll()).toEqual(['sparks', 'villain_sparks']);
         ctl.play('sparks', 'villain');
         expect(port.emitters.map((e) => e.emit)).toEqual([false, true]);
+        ctl.stop('villain_sparks');
+        expect(port.emitters.map((e) => e.emit)).toEqual([false, false]);
+        ctl.play('sparks');
+        expect(port.emitters.map((e) => e.emit)).toEqual([true, true]);
     });
 });
 
@@ -308,5 +343,28 @@ describe('ParticlesController – on the layout', () => {
         expect(port.emitters[0].destroyed).toBe(true);
         expect(layout.particles.getAll()).toEqual([]);
         expect(layout.particleSettings).toBeUndefined();
+    });
+
+    it("takes a spine's emitters down before the spine it replaces is destroyed", () => {
+        const port = createFakeParticlesPort();
+        const layout = new SpineLayoutCore({ engine: engineWith(port) });
+        layout.particleSettings = { root: { sparks: { textures: ['spark.png'], config: {} } } };
+        layout.createInstancesFromDataArray([{ name: 'root', skeleton, atlasText: '', textures: {} }]);
+
+        const old = layout.spines.get('root')!;
+        const [emitter] = port.emitters;
+        const order: string[] = [];
+        const destroySpine = old.destroy.bind(old);
+        old.destroy = ((options?: unknown) => {
+            order.push('spine');
+            destroySpine(options as never);
+        }) as typeof old.destroy;
+        emitter.destroy = () => void order.push('emitter');
+
+        layout.createInstancesFromDataArray([{ name: 'root', skeleton, atlasText: '', textures: {} }]);
+
+        expect(order).toEqual(['emitter', 'spine']);
+        expect(layout.particles.getAll()).toEqual(['sparks']);
+        expect(port.emitters).toHaveLength(2);
     });
 });

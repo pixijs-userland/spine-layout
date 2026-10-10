@@ -35,6 +35,7 @@ export function createAssetsPort(PIXI: Pixi4Namespace): AssetsRegistry {
 
             return registry.get(alias) as A | undefined;
         },
+        has: (alias) => !!resource(alias) || registry.has(alias),
         set: (alias, value) => void registry.set(alias, value),
         delete: (alias) => void registry.delete(alias),
         resource,

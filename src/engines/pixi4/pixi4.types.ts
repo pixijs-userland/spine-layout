@@ -212,13 +212,24 @@ export interface Spine38Bone extends BoneLike {
 
 export interface Spine38TextureRegion {
     texture: Pixi4Texture;
+    width: number;
+    height: number;
+    originalWidth: number;
+    originalHeight: number;
+    offsetX: number;
+    spineOffsetY: number;
 }
 
 export interface Spine38RegionAttachment {
     name: string;
     region: Spine38TextureRegion | null;
-    offset: ArrayLike<number>;
-    updateOffset(): void;
+    x: number;
+    y: number;
+    rotation: number;
+    scaleX: number;
+    scaleY: number;
+    width: number;
+    height: number;
 }
 
 export interface Spine38MeshAttachment {
@@ -282,6 +293,7 @@ export interface Spine38Timeline {
     ikConstraintIndex?: number;
     transformConstraintIndex?: number;
     pathConstraintIndex?: number;
+    attachment?: { id: number };
 }
 
 export interface Spine38Animation extends AnimationLike {
@@ -343,7 +355,7 @@ export interface Spine38SkeletonReader<Source> {
     readSkeletonData(source: Source): Spine38SkeletonData;
 }
 
-type AttachmentClass = abstract new (...args: never[]) => object;
+type RuntimeClass = abstract new (...args: never[]) => object;
 
 export interface Spine38Core {
     TextureAtlas: new (
@@ -353,15 +365,20 @@ export interface Spine38Core {
     AtlasAttachmentLoader: new (atlas: Spine38TextureAtlas) => object;
     SkeletonJson: new (attachmentLoader: object) => Spine38SkeletonReader<unknown>;
     SkeletonBinary: new (attachmentLoader: object) => Spine38SkeletonReader<Uint8Array>;
-    RegionAttachment: AttachmentClass;
-    MeshAttachment: AttachmentClass;
-    ClippingAttachment: AttachmentClass;
-    TimelineType: { event: number; drawOrder: number };
+    RegionAttachment: RuntimeClass;
+    MeshAttachment: RuntimeClass;
+    ClippingAttachment: RuntimeClass;
+    TimelineType: { event: number; drawOrder: number; color: number };
+    TwoColorTimeline: RuntimeClass;
+    DeformTimeline: RuntimeClass;
+    Bone: { yDown: boolean };
 }
 
 export interface Pixi4Emitter {
     emit: boolean;
     autoUpdate: boolean;
+    emitterLifetime: number;
+    frequency: number;
     update(dtSeconds: number): void;
     playOnce(callback?: () => void): void;
     destroy(): void;

@@ -90,8 +90,11 @@ export interface TextLike extends ContainerLike {
 export interface BonePose extends PointLike {
     readonly worldX: number;
     readonly worldY: number;
-    /** Converts `point` from skeleton space into this bone's parent's space, in place. */
-    worldToParent<P extends PointLike>(point: P): P;
+    /**
+     * Converts `point` from skeleton space into this bone's parent's space, in place. A root
+     * bone's parent space is `skeleton`'s own, before its position and scale (y flip included).
+     */
+    worldToParent<P extends PointLike>(point: P, skeleton: SkeletonLike): P;
 }
 
 export type PoseScope = 'all' | 'bones' | 'slots' | 'drawOrder';
@@ -151,7 +154,7 @@ export interface SpinePort<T extends EngineTypes> {
 
     /**
      * Runs `hook` after the animations are applied and before the world transforms are
-     * computed, after whatever ran there already. Returns what puts the previous hook back.
+     * computed, after whatever ran there already. Returns what removes the hook.
      */
     beforeWorldTransforms(spine: T['Spine'], hook: () => void): () => void;
 
@@ -263,12 +266,17 @@ export interface TextPort<T extends EngineTypes> {
 /** The engine's asset cache: what a manifest or loader put there, by alias. */
 export interface AssetsPort {
     get<A = unknown>(alias: string): A | undefined;
+    /** Whether anything is held under `alias`, without the warning a miss in `get` may log. */
+    has(alias: string): boolean;
 }
 
 export interface EmitterLike {
     emit: boolean;
     update(dtSeconds: number): void;
-    /** Starts a burst: emits once over the config's lifetime even when `emit` is off. */
+    /**
+     * Starts a burst even when `emit` is off: the config's `emitterLifetime`, or a single spawn
+     * wave where that lifetime loops (`<= 0`), after which `emit` is off again.
+     */
     playOnce(): void;
     destroy(): void;
 }
