@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { Container } from 'pixi.js';
 
-import { PointerController } from '../../src/controllers/Pointer.controller';
-import { asSpineMap, createFakeSpine, type FakeSpine } from '../helpers/fakeSpine';
+import { PointerController } from '../../src/core/controllers/Pointer.controller';
+import { asSpineMap, createFakeSpine, fakeEngine, type FakeSpine } from '../helpers/fakeEngine';
 
 /** The bit of a Pixi pointer event the follow wiring reads. */
 const move = (x: number, y: number) => ({ global: { x, y } }) as never;
@@ -43,7 +43,7 @@ describe('PointerController – attach', () => {
     it('follows bones named with the _followPointer modifier', () => {
         const spine = spineWithFollowBone();
         const spines = asSpineMap({ main: spine });
-        const pointer = new PointerController(spines, new Container());
+        const pointer = new PointerController(fakeEngine, spines, new Container());
 
         pointer.attach();
 
@@ -55,7 +55,7 @@ describe('PointerController – attach', () => {
             bones: [{ name: 'holder' }, { name: 'glow', parent: 'holder' }],
             slots: [{ name: 'glow_followPointer', boneName: 'glow' }],
         });
-        const pointer = new PointerController(asSpineMap({ main: spine }), new Container());
+        const pointer = new PointerController(fakeEngine, asSpineMap({ main: spine }), new Container());
 
         pointer.attach();
 
@@ -65,7 +65,7 @@ describe('PointerController – attach', () => {
     it('leaves spines without a follow bone alone, and stays silent on the container', () => {
         const spine = createFakeSpine({ bones: [{ name: 'root' }, { name: 'hand' }] });
         const root = new Container();
-        const pointer = new PointerController(asSpineMap({ main: spine }), root);
+        const pointer = new PointerController(fakeEngine, asSpineMap({ main: spine }), root);
 
         pointer.attach();
 
@@ -77,7 +77,7 @@ describe('PointerController – attach', () => {
 
     it('listens for pointer moves across the whole layout once a follow bone is found', () => {
         const root = new Container();
-        const pointer = new PointerController(asSpineMap({ main: spineWithFollowBone() }), root);
+        const pointer = new PointerController(fakeEngine, asSpineMap({ main: spineWithFollowBone() }), root);
 
         pointer.attach();
 
@@ -91,7 +91,7 @@ describe('PointerController – attach', () => {
     it('is idempotent: re-attaching neither duplicates a bone nor stacks listeners', () => {
         const root = new Container();
         const spine = spineWithFollowBone();
-        const pointer = new PointerController(asSpineMap({ main: spine }), root);
+        const pointer = new PointerController(fakeEngine, asSpineMap({ main: spine }), root);
 
         pointer.attach();
         const hook = spine.beforeUpdateWorldTransforms;
@@ -104,7 +104,7 @@ describe('PointerController – attach', () => {
 
     it('picks up spines registered after the first attach', () => {
         const spines = asSpineMap({ main: spineWithFollowBone() });
-        const pointer = new PointerController(spines, new Container());
+        const pointer = new PointerController(fakeEngine, spines, new Container());
 
         pointer.attach();
         spines.set('late', spineWithFollowBone() as never);
@@ -118,7 +118,7 @@ describe('PointerController – attach', () => {
         const calls: string[] = [];
         spine.beforeUpdateWorldTransforms = () => calls.push('game');
 
-        const pointer = new PointerController(asSpineMap({ main: spine }), new Container());
+        const pointer = new PointerController(fakeEngine, asSpineMap({ main: spine }), new Container());
         pointer.attach();
         pointer.setPosition(10, 20);
         frame(spine);
@@ -136,7 +136,7 @@ describe('PointerController – following', () => {
                 { name: 'crosshair_followPointer', parent: 'holder' },
             ],
         });
-        const pointer = new PointerController(asSpineMap({ main: spine }), new Container());
+        const pointer = new PointerController(fakeEngine, asSpineMap({ main: spine }), new Container());
 
         pointer.attach();
         pointer.setPosition(100, 70);
@@ -152,7 +152,7 @@ describe('PointerController – following', () => {
         spine.position.set(50, 25);
         spine.scale.set(2);
 
-        const pointer = new PointerController(asSpineMap({ main: spine }), new Container());
+        const pointer = new PointerController(fakeEngine, asSpineMap({ main: spine }), new Container());
         pointer.attach();
         pointer.setPosition(150, 125);
         frame(spine);
@@ -165,7 +165,7 @@ describe('PointerController – following', () => {
         spine.skeleton.x = 10;
         spine.skeleton.y = 20;
 
-        const pointer = new PointerController(asSpineMap({ main: spine }), new Container());
+        const pointer = new PointerController(fakeEngine, asSpineMap({ main: spine }), new Container());
         pointer.attach();
         pointer.setPosition(60, 120);
         frame(spine);
@@ -177,7 +177,7 @@ describe('PointerController – following', () => {
     it('follows a real pointer move over the layout', () => {
         const root = new Container();
         const spine = spineWithFollowBone();
-        const pointer = new PointerController(asSpineMap({ main: spine }), root);
+        const pointer = new PointerController(fakeEngine, asSpineMap({ main: spine }), root);
 
         pointer.attach();
         root.children.forEach((child) => child.emit('globalpointermove', move(12, 34)));
@@ -189,7 +189,7 @@ describe('PointerController – following', () => {
 
     it('leaves the bone as the animations posed it until the pointer first moves', () => {
         const spine = spineWithFollowBone();
-        const pointer = new PointerController(asSpineMap({ main: spine }), new Container());
+        const pointer = new PointerController(fakeEngine, asSpineMap({ main: spine }), new Container());
         const bone = boneOf(spine, 'crosshair_followPointer');
 
         pointer.attach();
@@ -203,7 +203,7 @@ describe('PointerController – following', () => {
 
     it('holds the last position when the pointer leaves, one frame like the next', () => {
         const spine = spineWithFollowBone();
-        const pointer = new PointerController(asSpineMap({ main: spine }), new Container());
+        const pointer = new PointerController(fakeEngine, asSpineMap({ main: spine }), new Container());
 
         pointer.attach();
         pointer.setPosition(80, 90);
@@ -215,7 +215,7 @@ describe('PointerController – following', () => {
 
     it('travels part of the way for a strength below 1, measured from the setup pose', () => {
         const spine = spineWithFollowBone({ setupX: 10, setupY: 20 });
-        const pointer = new PointerController(asSpineMap({ main: spine }), new Container());
+        const pointer = new PointerController(fakeEngine, asSpineMap({ main: spine }), new Container());
 
         pointer.attach();
         pointer.strength = 0.5;
@@ -233,7 +233,7 @@ describe('PointerController – following', () => {
                 { name: 'far_followPointer', parent: 'holder' },
             ],
         });
-        const pointer = new PointerController(asSpineMap({ main: spine }), new Container());
+        const pointer = new PointerController(fakeEngine, asSpineMap({ main: spine }), new Container());
 
         pointer.attach();
         pointer.setStrength('far_followPointer', 0.25);
@@ -249,7 +249,7 @@ describe('PointerController – following', () => {
         const other = spineWithFollowBone();
         other.position.set(100, 100);
 
-        const pointer = new PointerController(asSpineMap({ main, other }), new Container());
+        const pointer = new PointerController(fakeEngine, asSpineMap({ main, other }), new Container());
         pointer.attach();
         pointer.setPosition(40, 60);
         frame(main);
@@ -263,7 +263,7 @@ describe('PointerController – following', () => {
 describe('PointerController – enabled', () => {
     it('returns the bones to their setup position when switched off, and stops posing them', () => {
         const spine = spineWithFollowBone({ setupX: 5, setupY: 6 });
-        const pointer = new PointerController(asSpineMap({ main: spine }), new Container());
+        const pointer = new PointerController(fakeEngine, asSpineMap({ main: spine }), new Container());
 
         pointer.attach();
         pointer.setPosition(80, 90);
@@ -280,7 +280,7 @@ describe('PointerController – enabled', () => {
 
     it('follows again when switched back on', () => {
         const spine = spineWithFollowBone();
-        const pointer = new PointerController(asSpineMap({ main: spine }), new Container());
+        const pointer = new PointerController(fakeEngine, asSpineMap({ main: spine }), new Container());
 
         pointer.attach();
         pointer.enabled = false;
@@ -300,7 +300,7 @@ describe('PointerController – clear', () => {
         const ownHook = () => calls.push('game');
         spine.beforeUpdateWorldTransforms = ownHook;
 
-        const pointer = new PointerController(asSpineMap({ main: spine }), root);
+        const pointer = new PointerController(fakeEngine, asSpineMap({ main: spine }), root);
         pointer.attach();
         pointer.setPosition(80, 90);
         frame(spine);
@@ -319,7 +319,7 @@ describe('PointerController – clear', () => {
     it('can be attached again after clearing', () => {
         const root = new Container();
         const spine = spineWithFollowBone();
-        const pointer = new PointerController(asSpineMap({ main: spine }), root);
+        const pointer = new PointerController(fakeEngine, asSpineMap({ main: spine }), root);
 
         pointer.attach();
         pointer.clear();

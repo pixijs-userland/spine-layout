@@ -1,0 +1,9 @@
+{
+    "extends": "./tsconfig.base.json",
+    "compilerOptions": {
+        "types": [],
+        "tsBuildInfoFile": "dist/.tsbuildinfo/pixi4.tsbuildinfo"
+    },
+    "include": ["src/engines/pixi4", "src/pixi4.ts"],
+    "references": [{ "path": "./tsconfig.core.json" }]
+}

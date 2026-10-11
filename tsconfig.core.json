@@ -1,0 +1,8 @@
+{
+    "extends": "./tsconfig.base.json",
+    "compilerOptions": {
+        "types": [],
+        "tsBuildInfoFile": "dist/.tsbuildinfo/core.tsbuildinfo"
+    },
+    "include": ["src/core", "src/engine", "src/engines/shared", "src/core.ts"]
+}

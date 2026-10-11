@@ -2,11 +2,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Container, Polygon, Sprite, Texture } from 'pixi.js';
 import { RegionAttachment, Sequence, type TextureRegion } from '@esotericsoftware/spine-pixi-v8';
 
-import { SceneController } from '../../src/controllers/Scene.controller';
-import { AnimationsController } from '../../src/controllers/Animations.controller';
-import { SpineController } from '../../src/controllers/Spine.controller';
-import { TextsController } from '../../src/controllers/Texts.controller';
-import { asSpineMap, createFakeSpine, type FakeSpine } from '../helpers/fakeSpine';
+import { SceneController } from '../../src/core/controllers/Scene.controller';
+import { AnimationsController } from '../../src/core/controllers/Animations.controller';
+import { SpineController } from '../../src/core/controllers/Spine.controller';
+import { TextsController } from '../../src/core/controllers/Texts.controller';
+import { asSpineMap, createFakeSpine, fakeEngine, type FakeSpine } from '../helpers/fakeEngine';
 
 /** The bit of a Pixi pointer event the button wiring reads. */
 const pointer = (pointerType = 'mouse') => ({ pointerType }) as never;
@@ -69,10 +69,10 @@ describe('SceneController – attachBones', () => {
         const child = createFakeSpine();
         const parent = createFakeSpine({ slots: [{ name: 'spine_child' }] });
         const spines = asSpineMap({ parent, child });
-        const animations = new AnimationsController(spines);
-        const texts = new TextsController(spines);
-        const spineCtl = new SpineController(spines, animations);
-        const scene = new SceneController(spines, texts, animations, spineCtl);
+        const animations = new AnimationsController(fakeEngine, spines);
+        const texts = new TextsController(fakeEngine, spines);
+        const spineCtl = new SpineController(fakeEngine, spines, animations);
+        const scene = new SceneController(fakeEngine, spines, texts, animations, spineCtl);
 
         scene.attachBones();
 
@@ -84,10 +84,10 @@ describe('SceneController – attachBones', () => {
         const parent = createFakeSpine({ slots: [{ name: 'spine_child' }] });
         const late = createFakeSpine({ slots: [{ name: 'spine_child' }] });
         const spines = asSpineMap({ parent, child, late });
-        const animations = new AnimationsController(spines);
-        const texts = new TextsController(spines);
-        const spineCtl = new SpineController(spines, animations);
-        const scene = new SceneController(spines, texts, animations, spineCtl);
+        const animations = new AnimationsController(fakeEngine, spines);
+        const texts = new TextsController(fakeEngine, spines);
+        const spineCtl = new SpineController(fakeEngine, spines, animations);
+        const scene = new SceneController(fakeEngine, spines, texts, animations, spineCtl);
 
         scene.attachBones(new Set(['late']));
 
@@ -99,10 +99,10 @@ describe('SceneController – attachBones', () => {
         const child = createFakeSpine();
         const parent = createFakeSpine({ slots: [{ name: 'spine_child' }] });
         const spines = asSpineMap({ parent, child });
-        const animations = new AnimationsController(spines);
-        const texts = new TextsController(spines);
-        const spineCtl = new SpineController(spines, animations);
-        const scene = new SceneController(spines, texts, animations, spineCtl, {
+        const animations = new AnimationsController(fakeEngine, spines);
+        const texts = new TextsController(fakeEngine, spines);
+        const spineCtl = new SpineController(fakeEngine, spines, animations);
+        const scene = new SceneController(fakeEngine, spines, texts, animations, spineCtl, {
             skipAttachingSpinesPatterns: ['child'],
         });
 
@@ -122,10 +122,10 @@ describe('SceneController – attachBones', () => {
             anticipation_reel_1: shared1,
             anticipation_reel_2: shared2,
         });
-        const animations = new AnimationsController(spines);
-        const texts = new TextsController(spines);
-        const spineCtl = new SpineController(spines, animations);
-        const scene = new SceneController(spines, texts, animations, spineCtl);
+        const animations = new AnimationsController(fakeEngine, spines);
+        const texts = new TextsController(fakeEngine, spines);
+        const spineCtl = new SpineController(fakeEngine, spines, animations);
+        const scene = new SceneController(fakeEngine, spines, texts, animations, spineCtl);
 
         scene.attachBones();
 
@@ -136,10 +136,10 @@ describe('SceneController – attachBones', () => {
     it('ignores spine_ slots that point at non-existent children', () => {
         const parent = createFakeSpine({ slots: [{ name: 'spine_missing' }] });
         const spines = asSpineMap({ parent });
-        const animations = new AnimationsController(spines);
-        const texts = new TextsController(spines);
-        const spineCtl = new SpineController(spines, animations);
-        const scene = new SceneController(spines, texts, animations, spineCtl);
+        const animations = new AnimationsController(fakeEngine, spines);
+        const texts = new TextsController(fakeEngine, spines);
+        const spineCtl = new SpineController(fakeEngine, spines, animations);
+        const scene = new SceneController(fakeEngine, spines, texts, animations, spineCtl);
 
         scene.attachBones();
         expect(parent.__slotChildren.has('spine_missing')).toBe(false);
@@ -152,10 +152,10 @@ describe('SceneController – attachTexts', () => {
             slots: [{ name: 'text_score' }, { name: 'spine_other' }],
         });
         const spines = asSpineMap({ hero: spine });
-        const animations = new AnimationsController(spines);
-        const texts = new TextsController(spines);
-        const spineCtl = new SpineController(spines, animations);
-        const scene = new SceneController(spines, texts, animations, spineCtl);
+        const animations = new AnimationsController(fakeEngine, spines);
+        const texts = new TextsController(fakeEngine, spines);
+        const spineCtl = new SpineController(fakeEngine, spines, animations);
+        const scene = new SceneController(fakeEngine, spines, texts, animations, spineCtl);
         texts.settings = { score: { type: 'text', value: '0' } };
 
         const addSpy = vi.spyOn(texts, 'add');
@@ -178,10 +178,10 @@ describe('SceneController – activateButtonBones', () => {
         // Skeleton.slots is iterated for buttons — fakeSpine populates it from slots.
         // Also ensure findBone returns proper coords for button positioning.
         const spines = asSpineMap({ hero: spine });
-        animations = new AnimationsController(spines);
-        const texts = new TextsController(spines);
-        const spineCtl = new SpineController(spines, animations);
-        const scene = new SceneController(spines, texts, animations, spineCtl);
+        animations = new AnimationsController(fakeEngine, spines);
+        const texts = new TextsController(fakeEngine, spines);
+        const spineCtl = new SpineController(fakeEngine, spines, animations);
+        const scene = new SceneController(fakeEngine, spines, texts, animations, spineCtl);
         scene.activateButtonBones();
     });
 
@@ -217,12 +217,11 @@ describe('SceneController – activateButtonBones', () => {
             bones: [{ name: 'button_skip' }],
         });
         const spines = asSpineMap({ banner });
-        const bannerAnimations = new AnimationsController(spines);
-        const scene = new SceneController(
-            spines,
-            new TextsController(spines),
+        const bannerAnimations = new AnimationsController(fakeEngine, spines);
+        const scene = new SceneController(fakeEngine, spines,
+            new TextsController(fakeEngine, spines),
             bannerAnimations,
-            new SpineController(spines, bannerAnimations),
+            new SpineController(fakeEngine, spines, bannerAnimations),
         );
         scene.activateButtonBones();
 
@@ -321,10 +320,10 @@ describe('SceneController – activateButtonBones (button_ bone wrappers)', () =
             ],
         });
         const spines = asSpineMap({ ui, big_button: bigButton });
-        animations = new AnimationsController(spines);
-        const texts = new TextsController(spines);
-        const spineCtl = new SpineController(spines, animations);
-        const scene = new SceneController(spines, texts, animations, spineCtl);
+        animations = new AnimationsController(fakeEngine, spines);
+        const texts = new TextsController(fakeEngine, spines);
+        const spineCtl = new SpineController(fakeEngine, spines, animations);
+        const scene = new SceneController(fakeEngine, spines, texts, animations, spineCtl);
 
         scene.attachBones();
         scene.activateButtonBones();
@@ -391,12 +390,11 @@ describe('SceneController – activateButtonBones (button_ bone wrappers)', () =
             slots: [{ name: 'spine_big_button', boneName: 'spine_big_button' }],
         });
         const spines = asSpineMap({ ui: parent, big_button: button });
-        const anims = new AnimationsController(spines);
-        const scene = new SceneController(
-            spines,
-            new TextsController(spines),
+        const anims = new AnimationsController(fakeEngine, spines);
+        const scene = new SceneController(fakeEngine, spines,
+            new TextsController(fakeEngine, spines),
             anims,
-            new SpineController(spines, anims),
+            new SpineController(fakeEngine, spines, anims),
         );
 
         scene.attachBones();
@@ -436,12 +434,11 @@ describe('SceneController – activateButtonBones (button_ bone wrappers)', () =
             slots: [{ name: 'spine_big_button', boneName: 'spine_big_button' }],
         });
         const spines = asSpineMap({ ui: parent, big_button: button });
-        const anims = new AnimationsController(spines);
-        const scene = new SceneController(
-            spines,
-            new TextsController(spines),
+        const anims = new AnimationsController(fakeEngine, spines);
+        const scene = new SceneController(fakeEngine, spines,
+            new TextsController(fakeEngine, spines),
             anims,
-            new SpineController(spines, anims),
+            new SpineController(fakeEngine, spines, anims),
         );
 
         scene.attachBones();
@@ -469,12 +466,11 @@ describe('SceneController – activateButtonBones (button_ bone wrappers)', () =
             slots: [{ name: 'spine_big_button', boneName: 'spine_big_button' }],
         });
         const spines = asSpineMap({ ui: parent, big_button: button });
-        const anims = new AnimationsController(spines);
-        const scene = new SceneController(
-            spines,
-            new TextsController(spines),
+        const anims = new AnimationsController(fakeEngine, spines);
+        const scene = new SceneController(fakeEngine, spines,
+            new TextsController(fakeEngine, spines),
             anims,
-            new SpineController(spines, anims),
+            new SpineController(fakeEngine, spines, anims),
         );
 
         scene.attachBones();
@@ -502,12 +498,11 @@ describe('SceneController – activateButtonBones (button_ bone wrappers)', () =
             slots: [{ name: 'spine_big_button', boneName: 'spine_big_button' }],
         });
         const spines = asSpineMap({ ui: parent, big_button: button });
-        const anims = new AnimationsController(spines);
-        const scene = new SceneController(
-            spines,
-            new TextsController(spines),
+        const anims = new AnimationsController(fakeEngine, spines);
+        const scene = new SceneController(fakeEngine, spines,
+            new TextsController(fakeEngine, spines),
             anims,
-            new SpineController(spines, anims),
+            new SpineController(fakeEngine, spines, anims),
         );
 
         scene.attachBones();
@@ -547,12 +542,11 @@ describe('SceneController – activateButtonBones (button_ bone wrappers)', () =
             ],
         });
         const spines = asSpineMap({ ui: parent, big_button: embedded });
-        const anims = new AnimationsController(spines);
-        const scene = new SceneController(
-            spines,
-            new TextsController(spines),
+        const anims = new AnimationsController(fakeEngine, spines);
+        const scene = new SceneController(fakeEngine, spines,
+            new TextsController(fakeEngine, spines),
             anims,
-            new SpineController(spines, anims),
+            new SpineController(fakeEngine, spines, anims),
         );
 
         scene.attachBones();
@@ -586,12 +580,11 @@ describe('SceneController – activateButtonBones (button_ bone wrappers)', () =
             big_button_ui1: instanceA,
             big_button_ui2: instanceB,
         });
-        const anims = new AnimationsController(spines);
-        const scene = new SceneController(
-            spines,
-            new TextsController(spines),
+        const anims = new AnimationsController(fakeEngine, spines);
+        const scene = new SceneController(fakeEngine, spines,
+            new TextsController(fakeEngine, spines),
             anims,
-            new SpineController(spines, anims),
+            new SpineController(fakeEngine, spines, anims),
         );
 
         scene.attachBones();
@@ -621,12 +614,11 @@ describe('SceneController – activateButtonBones (button_ bone wrappers)', () =
             slots: [{ name: 'spine_big_button', boneName: 'spine_big_button' }],
         });
         const spines = asSpineMap({ ui: parent, big_button: button, icon });
-        const anims = new AnimationsController(spines);
-        const scene = new SceneController(
-            spines,
-            new TextsController(spines),
+        const anims = new AnimationsController(fakeEngine, spines);
+        const scene = new SceneController(fakeEngine, spines,
+            new TextsController(fakeEngine, spines),
             anims,
-            new SpineController(spines, anims),
+            new SpineController(fakeEngine, spines, anims),
         );
 
         scene.attachBones();
@@ -662,12 +654,11 @@ describe('SceneController – activateButtonBones (button_ bone wrappers)', () =
             ],
         });
         const spines = asSpineMap({ ui: parent, big_button: button });
-        const anims = new AnimationsController(spines);
-        const scene = new SceneController(
-            spines,
-            new TextsController(spines),
+        const anims = new AnimationsController(fakeEngine, spines);
+        const scene = new SceneController(fakeEngine, spines,
+            new TextsController(fakeEngine, spines),
             anims,
-            new SpineController(spines, anims),
+            new SpineController(fakeEngine, spines, anims),
         );
 
         scene.attachBones();
@@ -712,12 +703,11 @@ describe('SceneController – activateButtonBones (button_ bone wrappers)', () =
             slots: [{ name: 'spine_other', boneName: 'panel' }],
         });
         const spines = asSpineMap({ parent, other });
-        const anims = new AnimationsController(spines);
-        const scene = new SceneController(
-            spines,
-            new TextsController(spines),
+        const anims = new AnimationsController(fakeEngine, spines);
+        const scene = new SceneController(fakeEngine, spines,
+            new TextsController(fakeEngine, spines),
             anims,
-            new SpineController(spines, anims),
+            new SpineController(fakeEngine, spines, anims),
         );
 
         scene.attachBones();
@@ -736,12 +726,11 @@ describe('SceneController – hit-testing', () => {
         });
         const decoration = createFakeSpine();
         const spines = asSpineMap({ hero, decoration });
-        const anims = new AnimationsController(spines);
-        const scene = new SceneController(
-            spines,
-            new TextsController(spines),
+        const anims = new AnimationsController(fakeEngine, spines);
+        const scene = new SceneController(fakeEngine, spines,
+            new TextsController(fakeEngine, spines),
             anims,
-            new SpineController(spines, anims),
+            new SpineController(fakeEngine, spines, anims),
         );
 
         scene.activateButtonBones();
@@ -759,12 +748,11 @@ describe('SceneController – hit-testing', () => {
             slots: [{ name: 'spine_big_button', boneName: 'spine_big_button' }],
         });
         const spines = asSpineMap({ ui, big_button: bigButton });
-        const anims = new AnimationsController(spines);
-        const scene = new SceneController(
-            spines,
-            new TextsController(spines),
+        const anims = new AnimationsController(fakeEngine, spines);
+        const scene = new SceneController(fakeEngine, spines,
+            new TextsController(fakeEngine, spines),
             anims,
-            new SpineController(spines, anims),
+            new SpineController(fakeEngine, spines, anims),
         );
 
         scene.attachBones();
@@ -786,10 +774,10 @@ describe('SceneController – syncSlotObjectsWithDrawOrder', () => {
             ],
         });
         const spines = asSpineMap({ hero: spine });
-        const animations = new AnimationsController(spines);
-        const texts = new TextsController(spines);
-        const spineCtl = new SpineController(spines, animations);
-        const scene = new SceneController(spines, texts, animations, spineCtl);
+        const animations = new AnimationsController(fakeEngine, spines);
+        const texts = new TextsController(fakeEngine, spines);
+        const spineCtl = new SpineController(fakeEngine, spines, animations);
+        const scene = new SceneController(fakeEngine, spines, texts, animations, spineCtl);
 
         scene.activateButtonBones();
         const bottom = spine.__slotChildren.get('button_bottom')![0];
@@ -811,10 +799,10 @@ describe('SceneController – addSlotChild & clear', () => {
     it('addSlotChild forwards the child onto the matching slot', () => {
         const spine = createFakeSpine({ slots: [{ name: 'spine_extra' }] });
         const spines = asSpineMap({ hero: spine });
-        const animations = new AnimationsController(spines);
-        const texts = new TextsController(spines);
-        const spineCtl = new SpineController(spines, animations);
-        const scene = new SceneController(spines, texts, animations, spineCtl);
+        const animations = new AnimationsController(fakeEngine, spines);
+        const texts = new TextsController(fakeEngine, spines);
+        const spineCtl = new SpineController(fakeEngine, spines, animations);
+        const scene = new SceneController(fakeEngine, spines, texts, animations, spineCtl);
 
         const child = new Container();
         scene.addSlotChild('hero', 'spine_extra', child);
@@ -823,11 +811,10 @@ describe('SceneController – addSlotChild & clear', () => {
 
     it('addSlotChild logs when spine is unknown', () => {
         const err = vi.spyOn(console, 'error').mockImplementation(() => {});
-        const scene = new SceneController(
-            new Map(),
-            new TextsController(new Map()),
-            new AnimationsController(new Map()),
-            new SpineController(new Map(), new AnimationsController(new Map())),
+        const scene = new SceneController(fakeEngine, new Map(),
+            new TextsController(fakeEngine, new Map()),
+            new AnimationsController(fakeEngine, new Map()),
+            new SpineController(fakeEngine, new Map(), new AnimationsController(fakeEngine, new Map())),
         );
         scene.addSlotChild('missing', 'slot', new Container());
         expect(err).toHaveBeenCalledWith('Spine "missing" not found');
@@ -837,10 +824,10 @@ describe('SceneController – addSlotChild & clear', () => {
         const err = vi.spyOn(console, 'error').mockImplementation(() => {});
         const spine = createFakeSpine({ slots: [{ name: 'a' }] });
         const spines = asSpineMap({ hero: spine });
-        const animations = new AnimationsController(spines);
-        const texts = new TextsController(spines);
-        const spineCtl = new SpineController(spines, animations);
-        const scene = new SceneController(spines, texts, animations, spineCtl);
+        const animations = new AnimationsController(fakeEngine, spines);
+        const texts = new TextsController(fakeEngine, spines);
+        const spineCtl = new SpineController(fakeEngine, spines, animations);
+        const scene = new SceneController(fakeEngine, spines, texts, animations, spineCtl);
 
         scene.addSlotChild('hero', 'missing', new Container());
         expect(err).toHaveBeenCalledWith('Slot "missing" not found', expect.anything());
@@ -852,10 +839,10 @@ describe('SceneController – addSlotChild & clear', () => {
             bones: [{ name: 'button_play', worldX: 0, worldY: 0 }],
         });
         const spines = asSpineMap({ hero: spine });
-        const animations = new AnimationsController(spines);
-        const texts = new TextsController(spines);
-        const spineCtl = new SpineController(spines, animations);
-        const scene = new SceneController(spines, texts, animations, spineCtl);
+        const animations = new AnimationsController(fakeEngine, spines);
+        const texts = new TextsController(fakeEngine, spines);
+        const spineCtl = new SpineController(fakeEngine, spines, animations);
+        const scene = new SceneController(fakeEngine, spines, texts, animations, spineCtl);
 
         scene.activateButtonBones();
         scene.clear();

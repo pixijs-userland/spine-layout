@@ -6,7 +6,7 @@ vi.mock('howler', () => ({
 }));
 
 import { Howl, Howler } from 'howler';
-import { Sounds } from '../../src/controllers/Sounds.controller';
+import { Sounds } from '../../src/core/controllers/Sounds.controller';
 import type { AssetsManifest } from 'pixi.js';
 
 type FakeHowl = {

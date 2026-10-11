@@ -1,0 +1,48 @@
+{
+    "skeleton": {
+        "hash": "contract",
+        "spine": "4.3.23",
+        "x": -20,
+        "y": -10,
+        "width": 70,
+        "height": 40,
+        "images": "",
+        "audio": ""
+    },
+    "bones": [{ "name": "root" }, { "name": "bone_a", "parent": "root", "x": 10, "y": 20 }],
+    "slots": [
+        { "name": "slot_a", "bone": "root", "attachment": "square" },
+        { "name": "slot_b", "bone": "bone_a", "attachment": "square" }
+    ],
+    "skins": [
+        {
+            "name": "default",
+            "attachments": {
+                "slot_a": { "square": { "width": 40, "height": 20 } },
+                "slot_b": { "square": { "width": 40, "height": 20 } }
+            }
+        }
+    ],
+    "events": {
+        "hit": {}
+    },
+    "animations": {
+        "move": {
+            "slots": {
+                "slot_b": {
+                    "attachment": [{ "name": "square" }, { "time": 0.5, "name": null }]
+                }
+            },
+            "bones": {
+                "bone_a": {
+                    "translate": [
+                        { "x": 0, "y": 0 },
+                        { "time": 1, "x": 30, "y": 0 }
+                    ]
+                }
+            },
+            "drawOrder": [{ "time": 0.5, "offsets": [{ "slot": "slot_a", "offset": 1 }] }],
+            "events": [{ "time": 0.5, "name": "hit" }]
+        }
+    }
+}

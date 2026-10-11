@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { SkinsController } from '../../src/controllers/Skins.controller';
-import { asSpineMap, createFakeSpine, type FakeSpine } from '../helpers/fakeSpine';
+import { SkinsController } from '../../src/core/controllers/Skins.controller';
+import { asSpineMap, createFakeSpine, fakeEngine, type FakeSpine } from '../helpers/fakeEngine';
 
 describe('SkinsController', () => {
     let warn: ReturnType<typeof vi.spyOn>;
@@ -10,7 +10,7 @@ describe('SkinsController', () => {
     });
 
     it('registers skins per spineID and returns them via getSpineSkinsBySkinID', () => {
-        const ctl = new SkinsController(new Map());
+        const ctl = new SkinsController(fakeEngine, new Map());
         ctl.registerSkin('hero', 'red');
         ctl.registerSkin('hero', 'blue');
         ctl.registerSkin('enemy', 'green');
@@ -21,7 +21,7 @@ describe('SkinsController', () => {
     });
 
     it('flattens all registered skins via getAll', () => {
-        const ctl = new SkinsController(new Map());
+        const ctl = new SkinsController(fakeEngine, new Map());
         ctl.registerSkin('hero', 'red');
         ctl.registerSkin('hero', 'blue');
         ctl.registerSkin('enemy', 'red');
@@ -30,14 +30,14 @@ describe('SkinsController', () => {
     });
 
     it('exposes the raw registry via getList', () => {
-        const ctl = new SkinsController(new Map());
+        const ctl = new SkinsController(fakeEngine, new Map());
         ctl.registerSkin('hero', 'red');
         expect(ctl.getList().get('hero')).toEqual(['red']);
     });
 
     it('applyBySpineID looks up the skin then calls setSkin and resets slots', () => {
         const hero: FakeSpine = createFakeSpine({ skins: ['red', 'blue'] });
-        const ctl = new SkinsController(asSpineMap({ hero }));
+        const ctl = new SkinsController(fakeEngine, asSpineMap({ hero }));
 
         ctl.applyBySpineID('hero', 'red');
 
@@ -46,14 +46,14 @@ describe('SkinsController', () => {
     });
 
     it('applyBySpineID warns when the spine is unknown', () => {
-        const ctl = new SkinsController(new Map());
+        const ctl = new SkinsController(fakeEngine, new Map());
         ctl.applyBySpineID('missing', 'red');
         expect(warn).toHaveBeenCalledWith('Spine not found: missing');
     });
 
     it('applyBySpineID warns when the skin is unknown', () => {
         const hero = createFakeSpine({ skins: ['red'] });
-        const ctl = new SkinsController(asSpineMap({ hero }));
+        const ctl = new SkinsController(fakeEngine, asSpineMap({ hero }));
 
         ctl.applyBySpineID('hero', 'gold');
 
@@ -65,7 +65,7 @@ describe('SkinsController', () => {
         const hero = createFakeSpine({ skins: ['red'] });
         const enemy = createFakeSpine({ skins: ['red'] });
         const boss = createFakeSpine({ skins: ['blue'] });
-        const ctl = new SkinsController(asSpineMap({ hero, enemy, boss }));
+        const ctl = new SkinsController(fakeEngine, asSpineMap({ hero, enemy, boss }));
 
         ctl.apply('red');
 
@@ -75,7 +75,7 @@ describe('SkinsController', () => {
     });
 
     it('clear drops the registry', () => {
-        const ctl = new SkinsController(new Map());
+        const ctl = new SkinsController(fakeEngine, new Map());
         ctl.registerSkin('hero', 'red');
         ctl.clear();
         expect(ctl.getAll().size).toBe(0);

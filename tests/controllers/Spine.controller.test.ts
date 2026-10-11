@@ -2,9 +2,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Container } from 'pixi.js';
 import { MeshAttachment, RegionAttachment } from '@esotericsoftware/spine-pixi-v8';
 
-import { SpineController } from '../../src/controllers/Spine.controller';
-import { AnimationsController } from '../../src/controllers/Animations.controller';
-import { asSpineMap, createFakeSpine, type FakeSpine } from '../helpers/fakeSpine';
+import { SpineController } from '../../src/core/controllers/Spine.controller';
+import { AnimationsController } from '../../src/core/controllers/Animations.controller';
+import { asSpineMap, createFakeSpine, fakeEngine, type FakeSpine } from '../helpers/fakeEngine';
 
 vi.mock('@esotericsoftware/spine-pixi-v8', async (importOriginal) => {
     const actual = await importOriginal<typeof import('@esotericsoftware/spine-pixi-v8')>();
@@ -20,7 +20,9 @@ vi.mock('@esotericsoftware/spine-pixi-v8', async (importOriginal) => {
             this.__sourceData = data;
             this.state = {
                 addListener: () => {},
-                data: { skeletonData: data ?? { animations: [], bones: [], slots: [], events: [] } },
+                data: {
+                    skeletonData: data ?? { animations: [], bones: [], slots: [], events: [] },
+                },
             };
             this.skeleton = {
                 data,
@@ -35,16 +37,18 @@ vi.mock('@esotericsoftware/spine-pixi-v8', async (importOriginal) => {
     return { ...actual, Spine: MockSpine };
 });
 
-const makeRegion = (overrides: Partial<{
-    name: string;
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-    degrees: number;
-    rotate: boolean;
-    resolution: number;
-}> = {}) => {
+const makeRegion = (
+    overrides: Partial<{
+        name: string;
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+        degrees: number;
+        rotate: boolean;
+        resolution: number;
+    }> = {},
+) => {
     const attachment = new RegionAttachment(overrides.name ?? 'a', 'p');
     // The Spine controller reads region.x/y/width/height/degrees + region.texture.texture
     // off the attachment's sequence (spine 4.3 stores regions on `sequence.regions`).
@@ -83,7 +87,11 @@ describe('SpineController', () => {
             bones: [{ name: 'spine_boss' }, { name: 'foot' }],
         });
         const spines = asSpineMap({ a, b });
-        const ctl = new SpineController(spines, new AnimationsController(spines));
+        const ctl = new SpineController(
+            fakeEngine,
+            spines,
+            new AnimationsController(fakeEngine, spines),
+        );
 
         const names = ctl.getBonesByNamePattern('spine_').map((bone) => bone.name);
         expect(names).toEqual(['spine_hero', 'spine_enemy', 'spine_boss']);
@@ -93,7 +101,11 @@ describe('SpineController', () => {
         const a = createFakeSpine({ slots: [{ name: 'text_score' }, { name: 'text_combo' }] });
         const b = createFakeSpine({ slots: [{ name: 'button_play' }] });
         const spines = asSpineMap({ a, b });
-        const ctl = new SpineController(spines, new AnimationsController(spines));
+        const ctl = new SpineController(
+            fakeEngine,
+            spines,
+            new AnimationsController(fakeEngine, spines),
+        );
 
         expect(ctl.getSlotsByNamePattern('text_').map((s) => s.name)).toEqual([
             'text_score',
@@ -105,7 +117,11 @@ describe('SpineController', () => {
         const a = createFakeSpine({ slots: [{ name: 'text_a' }] });
         const b = createFakeSpine({ slots: [{ name: 'text_b' }] });
         const spines = asSpineMap({ a, b });
-        const ctl = new SpineController(spines, new AnimationsController(spines));
+        const ctl = new SpineController(
+            fakeEngine,
+            spines,
+            new AnimationsController(fakeEngine, spines),
+        );
 
         expect(ctl.getSlotByName('text_b')).toBeDefined();
         expect(ctl.getSlotByName('missing')).toBeUndefined();
@@ -120,7 +136,11 @@ describe('SpineController', () => {
             hero_effects_glow: heroEffects,
             enemy_main: enemy,
         });
-        const ctl = new SpineController(spines, new AnimationsController(spines));
+        const ctl = new SpineController(
+            fakeEngine,
+            spines,
+            new AnimationsController(fakeEngine, spines),
+        );
 
         const matched = ctl.getSpinesByNamePattern('hero_');
         expect([...matched.keys()].sort()).toEqual(['hero_effects_glow', 'hero_main']);
@@ -134,14 +154,22 @@ describe('SpineController', () => {
             bones: [{ name: 'rootBone', worldX: 5, worldY: 7 }],
         });
         const spines = asSpineMap({ hero });
-        const ctl = new SpineController(spines, new AnimationsController(spines));
+        const ctl = new SpineController(
+            fakeEngine,
+            spines,
+            new AnimationsController(fakeEngine, spines),
+        );
 
         // FakeSpine.toGlobal adds (100, 200).
         expect(ctl.getBoneGlobalPosition('hero', 'rootBone')).toMatchObject({ x: 105, y: 207 });
     });
 
     it('getBoneGlobalPosition warns when spine is unknown', () => {
-        const ctl = new SpineController(new Map(), new AnimationsController(new Map()));
+        const ctl = new SpineController(
+            fakeEngine,
+            new Map(),
+            new AnimationsController(fakeEngine, new Map()),
+        );
         expect(ctl.getBoneGlobalPosition('missing', 'bone')).toBeUndefined();
         expect(warn).toHaveBeenCalledWith('Spine not found: missing');
     });
@@ -154,7 +182,11 @@ describe('SpineController', () => {
                 { name: 'other', worldX: 9, worldY: 9 },
             ],
         });
-        const ctl = new SpineController(asSpineMap({ hero }), new AnimationsController(new Map()));
+        const ctl = new SpineController(
+            fakeEngine,
+            asSpineMap({ hero }),
+            new AnimationsController(fakeEngine, new Map()),
+        );
 
         const map = ctl.getBonesGlobalPositionsByNamePattern('spine_');
         expect(Object.keys(map).sort()).toEqual(['spine_a', 'spine_b']);
@@ -163,7 +195,11 @@ describe('SpineController', () => {
 
     it('getSlotsGlobalPositionsByNamePattern resolves slot bones to global coordinates', () => {
         const hero = createFakeSpine({ slots: [{ name: 'text_a' }, { name: 'text_b' }] });
-        const ctl = new SpineController(asSpineMap({ hero }), new AnimationsController(new Map()));
+        const ctl = new SpineController(
+            fakeEngine,
+            asSpineMap({ hero }),
+            new AnimationsController(fakeEngine, new Map()),
+        );
 
         const map = ctl.getSlotsGlobalPositionsByNamePattern('text_');
         // FakeSpine.findSlot puts bone at (1, 2), toGlobal adds (100, 200).
@@ -172,7 +208,11 @@ describe('SpineController', () => {
     });
 
     it('getSlotTexture returns null when spine is unknown', () => {
-        const ctl = new SpineController(new Map(), new AnimationsController(new Map()));
+        const ctl = new SpineController(
+            fakeEngine,
+            new Map(),
+            new AnimationsController(fakeEngine, new Map()),
+        );
         expect(ctl.getSlotTexture('missing', 'slot')).toBeNull();
         expect(warn).toHaveBeenCalledWith('Spine not found: missing');
     });
@@ -181,14 +221,22 @@ describe('SpineController', () => {
         const hero = createFakeSpine({
             slots: [{ name: 'icon', attachment: { not: 'an-attachment' } }],
         });
-        const ctl = new SpineController(asSpineMap({ hero }), new AnimationsController(new Map()));
+        const ctl = new SpineController(
+            fakeEngine,
+            asSpineMap({ hero }),
+            new AnimationsController(fakeEngine, new Map()),
+        );
         expect(ctl.getSlotTexture('hero', 'icon')).toBeNull();
     });
 
     it('getSlotTexture extracts a Texture from RegionAttachment with non-rotated region', () => {
         const region = makeRegion({ x: 10, y: 20, width: 30, height: 40, degrees: 0 });
         const hero = createFakeSpine({ slots: [{ name: 'icon', attachment: region }] });
-        const ctl = new SpineController(asSpineMap({ hero }), new AnimationsController(new Map()));
+        const ctl = new SpineController(
+            fakeEngine,
+            asSpineMap({ hero }),
+            new AnimationsController(fakeEngine, new Map()),
+        );
 
         const tex = ctl.getSlotTexture('hero', 'icon');
         expect(tex).not.toBeNull();
@@ -196,16 +244,38 @@ describe('SpineController', () => {
         expect((tex as unknown as { rotate: number }).rotate ?? 0).toBe(0);
     });
 
-    it('getSlotTexture swaps frame dimensions and sets rotate=2 when region is rotated', () => {
+    it('getSlotTexture swaps frame dimensions and turns a rotated region upright', () => {
         const region = makeRegion({ x: 5, y: 6, width: 30, height: 40, degrees: 90 });
         const hero = createFakeSpine({ slots: [{ name: 'icon', attachment: region }] });
-        const ctl = new SpineController(asSpineMap({ hero }), new AnimationsController(new Map()));
+        const ctl = new SpineController(
+            fakeEngine,
+            asSpineMap({ hero }),
+            new AnimationsController(fakeEngine, new Map()),
+        );
 
         const tex = ctl.getSlotTexture('hero', 'icon');
         expect(tex).not.toBeNull();
         // Rotated: frame becomes (x, y, height, width).
         expect(tex?.frame).toMatchObject({ x: 5, y: 6, width: 40, height: 30 });
-        expect((tex as unknown as { rotate: number }).rotate).toBe(2);
+        expect((tex as unknown as { rotate: number }).rotate).toBe(6);
+        expect(tex?.orig).toMatchObject({ width: 30, height: 40 });
+    });
+
+    it('getSlotTexture swaps frame dimensions for a region turned 270 degrees too', () => {
+        const region = makeRegion({ x: 5, y: 6, width: 30, height: 40, degrees: 270 });
+        const hero = createFakeSpine({ slots: [{ name: 'icon', attachment: region }] });
+        const ctl = new SpineController(
+            fakeEngine,
+            asSpineMap({ hero }),
+            new AnimationsController(fakeEngine, new Map()),
+        );
+
+        expect(ctl.getSlotTexture('hero', 'icon')?.frame).toMatchObject({
+            x: 5,
+            y: 6,
+            width: 40,
+            height: 30,
+        });
     });
 
     it('getSlotTexture scales a reduced page from its own pixels into logical units', () => {
@@ -213,7 +283,11 @@ describe('SpineController', () => {
         // logical 190x188, so an unscaled frame would sample half-way into the atlas.
         const region = makeRegion({ x: 57, y: 43, width: 1, height: 1, resolution: 0.5 });
         const hero = createFakeSpine({ slots: [{ name: 'icon', attachment: region }] });
-        const ctl = new SpineController(asSpineMap({ hero }), new AnimationsController(new Map()));
+        const ctl = new SpineController(
+            fakeEngine,
+            asSpineMap({ hero }),
+            new AnimationsController(fakeEngine, new Map()),
+        );
 
         expect(ctl.getSlotTexture('hero', 'icon')?.frame).toMatchObject({
             x: 114,
@@ -233,7 +307,11 @@ describe('SpineController', () => {
             resolution: 0.5,
         });
         const hero = createFakeSpine({ slots: [{ name: 'icon', attachment: region }] });
-        const ctl = new SpineController(asSpineMap({ hero }), new AnimationsController(new Map()));
+        const ctl = new SpineController(
+            fakeEngine,
+            asSpineMap({ hero }),
+            new AnimationsController(fakeEngine, new Map()),
+        );
 
         expect(ctl.getSlotTexture('hero', 'icon')?.frame).toMatchObject({
             x: 10,
@@ -259,7 +337,11 @@ describe('SpineController', () => {
             ],
         };
         const hero = createFakeSpine({ slots: [{ name: 'icon', attachment: mesh }] });
-        const ctl = new SpineController(asSpineMap({ hero }), new AnimationsController(new Map()));
+        const ctl = new SpineController(
+            fakeEngine,
+            asSpineMap({ hero }),
+            new AnimationsController(fakeEngine, new Map()),
+        );
         expect(ctl.getSlotTexture('hero', 'icon')).not.toBeNull();
     });
 
@@ -268,14 +350,22 @@ describe('SpineController', () => {
         // Empty sequence → no region resolved (spine 4.3 shape).
         (region as unknown as { sequence: unknown }).sequence = { regions: [] };
         const hero = createFakeSpine({ slots: [{ name: 'icon', attachment: region }] });
-        const ctl = new SpineController(asSpineMap({ hero }), new AnimationsController(new Map()));
+        const ctl = new SpineController(
+            fakeEngine,
+            asSpineMap({ hero }),
+            new AnimationsController(fakeEngine, new Map()),
+        );
 
         expect(ctl.getSlotTexture('hero', 'icon')).toBeNull();
         expect(warn).toHaveBeenCalledWith('Invalid attachment or region');
     });
 
     it('cloneBySpineID warns and returns null when source is unknown', () => {
-        const ctl = new SpineController(new Map(), new AnimationsController(new Map()));
+        const ctl = new SpineController(
+            fakeEngine,
+            new Map(),
+            new AnimationsController(fakeEngine, new Map()),
+        );
         expect(ctl.cloneBySpineID('missing', 'new')).toBeNull();
         expect(warn).toHaveBeenCalledWith('Spine not found: missing');
     });
@@ -288,9 +378,9 @@ describe('SpineController', () => {
 
         const existing = createFakeSpine();
         const spines = asSpineMap({ hero, clone_target: existing });
-        const animations = new AnimationsController(spines);
+        const animations = new AnimationsController(fakeEngine, spines);
         const registerSpy = vi.spyOn(animations, 'registerSpine');
-        const ctl = new SpineController(spines, animations);
+        const ctl = new SpineController(fakeEngine, spines, animations);
 
         const cloned = ctl.clone(hero as never, 'clone_target');
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AssetsManifest } from 'pixi.js';
-import { ManifestParser } from '../../src/utils/ManifestParser';
+import { ManifestParser } from '../../src/core/utils/ManifestParser';
 
 const bundle = (assets: Array<{ alias: string[] }>) => ({ name: 'b', assets });
 
@@ -59,12 +59,7 @@ describe('ManifestParser.getSpineAssets', () => {
 
     it('skips atlases that lack a png', () => {
         const result = ManifestParser.getSpineAssets(
-            manifest(
-                bundle([
-                    { alias: ['assets/hero.atlas'] },
-                    { alias: ['assets/hero.skel'] },
-                ]),
-            ),
+            manifest(bundle([{ alias: ['assets/hero.atlas'] }, { alias: ['assets/hero.skel'] }])),
         );
 
         expect(result).toEqual([]);
@@ -72,12 +67,7 @@ describe('ManifestParser.getSpineAssets', () => {
 
     it('skips atlases that lack both skel and json', () => {
         const result = ManifestParser.getSpineAssets(
-            manifest(
-                bundle([
-                    { alias: ['assets/hero.atlas'] },
-                    { alias: ['assets/hero.png'] },
-                ]),
-            ),
+            manifest(bundle([{ alias: ['assets/hero.atlas'] }, { alias: ['assets/hero.png'] }])),
         );
 
         expect(result).toEqual([]);
@@ -138,9 +128,7 @@ describe('ManifestParser.getSpineAssets — skeletons with no atlas', () => {
             ),
         );
 
-        expect(result).toEqual([
-            { atlas: 'hero.atlas', skel: 'hero.json', texture: 'hero.png' },
-        ]);
+        expect(result).toEqual([{ atlas: 'hero.atlas', skel: 'hero.json', texture: 'hero.png' }]);
     });
 
     it('reads the spine folders from the whole manifest, not one bundle', () => {
@@ -167,5 +155,49 @@ describe('ManifestParser.getSpineAssets — skeletons with no atlas', () => {
         );
 
         expect(result).toEqual([]);
+    });
+});
+
+describe('ManifestParser.fromLoaderResources', () => {
+    it('lists a parsed skeleton with the atlas and page aliases the pairing looks for', () => {
+        const manifest = ManifestParser.fromLoaderResources({
+            'spines/root.json': { url: 'assets/spines/root.json', spineData: {} },
+            'spines/root.json_atlas': { url: 'assets/spines/root.atlas' },
+            'settings/texts.json': { url: 'assets/settings/texts.json' },
+        });
+
+        expect(ManifestParser.getSpineAssets(manifest)).toEqual([
+            { atlas: 'root.atlas', skel: 'root.json', texture: 'root.png' },
+        ]);
+        expect(manifest.bundles[0].assets).toContainEqual({
+            alias: ['settings/texts.json'],
+            src: 'assets/settings/texts.json',
+        });
+    });
+
+    it('names a skeleton added under a bare name by its data: JSON, or binary .skel', () => {
+        const manifest = ManifestParser.fromLoaderResources({
+            hero: { url: 'assets/hero.json', data: {}, spineData: {} },
+            hero_atlas: { url: 'assets/hero.atlas' },
+            'hero_atlas_page_hero.png': { url: 'assets/hero.png' },
+            'spines/boss': { url: 'assets/boss.skel', data: new ArrayBuffer(4), spineData: {} },
+        });
+
+        expect(ManifestParser.getSpineAssets(manifest)).toEqual([
+            { atlas: 'hero.atlas', skel: 'hero.json', texture: 'hero.png' },
+            { atlas: 'boss.atlas', skel: 'boss.skel', texture: 'boss.png' },
+        ]);
+    });
+
+    it('leaves a resource the loader holds under a real atlas alias alone', () => {
+        const manifest = ManifestParser.fromLoaderResources({
+            'spines/root.json': { spineData: {} },
+            'spines/root.atlas': { url: 'x' },
+        });
+        const aliases = (manifest.bundles[0].assets as { alias: string[] }[]).map(
+            (a) => a.alias[0],
+        );
+
+        expect(aliases.filter((alias) => alias === 'spines/root.atlas')).toHaveLength(1);
     });
 });

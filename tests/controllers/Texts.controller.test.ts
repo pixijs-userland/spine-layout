@@ -1,13 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Assets, BitmapFontManager, BitmapText, Cache, Container, Text } from 'pixi.js';
-import { TextsController } from '../../src/controllers/Texts.controller';
-import type { TextsJsonBitmapTextEntry } from '../../src/config/types';
+import { TextsController } from '../../src/core/controllers/Texts.controller';
+import type { TextsJsonBitmapTextEntry } from '../../src/core/config/types';
 import {
     asSpineMap,
     createFakeSpine,
+    fakeEngine,
     type FakeSpine,
     type FakeSlot,
-} from '../helpers/fakeSpine';
+} from '../helpers/fakeEngine';
 
 /**
  * Installs a stand-in for the fonts our games ship, under the family `fake`.
@@ -43,7 +44,7 @@ describe('TextsController – queries', () => {
             slots: [{ name: 'text_score' }, { name: 'text_combo' }, { name: 'spine_eyes' }],
         });
         const enemy = createFakeSpine({ slots: [{ name: 'spine_arm' }] });
-        const ctl = new TextsController(asSpineMap({ hero, enemy }));
+        const ctl = new TextsController(fakeEngine, asSpineMap({ hero, enemy }));
 
         const result = ctl.getBySpine();
         expect(result.get('hero')).toEqual(['score', 'combo']);
@@ -52,7 +53,7 @@ describe('TextsController – queries', () => {
 
     it('getInstances and getBitmapInstances expose stored text nodes', () => {
         installFakeFont();
-        const ctl = new TextsController(new Map());
+        const ctl = new TextsController(fakeEngine, new Map());
         const slot = { name: 'text_a' } as FakeSlot;
         const spine = createFakeSpine({ slots: [slot] });
         ctl.settings = {
@@ -74,7 +75,7 @@ describe('TextsController – queries', () => {
     });
 
     it('getVal returns the current text value', () => {
-        const ctl = new TextsController(new Map());
+        const ctl = new TextsController(fakeEngine, new Map());
         const slot = { name: 'text_a' } as FakeSlot;
         const spine = createFakeSpine({ slots: [slot] });
         ctl.settings = { hero: { a: { type: 'text', value: 'hello' } } };
@@ -89,8 +90,7 @@ describe('TextsController – multiple instances', () => {
     function setup() {
         const c1 = createFakeSpine({ slots: [{ name: 'text_reward' }] });
         const c2 = createFakeSpine({ slots: [{ name: 'text_reward' }] });
-        const ctl = new TextsController(
-            asSpineMap({ counter_1: c1, counter_2: c2 }),
+        const ctl = new TextsController(fakeEngine, asSpineMap({ counter_1: c1, counter_2: c2 }),
             new Set(['counter_1', 'counter_2']),
         );
         ctl.settings = {
@@ -140,7 +140,7 @@ describe('TextsController – mutation', () => {
     beforeEach(() => {
         slot = { name: 'text_a' };
         spine = createFakeSpine({ slots: [slot] });
-        ctl = new TextsController(asSpineMap({ hero: spine }));
+        ctl = new TextsController(fakeEngine, asSpineMap({ hero: spine }));
         ctl.settings = { hero: { a: { type: 'text', value: '' } } };
         ctl.add(slot as never, spine as never, 'a', 'hero');
     });
@@ -225,7 +225,7 @@ describe('TextsController – animated numbers', () => {
     it('counts up from current to target over the configured duration', async () => {
         const slot = { name: 'text_score' } as FakeSlot;
         const spine = createFakeSpine({ slots: [slot] });
-        const ctl = new TextsController(asSpineMap({ hero: spine }));
+        const ctl = new TextsController(fakeEngine, asSpineMap({ hero: spine }));
         ctl.settings = { hero: { score: { type: 'text', value: 'Score: 0' } } };
         ctl.add(slot as never, spine as never, 'score', 'hero');
 
@@ -239,7 +239,7 @@ describe('TextsController – animated numbers', () => {
     it('respects animateNumber from settings without an explicit animate flag', async () => {
         const slot = { name: 'text_score' } as FakeSlot;
         const spine = createFakeSpine({ slots: [slot] });
-        const ctl = new TextsController(asSpineMap({ hero: spine }));
+        const ctl = new TextsController(fakeEngine, asSpineMap({ hero: spine }));
         ctl.settings = { hero: { score: { type: 'text', value: '0', animateNumber: true } } };
         ctl.add(slot as never, spine as never, 'score', 'hero');
 
@@ -253,7 +253,7 @@ describe('TextsController – animated numbers', () => {
     it('snaps to target without animation when diff is zero', async () => {
         const slot = { name: 'text_score' } as FakeSlot;
         const spine = createFakeSpine({ slots: [slot] });
-        const ctl = new TextsController(asSpineMap({ hero: spine }));
+        const ctl = new TextsController(fakeEngine, asSpineMap({ hero: spine }));
         ctl.settings = { hero: { score: { type: 'text', value: '42' } } };
         ctl.add(slot as never, spine as never, 'score', 'hero');
 
@@ -264,7 +264,7 @@ describe('TextsController – animated numbers', () => {
     it('writes straight when skipAnimation is set, whatever the entry says', async () => {
         const slot = { name: 'text_score' } as FakeSlot;
         const spine = createFakeSpine({ slots: [slot] });
-        const ctl = new TextsController(asSpineMap({ hero: spine }));
+        const ctl = new TextsController(fakeEngine, asSpineMap({ hero: spine }));
         ctl.settings = { hero: { score: { type: 'text', value: '-', animateNumber: true } } };
         ctl.add(slot as never, spine as never, 'score', 'hero');
 
@@ -277,7 +277,7 @@ describe('TextsController – animated numbers', () => {
     it('takes animate and duration from the options object', async () => {
         const slot = { name: 'text_score' } as FakeSlot;
         const spine = createFakeSpine({ slots: [slot] });
-        const ctl = new TextsController(asSpineMap({ hero: spine }));
+        const ctl = new TextsController(fakeEngine, asSpineMap({ hero: spine }));
         ctl.settings = { hero: { score: { type: 'text', value: '0' } } };
         ctl.add(slot as never, spine as never, 'score', 'hero');
 
@@ -293,7 +293,7 @@ describe('TextsController – animated numbers', () => {
     it('cancels an in-flight runner when set is called again', async () => {
         const slot = { name: 'text_score' } as FakeSlot;
         const spine = createFakeSpine({ slots: [slot] });
-        const ctl = new TextsController(asSpineMap({ hero: spine }));
+        const ctl = new TextsController(fakeEngine, asSpineMap({ hero: spine }));
         ctl.settings = { hero: { score: { type: 'text', value: '0' } } };
         ctl.add(slot as never, spine as never, 'score', 'hero');
 
@@ -308,7 +308,7 @@ describe('TextsController – animated numbers', () => {
     it('settle lands the value at once, whatever animateNumber says', async () => {
         const slot = { name: 'text_score' } as FakeSlot;
         const spine = createFakeSpine({ slots: [slot] });
-        const ctl = new TextsController(asSpineMap({ hero: spine }));
+        const ctl = new TextsController(fakeEngine, asSpineMap({ hero: spine }));
         ctl.settings = { hero: { score: { type: 'text', value: '0', animateNumber: true } } };
         ctl.add(slot as never, spine as never, 'score', 'hero');
 
@@ -320,7 +320,7 @@ describe('TextsController – animated numbers', () => {
     it('settle cuts a running count short and holds the value it landed on', async () => {
         const slot = { name: 'text_score' } as FakeSlot;
         const spine = createFakeSpine({ slots: [slot] });
-        const ctl = new TextsController(asSpineMap({ hero: spine }));
+        const ctl = new TextsController(fakeEngine, asSpineMap({ hero: spine }));
         ctl.settings = { hero: { score: { type: 'text', value: '0' } } };
         ctl.add(slot as never, spine as never, 'score', 'hero');
 
@@ -347,8 +347,7 @@ describe('TextsController – change events', () => {
         const slot = { name: `text_${textKey}` } as FakeSlot;
         const spine = createFakeSpine({ slots: [slot] });
         const playEvent = vi.fn();
-        const ctl = new TextsController(
-            asSpineMap({ [spineID]: spine }),
+        const ctl = new TextsController(fakeEngine, asSpineMap({ [spineID]: spine }),
             opts.multi ?? new Set(),
             { playEvent } as never,
         );
@@ -440,7 +439,7 @@ describe('TextsController – attach / settings / clear', () => {
     it('add creates a wrapper Container and attaches via addSlotObject', () => {
         const slot = { name: 'text_a' } as FakeSlot;
         const spine = createFakeSpine({ slots: [slot] });
-        const ctl = new TextsController(asSpineMap({ hero: spine }));
+        const ctl = new TextsController(fakeEngine, asSpineMap({ hero: spine }));
         ctl.settings = { hero: { a: { type: 'text', value: 'hi', uppercase: true } } };
 
         const summary = ctl.add(slot as never, spine as never, 'a', 'hero');
@@ -457,7 +456,7 @@ describe('TextsController – attach / settings / clear', () => {
         installFakeFont();
         const slot = { name: 'text_a' } as FakeSlot;
         const spine = createFakeSpine({ slots: [slot] });
-        const ctl = new TextsController(asSpineMap({ hero: spine }));
+        const ctl = new TextsController(fakeEngine, asSpineMap({ hero: spine }));
         ctl.settings = {
             hero: {
                 a: {
@@ -497,7 +496,7 @@ describe('TextsController – attach / settings / clear', () => {
 
         const slot = { name: 'text_a' } as FakeSlot;
         const spine = createFakeSpine({ slots: [slot] });
-        const ctl = new TextsController(asSpineMap({ hero: spine }));
+        const ctl = new TextsController(fakeEngine, asSpineMap({ hero: spine }));
         ctl.settings = {
             hero: {
                 a: {
@@ -530,7 +529,7 @@ describe('TextsController – attach / settings / clear', () => {
     it('addTextToSlot adds the text container to the matched slot', () => {
         const slot = { name: 'text_a' } as FakeSlot;
         const spine = createFakeSpine({ slots: [slot] });
-        const ctl = new TextsController(asSpineMap({ hero: spine }));
+        const ctl = new TextsController(fakeEngine, asSpineMap({ hero: spine }));
 
         const txt = new Text({ text: 'x' });
         ctl.addTextToSlot('hero', 'text_a', txt);
@@ -539,14 +538,14 @@ describe('TextsController – attach / settings / clear', () => {
 
     it('setBySpineID logs on unknown spine', () => {
         const err = vi.spyOn(console, 'error').mockImplementation(() => {});
-        const ctl = new TextsController(new Map());
+        const ctl = new TextsController(fakeEngine, new Map());
         ctl.setBySpineID('missing', 'slot', 'x');
         expect(err).toHaveBeenCalledWith('Spine "missing" not found');
     });
 
     it('addTextToSlot logs on unknown spine', () => {
         const err = vi.spyOn(console, 'error').mockImplementation(() => {});
-        const ctl = new TextsController(new Map());
+        const ctl = new TextsController(fakeEngine, new Map());
         ctl.addTextToSlot('missing', 'slot', new Text());
         expect(err).toHaveBeenCalledWith('Spine "missing" not found');
     });
@@ -554,7 +553,7 @@ describe('TextsController – attach / settings / clear', () => {
     it('addTextToSlot logs on unknown slot', () => {
         const err = vi.spyOn(console, 'error').mockImplementation(() => {});
         const spine = createFakeSpine({ slots: [{ name: 'text_a' }] });
-        const ctl = new TextsController(asSpineMap({ hero: spine }));
+        const ctl = new TextsController(fakeEngine, asSpineMap({ hero: spine }));
         ctl.addTextToSlot('hero', 'text_missing', new Text());
         expect(err).toHaveBeenCalledWith(
             'Slot "text_missing" not found',
@@ -565,7 +564,7 @@ describe('TextsController – attach / settings / clear', () => {
     it('setMaxWidth records the value on the settings entry for bitmap text', () => {
         const slot = { name: 'text_a' } as FakeSlot;
         const spine = createFakeSpine({ slots: [slot] });
-        const ctl = new TextsController(asSpineMap({ hero: spine }));
+        const ctl = new TextsController(fakeEngine, asSpineMap({ hero: spine }));
         ctl.settings = { hero: { a: { type: 'bitmapText', value: '' } } };
         ctl.add(slot as never, spine as never, 'a', 'hero');
 
@@ -587,7 +586,7 @@ describe('TextsController – attach / settings / clear', () => {
 
         const slot = { name: 'text_a' } as FakeSlot;
         const spine = createFakeSpine({ slots: [slot] });
-        const ctl = new TextsController(asSpineMap({ hero: spine }));
+        const ctl = new TextsController(fakeEngine, asSpineMap({ hero: spine }));
         ctl.settings = {
             hero: {
                 a: {
@@ -631,7 +630,7 @@ describe('TextsController – attach / settings / clear', () => {
         const fakeSettings = { foo: { type: 'text', value: 'x' } };
         const spy = vi.spyOn(Assets, 'get').mockReturnValue(fakeSettings as never);
 
-        const ctl = new TextsController(new Map());
+        const ctl = new TextsController(fakeEngine, new Map());
         ctl.loadSettings();
 
         expect(spy).toHaveBeenCalledWith('texts.json');
@@ -648,7 +647,7 @@ describe('TextsController – attach / settings / clear', () => {
                 key === 'settings/texts.json' ? (fakeSettings as never) : (undefined as never),
             );
 
-        const ctl = new TextsController(new Map());
+        const ctl = new TextsController(fakeEngine, new Map());
         ctl.loadSettings();
 
         expect(spy).toHaveBeenCalledWith('settings/texts.json');
@@ -665,7 +664,7 @@ describe('TextsController – attach / settings / clear', () => {
 
         const slot = { name: 'text_a' } as FakeSlot;
         const spine = createFakeSpine({ slots: [slot] });
-        const ctl = new TextsController(asSpineMap({ hero: spine }));
+        const ctl = new TextsController(fakeEngine, asSpineMap({ hero: spine }));
         ctl.settings = {
             hero: {
                 a: {
@@ -715,7 +714,7 @@ describe('TextsController – attach / settings / clear', () => {
 
         const slot = { name: 'text_a' } as FakeSlot;
         const spine = createFakeSpine({ slots: [slot] });
-        const ctl = new TextsController(asSpineMap({ hero: spine }));
+        const ctl = new TextsController(fakeEngine, asSpineMap({ hero: spine }));
         ctl.settings = {
             hero: {
                 a: {
@@ -763,7 +762,7 @@ describe('TextsController – attach / settings / clear', () => {
 
         const slot = { name: 'text_a' } as FakeSlot;
         const spine = createFakeSpine({ slots: [slot] });
-        const ctl = new TextsController(asSpineMap({ hero: spine }));
+        const ctl = new TextsController(fakeEngine, asSpineMap({ hero: spine }));
         ctl.settings = {
             hero: {
                 a: {
@@ -818,7 +817,7 @@ describe('TextsController – attach / settings / clear', () => {
 
         const slot = { name: 'text_a' } as FakeSlot;
         const spine = createFakeSpine({ slots: [slot] });
-        const ctl = new TextsController(asSpineMap({ hero: spine }));
+        const ctl = new TextsController(fakeEngine, asSpineMap({ hero: spine }));
         ctl.settings = {
             hero: {
                 a: {
@@ -866,7 +865,7 @@ describe('TextsController – attach / settings / clear', () => {
 
         const slot = { name: 'text_a' } as FakeSlot;
         const spine = createFakeSpine({ slots: [slot] });
-        const ctl = new TextsController(asSpineMap({ hero: spine }));
+        const ctl = new TextsController(fakeEngine, asSpineMap({ hero: spine }));
         ctl.settings = {
             hero: {
                 a: {
@@ -896,7 +895,7 @@ describe('TextsController – attach / settings / clear', () => {
 
         const slot = { name: 'text_a' } as FakeSlot;
         const spine = createFakeSpine({ slots: [slot] });
-        const ctl = new TextsController(asSpineMap({ hero: spine }));
+        const ctl = new TextsController(fakeEngine, asSpineMap({ hero: spine }));
         ctl.settings = {
             hero: {
                 a: {
@@ -932,7 +931,7 @@ describe('TextsController – attach / settings / clear', () => {
     it('clear drops settings, runners, and instances', () => {
         const slot = { name: 'text_a' } as FakeSlot;
         const spine = createFakeSpine({ slots: [slot] });
-        const ctl = new TextsController(asSpineMap({ hero: spine }));
+        const ctl = new TextsController(fakeEngine, asSpineMap({ hero: spine }));
         ctl.settings = { hero: { a: { type: 'text', value: 'hi' } } };
         ctl.add(slot as never, spine as never, 'a', 'hero');
 

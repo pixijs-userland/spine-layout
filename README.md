@@ -25,6 +25,32 @@ All spines are stored in a central `Map<SpineID, Spine>` registry and each contr
 
 ---
 
+## Engines
+
+The core renders through an `Engine`, so one scene runs on two stacks:
+
+| Entry                                 | Stack                                                     | Spine |
+| ------------------------------------- | --------------------------------------------------------- | ----- |
+| `@pixijs-userland/spine-layout`       | pixi.js v8 + `@esotericsoftware/spine-pixi-v8`            | 4.3   |
+| `@pixijs-userland/spine-layout/pixi4` | PIXI v4.8.9 + pixi-spine 1.6.2 + pixi-particles 4.3.0     | 3.8   |
+| `@pixijs-userland/spine-layout/core`  | No rendering stack: `SpineLayoutCore` and the controllers | -     |
+
+The default entry is unchanged. On PIXI v4 the stack is loaded as `<script>` tags and the engine
+is handed `window.PIXI`:
+
+```typescript
+import { createPixi4Engine, SpineLayoutCore } from '@pixijs-userland/spine-layout/pixi4';
+
+const engine = createPixi4Engine(PIXI, { renderer: app.renderer });
+const layout = new SpineLayoutCore({ engine });
+```
+
+A project is one Spine version; `skeletonVersion(skeleton)` reads it from a `.json` or `.skel`.
+One engine family is live per page. See the [Engines guide](https://userland.pixijs.io/spine-layout/engines)
+for loading, the differences between the engines and how to write another.
+
+---
+
 ## Initialization
 
 ### From a Pixi.js manifest (recommended)
@@ -62,11 +88,12 @@ await layout.createInstancesFromDataArray([
 
 The scene is assembled by scanning slot names. No code changes are needed when the Spine file uses the right prefixes:
 
-| Prefix         | Effect                                                                       |
-| -------------- | ---------------------------------------------------------------------------- |
-| `spine_<id>`   | Attach the child spine with that ID into this slot                           |
-| `text_<key>`   | Create a text node here (configured via `settings/texts.json`)               |
-| `button_<key>` | Create an invisible interactive sprite; fires `<key>_click/hover/...` events |
+| Prefix            | Effect                                                                       |
+| ----------------- | ---------------------------------------------------------------------------- |
+| `spine_<id>`      | Attach the child spine with that ID into this slot                           |
+| `text_<key>`      | Create a text node here (configured via `settings/texts.json`)               |
+| `button_<key>`    | Create an invisible interactive sprite; fires `<key>_click/hover/...` events |
+| `particles_<key>` | Hang a particle emitter here (configured via `settings/particles.json`)      |
 
 Names also carry modifiers — suffixes that change what a bone or slot does:
 
@@ -180,6 +207,47 @@ Updating text with optional number animation:
 ```typescript
 layout.texts.set('score', '1250', true); // animates from previous number
 ```
+
+---
+
+## Particles
+
+A `particles_<key>` slot gets a container that follows its bone, with an emitter inside it.
+Configuration lives in `settings/particles.json`, keyed by spine id like `texts.json`:
+
+```json
+{
+    "hero": {
+        "sparks": { "textures": ["spark.png"], "config": { "frequency": 0.01 }, "autoplay": true }
+    }
+}
+```
+
+`textures` are asset aliases; `config` is handed to the engine's emitter as it is (a
+pixi-particles config on `pixi4`). Emitters advance with their spine, at its `state.timeScale`
+— the layout `speed`, a per-spine speed, a pause. On a multiple-instance spine the key is
+`<spineID>_<key>`, and the instance's section is merged over the base spine's. A bare key with no
+spine id reaches that key on every spine.
+
+`emitOnce` plays a config with an `emitterLifetime` for that lifetime; a looping one
+(`emitterLifetime` unset or `<= 0`) spawns a single wave and stops. An emitter already emitting
+keeps going.
+
+```typescript
+layout.particles.play('sparks'); // or play('sparks', 'hero')
+layout.particles.stop('sparks');
+layout.particles.emitOnce('sparks');
+layout.particles.isPlaying('sparks');
+layout.particles.setConfig('sparks', config); // rebuilds the emitter, keeps it playing
+layout.particles.getAll(); // registered keys
+layout.particles.getBySpine(); // Map<spineID, particles_ slot keys>
+```
+
+Skeleton events `particles_<key>_start`, `particles_<key>_stop` and `particles_<key>_once` do
+the same from an animation.
+
+Particles need an engine with a particles port. `pixi8` has none (there is no emitter for Pixi
+v8 yet): the layout warns once and every call is a no-op.
 
 ---
 
