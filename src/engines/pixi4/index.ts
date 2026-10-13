@@ -50,10 +50,12 @@ export function createPixi4Engine(
     const slotObjects = createSlotObjects(PIXI);
     const particles = createParticlesPort(PIXI);
 
+    const spine = createSpinePort(PIXI, assets, slotObjects);
+
     return {
         name: 'pixi4',
-        spine: createSpinePort(PIXI, assets, slotObjects),
-        display: createDisplayPort(PIXI, slotObjects, options.renderer),
+        spine,
+        display: createDisplayPort(PIXI, spine, options.renderer),
         text: createTextPort(PIXI),
         assets,
         ...(particles && { particles }),

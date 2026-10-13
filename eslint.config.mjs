@@ -1,6 +1,23 @@
 import js from '@eslint/js';
 import tseslint from 'typescript-eslint';
 
+/** Pixi and Spine runtimes, under their own names and the npm aliases the tests and the editor use. */
+const RENDERING_STACK = [
+    'pixi.js',
+    'pixi.js/*',
+    'pixi.js-v*',
+    '@pixi/*',
+    'pixi-spine',
+    'pixi-spine/*',
+    'pixi-spine-v*',
+    '@pixi-spine/*',
+    '@pixi-spine-v*/*',
+    '@esotericsoftware/*',
+    'spine-pixi-v*',
+    'pixi-particles',
+    'pixi-particles/*',
+];
+
 export default tseslint.config(
     { ignores: ['**/dist'] },
     {
@@ -20,20 +37,12 @@ export default tseslint.config(
                 {
                     patterns: [
                         {
-                            group: [
-                                'pixi.js',
-                                'pixi.js/*',
-                                '@esotericsoftware/*',
-                                'pixi-spine',
-                                'pixi-spine/*',
-                                'pixi-particles',
-                                'pixi-particles/*',
-                            ],
+                            group: RENDERING_STACK,
                             message:
                                 'The layout core reaches the rendering stack through `Engine` only.',
                         },
                         {
-                            group: ['**/engines/**'],
+                            group: ['**/engines/**', '**/runtimes', '**/runtimes/**'],
                             message: 'The layout core is handed its engine; it never imports one.',
                         },
                     ],
@@ -42,25 +51,31 @@ export default tseslint.config(
         },
     },
     {
-        // The v4 engine is handed its `PIXI`; the v8 one imports its own stack.
-        files: ['src/engines/pixi4/**/*.ts', 'src/pixi4.ts'],
+        // Every engine but pixi8 is handed its PIXI and its Spine runtimes by its caller, so it
+        // may name their types, never load them.
+        files: [
+            'src/engines/pixi4/**/*.ts',
+            'src/engines/legacy/**/*.ts',
+            'src/engines/pixiSpine/**/*.ts',
+            'src/engines/esoteric/**/*.ts',
+            'src/engines/shared/**/*.ts',
+            'src/runtimes/**/*.ts',
+            'src/pixi4.ts',
+            'src/pixi5.ts',
+            'src/pixi6.ts',
+            'src/pixi7.ts',
+            'src/pixi8.ts',
+        ],
         rules: {
-            'no-restricted-imports': [
+            '@typescript-eslint/no-restricted-imports': [
                 'error',
                 {
                     patterns: [
                         {
-                            group: [
-                                'pixi.js',
-                                'pixi.js/*',
-                                '@esotericsoftware/*',
-                                'pixi-spine',
-                                'pixi-spine/*',
-                                'pixi-particles',
-                                'pixi-particles/*',
-                            ],
+                            group: RENDERING_STACK,
+                            allowTypeImports: true,
                             message:
-                                'The pixi4 engine receives its PIXI namespace from createPixi4Engine().',
+                                'This engine receives its PIXI and Spine runtimes from its caller: import their types only.',
                         },
                     ],
                 },

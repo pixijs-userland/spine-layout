@@ -360,6 +360,8 @@ export interface Spine38SkeletonReader<Source> {
 type RuntimeClass = abstract new (...args: never[]) => object;
 
 export interface Spine38Core {
+    SkeletonData: RuntimeClass;
+    Skin: { prototype: object };
     TextureAtlas: new (
         atlasText?: string,
         textureLoader?: Spine38TextureLoader,

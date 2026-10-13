@@ -26,7 +26,19 @@ export interface Engine<T extends EngineTypes = EngineTypes> {
     readonly particles?: ParticlesPort<T>;
 }
 
-export type EngineName = 'pixi8' | 'pixi4';
+export type EngineName = 'pixi4' | 'pixi5' | 'pixi6' | 'pixi7' | 'pixi8';
+
+export type PixiMajor = 4 | 5 | 6 | 7 | 8;
+
+/** One Spine runtime an engine reads and renders with, as it is logged. */
+export interface SpineRuntimeInfo {
+    /** The export major.minor it reads, e.g. `'3.8'`, `'4.2'`. */
+    minor: string;
+    /** The port family that drives it, e.g. `'esoteric'` (see `SpineRuntimeFamily`). */
+    family: string;
+    packageName: string;
+    packageVersion: string;
+}
 
 /** The concrete classes an engine renders with. `Spine` doubles as a container. */
 export interface EngineTypes {
@@ -124,9 +136,27 @@ export interface RegionTextureInfo<Texture> {
     resolution: number;
 }
 
-/** Operations on the Spine runtime and on the engine's `Spine` display object. */
+/**
+ * Operations on the Spine runtime and on the engine's `Spine` display object.
+ *
+ * An engine may read with more than one runtime, picked per skeleton from its export version
+ * (`pickRuntime`). Every call that takes a runtime object routes to the runtime that made it.
+ */
 export interface SpinePort<T extends EngineTypes> {
-    /** Reads a skeleton against its atlas; `textures` by page name. Empty atlas text is fine. */
+    /** The runtimes this port reads with, one per export minor. */
+    readonly runtimes: readonly SpineRuntimeInfo[];
+    /** The runtime that read a skeleton, or built a spine; `undefined` for anything else. */
+    runtimeOf(spineOrData: T['Spine'] | SkeletonDataLike): SpineRuntimeInfo | undefined;
+    /**
+     * Loads the runtimes that reading these export minors takes, where the engine loads them
+     * lazily. The core awaits it before it reads or builds anything.
+     */
+    prepare?(minors: string[]): Promise<void>;
+
+    /**
+     * Reads a skeleton against its atlas; `textures` by page name. Empty atlas text is fine.
+     * Throws `UnsupportedSpineVersionError` when no runtime of the port reads its export.
+     */
     readSkeleton(
         source: SkeletonSource,
         atlasText: string,
@@ -150,7 +180,8 @@ export interface SpinePort<T extends EngineTypes> {
     updateWorldTransform(skeleton: SkeletonLike): void;
     drawOrder(skeleton: SkeletonLike): SlotLike[];
 
-    claimOf(animation: AnimationLike): PoseClaimEntry[];
+    /** `data` is the skeleton the animation belongs to: 4.2 and older index constraints per type. */
+    claimOf(animation: AnimationLike, data: SkeletonDataLike): PoseClaimEntry[];
 
     /**
      * Runs `hook` after the animations are applied and before the world transforms are
@@ -170,8 +201,21 @@ export interface SpinePort<T extends EngineTypes> {
      * anything without one.
      */
     hitPolygon(slot: SlotLike, attachment: unknown): number[] | undefined;
-    /** The slot's region or mesh attachment image on its page, or `null` for anything else. */
-    regionTexture(attachment: unknown): RegionTextureInfo<T['Texture']> | null;
+    /**
+     * A region or mesh attachment's image on its page, or `null` for anything else. With the
+     * `slot` showing it, a sequence gives the frame the slot is on; without, its first.
+     */
+    regionTexture(attachment: unknown, slot?: SlotLike): RegionTextureInfo<T['Texture']> | null;
+
+    /**
+     * Takes the runtime's own shapes — what it draws the skeleton with — out of hit-testing, those
+     * it creates later included, so a click passes through the skeleton to what lies behind it.
+     * Objects hung off its slots stay hittable. `DisplayPort.shieldFromHitTesting` delegates here
+     * for a spine.
+     */
+    shieldShapes(spine: T['Spine']): void;
+    /** Undoes {@link shieldShapes}. */
+    exposeShapes(spine: T['Spine']): void;
 
     /** Hangs `child` off the slot: it follows the bone, the slot's alpha and visibility. */
     attachSlotObject(spine: T['Spine'], slotName: string, child: T['Container']): void;
@@ -208,7 +252,10 @@ export interface DisplayPort<T extends EngineTypes> {
     off(view: T['Container'], event: PointerEventName, fn: (event: PointerEventLike) => void): void;
     /** Every pointer move on the stage, hit or not. Returns the unsubscribe. */
     onGlobalPointerMove(root: T['Container'], fn: (global: PointLike) => void): () => void;
-    /** Takes the view's own shape out of hit-testing, so an interactive ancestor stops seeing it. */
+    /**
+     * Takes the view's own shape out of hit-testing, so an interactive ancestor stops seeing it;
+     * for a spine, its runtime's shapes ({@link SpinePort.shieldShapes}).
+     */
     shieldFromHitTesting(view: T['Container']): void;
     exposeToHitTesting(view: T['Container']): void;
     removeFromParent(view: T['Container']): void;

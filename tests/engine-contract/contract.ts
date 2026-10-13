@@ -1,22 +1,16 @@
 import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it } from 'vitest';
-import type {
-    ContainerLike,
-    Engine,
-    EngineName,
-    EngineTypes,
-    SpineLike,
-} from '../../src/engine/Engine';
+import type { ContainerLike, Engine, EngineTypes, SpineLike } from '../../src/engine/Engine';
 import type { SkeletonDataLike } from '../../src/engine/runtime';
 
 /**
- * What each engine reads the contract fixtures from — the same skeleton, exported for the
- * Spine version the engine's runtime speaks, and an atlas in that runtime's format whose one
+ * What a runtime reads the contract fixtures from, by the export minor it reads — the same
+ * skeleton, exported for that Spine version, and an atlas in that runtime's format whose one
  * page, `contract.png`, the suite fills with the engine's white texture.
  */
-export const CONTRACT_FIXTURES: Record<EngineName, { skeleton: string; atlas: string }> = {
-    pixi8: { skeleton: 'contract-4.3.json', atlas: 'contract-4.3.atlas' },
-    pixi4: { skeleton: 'contract-3.8.json', atlas: 'contract-3.8.atlas' },
+export const CONTRACT_FIXTURES: Record<string, { skeleton: string; atlas: string }> = {
+    '4.3': { skeleton: 'contract-4.3.json', atlas: 'contract-4.3.atlas' },
+    '3.8': { skeleton: 'contract-3.8.json', atlas: 'contract-3.8.atlas' },
 };
 
 /** The fixtures' page with its `square` region packed turned, in a format both runtimes read. */
@@ -97,9 +91,10 @@ const fixture = (name: string) =>
 
 /**
  * The port semantics every engine owes the layout core, checked against the real runtime.
- * Written against `Engine` alone: run it once per engine with that engine's loader.
+ * Written against `Engine` alone: run it once per engine with that engine's loader, and once
+ * per runtime `minor` for an engine with more than one (by default, its first).
  */
-export function engineContract(name: string, load: () => Promise<Engine>) {
+export function engineContract(name: string, load: () => Promise<Engine>, minor?: string) {
     describe(`engine contract: ${name}`, () => {
         let engine: Engine<EngineTypes>;
         let skeleton: { skins?: { name: string }[] };
@@ -117,7 +112,7 @@ export function engineContract(name: string, load: () => Promise<Engine>) {
 
         const setUp = async () => {
             engine = await load();
-            const files = CONTRACT_FIXTURES[engine.name];
+            const files = CONTRACT_FIXTURES[minor ?? engine.spine.runtimes[0].minor];
             skeleton = JSON.parse(fixture(files.skeleton));
             atlasText = fixture(files.atlas);
         };
@@ -151,10 +146,27 @@ export function engineContract(name: string, load: () => Promise<Engine>) {
             });
         });
 
+        it('names the runtime that read a skeleton and built its spine', async () => {
+            await setUp();
+            const data = read();
+            const spine = create();
+            const runtime = engine.spine.runtimeOf(data);
+
+            expect(engine.spine.runtimes).toContain(runtime);
+            expect(runtime?.minor).toBe(minor ?? engine.spine.runtimes[0].minor);
+            expect(runtime).toMatchObject({
+                family: expect.any(String),
+                packageName: expect.any(String),
+                packageVersion: expect.any(String),
+            });
+            expect(engine.spine.runtimeOf(spine)).toBe(runtime);
+            expect(engine.spine.runtimeOf(engine.display.container() as never)).toBeUndefined();
+        });
+
         it('classifies what each timeline poses', async () => {
             await setUp();
             const data = read();
-            const claims = engine.spine.claimOf(data.findAnimation('move')!);
+            const claims = engine.spine.claimOf(data.findAnimation('move')!, data);
             const kinds = new Set(claims.map((claim) => claim.kind));
 
             expect(kinds).toEqual(new Set(['bone', 'slot', 'drawOrder', 'event']));
@@ -248,9 +260,11 @@ export function engineContract(name: string, load: () => Promise<Engine>) {
                 await setUp();
                 const spine = create();
                 const slot = spine.skeleton.findSlot('slot_a')!;
-                const region = engine.spine.regionTexture(engine.spine.slotAttachment(slot));
+                const attachment = engine.spine.slotAttachment(slot);
+                const region = engine.spine.regionTexture(attachment);
 
                 expect(region).toMatchObject({ x: 0, y: 0, width: 40, height: 20, rotate: 0 });
+                expect(engine.spine.regionTexture(attachment, slot)).toEqual(region);
             });
 
             it("cuts a turned region upright, sampling the runtime's own pixels", async () => {
@@ -362,6 +376,21 @@ export function engineContract(name: string, load: () => Promise<Engine>) {
                 const origin = spine.toLocal(child.toGlobal(engine.display.point(0, 0)));
                 expect(origin.x).toBeCloseTo(33);
             });
+        });
+
+        it("takes a skeleton's own shapes out of hit-testing and puts them back", async () => {
+            await setUp();
+            const spine = create();
+            const child = engine.display.container({ label: 'child' });
+
+            engine.spine.attachSlotObject(spine, 'slot_b', child);
+            engine.display.shieldFromHitTesting(spine);
+            engine.spine.update(spine, 0);
+            expect(engine.spine.getSlotObject(spine, 'slot_b')).toBe(child);
+
+            engine.display.exposeToHitTesting(spine);
+            engine.spine.update(spine, 0);
+            expect(engine.spine.getSlotObject(spine, 'slot_b')).toBe(child);
         });
 
         it('hangs an object off a slot, and takes it off again', async () => {

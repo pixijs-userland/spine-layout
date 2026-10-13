@@ -1,4 +1,9 @@
-import type { DisplayPort, InteractiveMode, PointerEventLike } from '../../engine/Engine';
+import type {
+    DisplayPort,
+    InteractiveMode,
+    PointerEventLike,
+    SpinePort,
+} from '../../engine/Engine';
 import type {
     Pixi4Container,
     Pixi4Listener,
@@ -8,15 +13,14 @@ import type {
     Pixi4Types,
 } from './pixi4.types';
 import { directionOf } from './groupD8';
-import type { SlotObjects } from './slotObjects';
 
 const never = () => false;
 
-const FACTORIES = ['newSprite', 'newMesh', 'newGraphics'] as const;
+type Shapes = Pick<SpinePort<Pixi4Types>, 'runtimeOf' | 'shieldShapes' | 'exposeShapes'>;
 
 export function createDisplayPort(
     PIXI: Pixi4Namespace,
-    slotObjects: SlotObjects,
+    spine: Shapes,
     renderer?: Pixi4Renderer,
 ): DisplayPort<Pixi4Types> {
     const listeners = new WeakMap<(event: PointerEventLike) => void, Pixi4Listener>();
@@ -37,39 +41,8 @@ export function createDisplayPort(
         view.interactiveChildren = mode === 'static';
     };
 
-    const isSpine = (view: Pixi4Container): view is Pixi4Spine => view instanceof PIXI.spine.Spine;
-
-    /** pixi-spine's own sprites, meshes and clipping graphics: every slot container child but ours. */
-    const spineShapes = (spine: Pixi4Spine) =>
-        spine.slotContainers.flatMap((container) =>
-            container.children.filter((view) => !slotObjects.isHolder(view) && view.containsPoint),
-        );
-
-    function shieldSpine(spine: Pixi4Spine) {
-        spineShapes(spine).forEach((view) => (view.containsPoint = never));
-
-        // pixi-spine creates a sprite the first time its attachment shows, long after this runs
-        FACTORIES.forEach((factory) => {
-            const create = PIXI.spine.Spine.prototype[factory] as (
-                ...args: unknown[]
-            ) => Pixi4Container;
-
-            spine[factory] = ((...args: unknown[]) => {
-                const view = create.apply(spine, args);
-                view.containsPoint = never;
-                return view;
-            }) as never;
-        });
-    }
-
-    function exposeSpine(spine: Pixi4Spine) {
-        FACTORIES.forEach((factory) => {
-            if (Object.hasOwn(spine, factory)) delete spine[factory];
-        });
-        spineShapes(spine).forEach((view) => {
-            if (Object.hasOwn(view, 'containsPoint')) delete view.containsPoint;
-        });
-    }
+    const isSpine = (view: Pixi4Container): view is Pixi4Spine =>
+        spine.runtimeOf(view as Pixi4Spine) !== undefined;
 
     return {
         containerClass: PIXI.Container,
@@ -133,7 +106,7 @@ export function createDisplayPort(
         shieldFromHitTesting(view) {
             view.containsPoint = never;
 
-            if (isSpine(view)) shieldSpine(view);
+            if (isSpine(view)) spine.shieldShapes(view);
             else if (view instanceof PIXI.extras.BitmapText) {
                 childrenWereInteractive.set(view, view.interactiveChildren);
                 view.interactiveChildren = false;
@@ -143,7 +116,7 @@ export function createDisplayPort(
         exposeToHitTesting(view) {
             if (Object.hasOwn(view, 'containsPoint')) delete view.containsPoint;
 
-            if (isSpine(view)) exposeSpine(view);
+            if (isSpine(view)) spine.exposeShapes(view);
 
             const children = childrenWereInteractive.get(view);
             if (children !== undefined) {

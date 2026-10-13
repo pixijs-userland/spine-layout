@@ -13,6 +13,8 @@ import type { BoneDataOf, SlotDataOf, SlotOf, TextStyleOf } from './types';
 import { LOG } from './config/logs';
 import { log } from './utils/Log';
 import { ManifestParser, type SpineAssetData } from './utils/ManifestParser';
+import { skeletonVersion } from './utils/skeletonVersion';
+import { minorOf } from './versions/minorOf';
 import { planMultipleInstances, spinePointerBases } from './utils/multiInstance';
 import { AnimationsController } from './controllers/Animations.controller';
 import { SkinsController } from './controllers/Skins.controller';
@@ -95,7 +97,13 @@ export class SpineLayoutCore<T extends EngineTypes = EngineTypes> extends Layout
         this.#orientation = new OrientationController(this.#animations);
 
         if (options.manifest) {
-            this.createInstancesFromManifest(options.manifest);
+            const loading = this.createInstancesFromManifest(options.manifest);
+
+            if (loading instanceof Promise) {
+                loading.catch((error) =>
+                    console.error('[SpineLayout] Error loading the manifest:', error),
+                );
+            }
         }
     }
 
@@ -181,12 +189,57 @@ export class SpineLayoutCore<T extends EngineTypes = EngineTypes> extends Layout
 
     // ─── Instance creation ───────────────────────────────────────────────────────
 
-    createInstancesFromManifest(manifest: ManifestLike, folderName?: string) {
+    /**
+     * Builds the layout from the skeletons a manifest put in the engine's asset cache — at once,
+     * unless the engine loads runtimes lazily (`SpinePort.prepare`): then once they are in, and
+     * the promise of that is returned. {@link loadInstancesFromManifest} always returns one.
+     */
+    createInstancesFromManifest(manifest: ManifestLike, folderName?: string): void | Promise<void> {
+        const assets = ManifestParser.getSpineAssets(manifest);
+        const skeletons = () =>
+            assets.map((asset) => {
+                const key = alias(asset.skel, folderName);
+                return this.engine.assets.has(key) ? this.engine.assets.get(key) : undefined;
+            });
+
+        return this.afterPrepare(skeletons, () =>
+            this.buildFromManifest(manifest, assets, folderName),
+        );
+    }
+
+    async loadInstancesFromManifest(manifest: ManifestLike, folderName?: string): Promise<void> {
+        await this.createInstancesFromManifest(manifest, folderName);
+    }
+
+    /** {@link createInstancesFromManifest}, from skeletons the caller read itself. */
+    createInstancesFromDataArray(data: SpineInstanceData<T>[]): void | Promise<void> {
+        return this.afterPrepare(
+            () => data.map((item) => item.skeleton),
+            () => this.buildFromDataArray(data),
+        );
+    }
+
+    async loadInstancesFromDataArray(data: SpineInstanceData<T>[]): Promise<void> {
+        await this.createInstancesFromDataArray(data);
+    }
+
+    private afterPrepare(skeletons: () => unknown[], build: () => void): void | Promise<void> {
+        const { spine } = this.engine;
+        if (!spine.prepare) return build();
+
+        return spine.prepare(exportMinors(skeletons())).then(build);
+    }
+
+    private buildFromManifest(
+        manifest: ManifestLike,
+        assets: SpineAssetData[],
+        folderName?: string,
+    ) {
         this.openRegistryLogs();
 
         const sources = new Map<SpineID, SpineSource<T>>();
 
-        ManifestParser.getSpineAssets(manifest).forEach((asset) => {
+        assets.forEach((asset) => {
             const spineID = asset.skel.replace(/\.[^.]+$/, '');
 
             sources.set(spineID, { create: () => this.spineFromAsset(asset, folderName) });
@@ -205,7 +258,7 @@ export class SpineLayoutCore<T extends EngineTypes = EngineTypes> extends Layout
         this.#orientation.attach();
     }
 
-    createInstancesFromDataArray(data: SpineInstanceData<T>[]) {
+    private buildFromDataArray(data: SpineInstanceData<T>[]) {
         this.openRegistryLogs();
 
         const sources = new Map<SpineID, SpineSource<T>>();
@@ -765,6 +818,17 @@ export class SpineLayoutCore<T extends EngineTypes = EngineTypes> extends Layout
 /** The layout as it is held: the core and the engine's container in one. */
 export type SpineLayoutView<T extends EngineTypes = EngineTypes> = SpineLayoutCore<T> &
     T['Container'];
+
+/** Each export minor among `skeletons`, once; whatever names no version is left out. */
+function exportMinors(skeletons: unknown[]): string[] {
+    const minors = skeletons.map((skeleton) =>
+        skeleton && typeof skeleton === 'object'
+            ? minorOf(skeletonVersion(skeleton as SkeletonSource))
+            : undefined,
+    );
+
+    return [...new Set(minors.filter((minor) => minor !== undefined))];
+}
 
 /** The skins a skeleton exported. A skeleton that attaches no image carries no `skins` key. */
 function skinsOf(skeleton: SkeletonSource): { name: string }[] {

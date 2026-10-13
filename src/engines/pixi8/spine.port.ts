@@ -5,6 +5,7 @@ import {
     Property,
     RegionAttachment,
     SkeletonBinary,
+    SkeletonData,
     SkeletonJson,
     Spine,
     SpineTexture,
@@ -12,12 +13,13 @@ import {
     type Animation,
     type Bone,
     type Skeleton,
-    type SkeletonData,
     type Slot,
     type TextureAtlasRegion,
+    type Vector2,
 } from '@esotericsoftware/spine-pixi-v8';
 import { Assets, Cache, type Container, type Texture } from 'pixi.js';
-import type { BonePose, PoseClaimEntry, SpinePort } from '../../engine/Engine';
+import { RUNTIME_MATRIX } from '../../core/versions/runtimeMatrix';
+import type { BonePose, PoseClaimEntry, SpineRuntimeInfo, SpinePort } from '../../engine/Engine';
 import {
     isBinarySkeleton,
     type AnimationLike,
@@ -113,11 +115,15 @@ const updateHooks = createHookSet<Spine, [number]>((spine, run) => {
     };
 });
 
-const rootPoses = new WeakMap<Bone, BonePose>();
+const poses = new WeakMap<Bone, BonePose>();
 
-/** A root bone is posed in skeleton space: offset and scaled by the skeleton, yDown flip included. */
-function rootPose(bone: Bone): BonePose {
-    let pose = rootPoses.get(bone);
+/**
+ * World values come off `appliedPose`: for a bone a constraint moves it is a pose of its own, and
+ * `pose` never gets world values. A root bone is posed in skeleton space: offset and scaled by
+ * the skeleton, yDown flip included.
+ */
+function bonePose(bone: Bone): BonePose {
+    let pose = poses.get(bone);
     if (pose) return pose;
 
     const local = bone.pose;
@@ -136,28 +142,42 @@ function rootPose(bone: Bone): BonePose {
             local.y = value;
         },
         get worldX() {
-            return local.worldX;
+            return bone.appliedPose.worldX;
         },
         get worldY() {
-            return local.worldY;
+            return bone.appliedPose.worldY;
         },
         worldToParent(point, skeleton) {
+            if (bone.parent) {
+                return local.worldToParent(point as unknown as Vector2) as unknown as typeof point;
+            }
+
             const { x, y, scaleX, scaleY } = skeleton;
             point.x = scaleX ? (point.x - x) / scaleX : 0;
             point.y = scaleY ? (point.y - y) / scaleY : 0;
             return point;
         },
     };
-    rootPoses.set(bone, pose);
+    poses.set(bone, pose);
 
     return pose;
 }
+
+const RUNTIME: SpineRuntimeInfo = { minor: '4.3', ...RUNTIME_MATRIX[8]['4.3'] };
+
+const never = () => false;
+
+type View = Container & { containsPoint?(point: unknown): boolean };
 
 const slotOf = (slot: SlotLike) => slot as Slot;
 const boneOf = (bone: BoneLike) => bone as Bone;
 const skeletonOf = (skeleton: SkeletonLike) => skeleton as unknown as Skeleton;
 
 export const spinePort: SpinePort<Pixi8Types> = {
+    runtimes: [RUNTIME],
+    runtimeOf: (spineOrData) =>
+        spineOrData instanceof Spine || spineOrData instanceof SkeletonData ? RUNTIME : undefined,
+
     readSkeleton(source, atlasText, textures) {
         const atlas = new TextureAtlas(atlasText);
 
@@ -182,10 +202,7 @@ export const spinePort: SpinePort<Pixi8Types> = {
     create: (data) => new Spine(data as unknown as SkeletonData),
     update: (spine, dt) => spine.update(dt),
 
-    bonePose(target) {
-        const bone = boneOf(target);
-        return bone.parent ? (bone.pose as unknown as BonePose) : rootPose(bone);
-    },
+    bonePose: (bone) => bonePose(boneOf(bone)),
     boneSetup: (bone) => boneOf(bone).data.setupPose,
     slotAttachment: (slot) => slotOf(slot).pose.attachment,
     slotAlpha: (slot) => slotOf(slot).pose.color.a,
@@ -230,14 +247,16 @@ export const spinePort: SpinePort<Pixi8Types> = {
         return points;
     },
 
-    regionTexture(attachment) {
+    regionTexture(attachment, slot) {
         if (!(attachment instanceof RegionAttachment || attachment instanceof MeshAttachment)) {
             return null;
         }
 
         // In spine 4.3+ every region/mesh attachment stores its region(s) in a
         // Sequence — static attachments are single-frame sequences.
-        const rawRegion = attachment.sequence?.regions?.[0];
+        const { sequence } = attachment;
+        const frame = slot ? sequence.resolveIndex(slotOf(slot).appliedPose) : 0;
+        const rawRegion = sequence?.regions?.[frame] ?? sequence?.regions?.[0];
         if (!rawRegion) {
             console.warn('Invalid attachment or region');
             return null;
@@ -255,6 +274,15 @@ export const spinePort: SpinePort<Pixi8Types> = {
             rotate: region.degrees === 90 || region.rotate === true ? 90 : region.degrees,
             resolution: page.source.resolution,
         };
+    },
+
+    // spine-pixi-v8 draws a skeleton through its render pipe, not with children of its own: the
+    // `Spine` answering for its bounds is the one shape to take out.
+    shieldShapes(spine) {
+        (spine as View).containsPoint = never;
+    },
+    exposeShapes(spine) {
+        if (Object.hasOwn(spine, 'containsPoint')) delete (spine as View).containsPoint;
     },
 
     attachSlotObject: (spine, slotName, child) => spine.addSlotObject(slotName, child),

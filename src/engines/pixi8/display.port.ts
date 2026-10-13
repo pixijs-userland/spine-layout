@@ -8,14 +8,19 @@ import {
     type FederatedPointerEvent,
     type PointData,
 } from 'pixi.js';
-import type { DisplayPort, PointerEventLike } from '../../engine/Engine';
-import type { Pixi8Types } from './types';
+import type { DisplayPort, PointerEventLike, SpinePort } from '../../engine/Engine';
+import type { Pixi8Spine, Pixi8Types } from './types';
 
 type View = Container & { containsPoint?(point: PointData): boolean };
 
+type Shapes = Pick<
+    SpinePort<Pixi8Types<Pixi8Spine>>,
+    'runtimeOf' | 'shieldShapes' | 'exposeShapes'
+>;
+
 const never = () => false;
 
-export const displayPort: DisplayPort<Pixi8Types> = {
+export const createDisplayPort = (spine: Shapes): DisplayPort<Pixi8Types> => ({
     containerClass: Container,
 
     container: (options) =>
@@ -66,7 +71,8 @@ export const displayPort: DisplayPort<Pixi8Types> = {
 
     /**
      * Takes a view's own shape out of hit-testing: it answers `containsPoint` with no, wherever
-     * the pointer is, while its children keep answering for themselves.
+     * the pointer is, while its children keep answering for themselves. A spine's shapes are its
+     * runtime's to know, so the spine port takes those out.
      *
      * Pixi hands an interactive ancestor's mode down to every child, and a view — a `Spine`, a
      * `Text` — says it contains any point inside its bounding box. One `eventMode = 'static'`
@@ -74,12 +80,14 @@ export const displayPort: DisplayPort<Pixi8Types> = {
      * whole rectangle around it: the click ends there, on nothing.
      */
     shieldFromHitTesting(view) {
-        (view as View).containsPoint = never;
+        if (spine.runtimeOf(view as Pixi8Spine)) spine.shieldShapes(view as Pixi8Spine);
+        else (view as View).containsPoint = never;
     },
 
     /** Undoes {@link shieldFromHitTesting}, handing `containsPoint` back to the view's class. */
     exposeToHitTesting(view) {
-        if (Object.hasOwn(view, 'containsPoint')) delete (view as View).containsPoint;
+        if (spine.runtimeOf(view as Pixi8Spine)) spine.exposeShapes(view as Pixi8Spine);
+        else if (Object.hasOwn(view, 'containsPoint')) delete (view as View).containsPoint;
     },
 
     removeFromParent: (view) => view.removeFromParent(),
@@ -129,4 +137,4 @@ export const displayPort: DisplayPort<Pixi8Types> = {
 
     textureFromImage: (image) => Texture.from(image),
     point: (x, y) => new Point(x, y),
-};
+});

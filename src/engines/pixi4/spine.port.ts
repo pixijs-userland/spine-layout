@@ -1,10 +1,18 @@
-import type { BonePose, PointLike, PoseClaimEntry, SpinePort } from '../../engine/Engine';
+import { RUNTIME_MATRIX } from '../../core/versions/runtimeMatrix';
+import type {
+    BonePose,
+    PointLike,
+    PoseClaimEntry,
+    SpinePort,
+    SpineRuntimeInfo,
+} from '../../engine/Engine';
 import { isBinarySkeleton, type SkeletonSource } from '../../engine/runtime';
 import { createHookSet } from '../shared/hookSet';
 import type { AssetsRegistry } from './assets.port';
 import { degreesOf } from './groupD8';
 import type {
     Pixi4BaseTexture,
+    Pixi4Container,
     Pixi4Namespace,
     Pixi4Spine,
     Pixi4Texture,
@@ -36,6 +44,10 @@ const beforeWorldTransforms = createHookSet<Pixi4Spine['state'], []>((state, run
     };
 });
 
+const never = () => false;
+
+const FACTORIES = ['newSprite', 'newMesh', 'newGraphics'] as const;
+
 const skeletonOf = (skeleton: unknown) => skeleton as Spine38Skeleton;
 const boneOf = (bone: unknown) => bone as Spine38Bone;
 const slotOf = (slot: unknown) => slot as Spine38Slot;
@@ -46,24 +58,28 @@ export function createSpinePort(
     slotObjects: SlotObjects,
 ): SpinePort<Pixi4Types> {
     const { core } = PIXI.spine;
-    const owners = new WeakMap<Spine38Animation, Spine38SkeletonData>();
     const poses = new WeakMap<Spine38Bone, BonePose>();
     const pages = new WeakMap<Pixi4BaseTexture, Pixi4Texture>();
 
-    function remember(data: Spine38SkeletonData) {
-        data.animations.forEach((animation) => owners.set(animation, data));
-        return data;
-    }
+    // pixi-spine 1.x carries no version of its own: 1.6 is the one with a 3.8 runtime (`addSkin`)
+    const minor = 'addSkin' in core.Skin.prototype ? '3.8' : '3.7';
+    const runtime: SpineRuntimeInfo = { minor, ...RUNTIME_MATRIX[4][minor] };
 
     function read(source: SkeletonSource, atlas: Spine38TextureAtlas): Spine38SkeletonData {
         const loader = new core.AtlasAttachmentLoader(atlas);
 
         if (!isBinarySkeleton(source))
-            return remember(new core.SkeletonJson(loader).readSkeletonData(source));
+            return new core.SkeletonJson(loader).readSkeletonData(source);
 
         const bytes = source instanceof Uint8Array ? source : new Uint8Array(source);
-        return remember(new core.SkeletonBinary(loader).readSkeletonData(bytes));
+        return new core.SkeletonBinary(loader).readSkeletonData(bytes);
     }
+
+    /** pixi-spine's own sprites, meshes and clipping graphics: every slot container child but ours. */
+    const shapesOf = (spine: Pixi4Spine) =>
+        spine.slotContainers.flatMap((container) =>
+            container.children.filter((view) => !slotObjects.isHolder(view) && view.containsPoint),
+        );
 
     function atlasOf(atlasText: string, texture: (page: string) => Pixi4Texture | undefined) {
         return new core.TextureAtlas(atlasText, (page, load) => {
@@ -113,13 +129,10 @@ export function createSpinePort(
         ];
     }
 
-    function claim(
-        timeline: Spine38Timeline,
-        data: Spine38SkeletonData | undefined,
-    ): PoseClaimEntry[] {
+    function claim(timeline: Spine38Timeline, data: Spine38SkeletonData): PoseClaimEntry[] {
         const id = `${timeline.getPropertyId()}`;
-        const ik = data?.ikConstraints.length ?? 0;
-        const transform = data?.transformConstraints.length ?? 0;
+        const ik = data.ikConstraints.length;
+        const transform = data.transformConstraints.length;
 
         if (timeline.boneIndex !== undefined)
             return [{ kind: 'bone', index: timeline.boneIndex, id }];
@@ -159,6 +172,12 @@ export function createSpinePort(
     }
 
     return {
+        runtimes: [runtime],
+        runtimeOf: (spineOrData) =>
+            spineOrData instanceof PIXI.spine.Spine || spineOrData instanceof core.SkeletonData
+                ? runtime
+                : undefined,
+
         readSkeleton: (source, atlasText, textures) =>
             read(
                 source,
@@ -167,7 +186,7 @@ export function createSpinePort(
 
         readSkeletonFromAssets(skeletonAlias, atlasAlias) {
             const ready = assets.resource(skeletonAlias)?.spineData;
-            if (ready) return remember(ready);
+            if (ready) return ready;
 
             const source = assets.get<SkeletonSource>(skeletonAlias);
             if (!source) throw new Error(`No skeleton loaded as "${skeletonAlias}"`);
@@ -181,7 +200,7 @@ export function createSpinePort(
             );
         },
 
-        create: (data) => new PIXI.spine.Spine(remember(data as Spine38SkeletonData)),
+        create: (data) => new PIXI.spine.Spine(data as Spine38SkeletonData),
         update: (spine, dt) => spine.update(dt),
 
         onUpdate: onSpineUpdate,
@@ -262,12 +281,10 @@ export function createSpinePort(
         updateWorldTransform: (skeleton) => skeletonOf(skeleton).updateWorldTransform(),
         drawOrder: (skeleton) => skeletonOf(skeleton).drawOrder,
 
-        claimOf(target) {
-            const animation = target as Spine38Animation;
-            const data = owners.get(animation);
-
-            return animation.timelines.flatMap((timeline) => claim(timeline, data));
-        },
+        claimOf: (animation, data) =>
+            (animation as Spine38Animation).timelines.flatMap((timeline) =>
+                claim(timeline, data as Spine38SkeletonData),
+            ),
 
         beforeWorldTransforms: (spine, hook) => beforeWorldTransforms(spine.state, hook),
 
@@ -322,6 +339,32 @@ export function createSpinePort(
                 rotate,
                 resolution,
             };
+        },
+
+        shieldShapes(spine) {
+            shapesOf(spine).forEach((view) => (view.containsPoint = never));
+
+            // pixi-spine creates a sprite the first time its attachment shows, long after this runs
+            FACTORIES.forEach((factory) => {
+                const create = PIXI.spine.Spine.prototype[factory] as (
+                    ...args: unknown[]
+                ) => Pixi4Container;
+
+                spine[factory] = ((...args: unknown[]) => {
+                    const view = create.apply(spine, args);
+                    view.containsPoint = never;
+                    return view;
+                }) as never;
+            });
+        },
+
+        exposeShapes(spine) {
+            FACTORIES.forEach((factory) => {
+                if (Object.hasOwn(spine, factory)) delete spine[factory];
+            });
+            shapesOf(spine).forEach((view) => {
+                if (Object.hasOwn(view, 'containsPoint')) delete view.containsPoint;
+            });
         },
 
         attachSlotObject: (spine, slotName, child) => slotObjects.attach(spine, slotName, child),

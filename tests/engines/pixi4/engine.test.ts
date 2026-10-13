@@ -113,7 +113,10 @@ describe('readSkeleton', () => {
 describe('claimOf', () => {
     it('sorts the timelines by what they pose', () => {
         const spine = spineOf();
-        const claims = engine.spine.claimOf(spine.skeleton.data.findAnimation('move')!);
+        const claims = engine.spine.claimOf(
+            spine.skeleton.data.findAnimation('move')!,
+            spine.skeleton.data,
+        );
         const kinds = claims.map((claim) =>
             'index' in claim ? `${claim.kind}:${claim.index}` : claim.kind,
         );
@@ -130,7 +133,7 @@ describe('claimOf', () => {
             Object.assign(timeline, { slotIndex, ...extra });
         const ids = (...timelines: object[]) =>
             engine.spine
-                .claimOf(new core.Animation('probe', timelines, 1))
+                .claimOf(new core.Animation('probe', timelines, 1), spineOf().skeleton.data)
                 .map((claim) => ('id' in claim ? claim.id : claim.kind));
 
         const color = ids(slotTimeline(new core.ColorTimeline(1), 1));
