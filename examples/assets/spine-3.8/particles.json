@@ -1,0 +1,23 @@
+{
+    "root": {
+        "spark": {
+            "textures": ["root.png"],
+            "autoplay": true,
+            "config": {
+                "alpha": { "start": 1, "end": 0 },
+                "scale": { "start": 0.4, "end": 0.05, "minimumScaleMultiplier": 0.5 },
+                "color": { "start": "#ffe27a", "end": "#ff5a1f" },
+                "speed": { "start": 160, "end": 40, "minimumSpeedMultiplier": 0.5 },
+                "startRotation": { "min": 0, "max": 360 },
+                "rotationSpeed": { "min": 0, "max": 180 },
+                "lifetime": { "min": 0.4, "max": 0.9 },
+                "frequency": 0.02,
+                "emitterLifetime": -1,
+                "maxParticles": 150,
+                "pos": { "x": 0, "y": 0 },
+                "addAtBack": false,
+                "spawnType": "point"
+            }
+        }
+    }
+}

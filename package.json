@@ -78,6 +78,7 @@
         "test": "vitest run",
         "test:watch": "vitest",
         "test:coverage": "vitest run --coverage",
+        "examples": "vite --config examples/vite.config.mjs",
         "lint": "eslint src",
         "format": "prettier --write .",
         "check-types": "tsc -p tsconfig.core.json --noEmit && tsc -p tsconfig.check.json",
