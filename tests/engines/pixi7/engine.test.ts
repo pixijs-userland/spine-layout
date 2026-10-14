@@ -286,6 +286,28 @@ describe('reading a skeleton', () => {
             ),
         ]);
     });
+
+    it('reads an export that names no version with the pixi-spine runtime the project pins under "*"', () => {
+        const pinned = engineWith({
+            runtimes: [stack.pixiSpine['3.8'], stack.esoteric['4.3']],
+            pin: { '*': '3.8' },
+        });
+        const { skeleton, atlasText } = contractFixture('3.8');
+        const data = pinned.spine.readSkeleton(
+            { ...skeleton, skeleton: { ...skeleton.skeleton, spine: undefined } },
+            atlasText,
+            { 'contract.png': page },
+            { file: 'odd.json' },
+        );
+
+        expect(pinned.spine.runtimeOf(data)).toMatchObject({
+            minor: '3.8',
+            packageName: '@pixi-spine/runtime-3.8',
+        });
+        expect(warnings).toEqual([
+            'odd.json: the export names no Spine version: read by the 3.8 runtime, as the project pins',
+        ]);
+    });
 });
 
 describe('reading from the asset cache', () => {

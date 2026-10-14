@@ -53,6 +53,7 @@ export interface Pixi5EngineOptions {
     /**
      * Reads the other minor's exports with the page's runtime, as the project's game does. Their
      * skins do not survive it: 2.1.14 finds none in a 3.7 export, and 2.0.5 throws on a 3.8 one's.
+     * Under `'*'`, the runtime minor it reads the exports that name no version with.
      */
     pin?: RuntimePin;
     /** Where such a cross-read is reported; `console.warn` by default. */

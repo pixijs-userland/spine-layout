@@ -179,8 +179,9 @@ export interface SpinePort<T extends EngineTypes> {
     /** The runtime that read a skeleton, or built a spine; `undefined` for anything else. */
     runtimeOf(spineOrData: T['Spine'] | SkeletonDataLike): SpineRuntimeInfo | undefined;
     /**
-     * Loads the runtimes that reading these export minors takes, where the engine loads them
-     * lazily. The core awaits it before it reads or builds anything.
+     * Loads the runtimes that reading these export minors takes (`'*'` for the exports that name no
+     * version), where the engine loads them lazily. The core awaits it before it reads or builds
+     * anything.
      */
     prepare?(minors: string[]): Promise<void>;
 

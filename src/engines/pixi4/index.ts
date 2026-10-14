@@ -28,7 +28,10 @@ export interface Pixi4EngineOptions {
      * `readSkeletonFromAssets` refuses the `spineData` it leaves.
      */
     runtime?: SpineRuntime;
-    /** The runtime minor the game reads an export minor with, e.g. `{ '3.7': '3.8' }`. */
+    /**
+     * The runtime minor the game reads an export minor with, e.g. `{ '3.7': '3.8' }`;
+     * under `'*'`, the one it reads the exports that name no version with.
+     */
     pin?: RuntimePin;
     /** Where a skeleton read by a runtime other than its own is reported; `console.warn` by default. */
     warn?: (message: string) => void;

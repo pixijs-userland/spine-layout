@@ -54,7 +54,10 @@ export interface Pixi6EngineOptions extends Omit<LegacyPortsOptions, 'spine'> {
     runtimes?: readonly Pixi6Runtime[];
     /** pixi-particles 4 or @pixi/particle-emitter 5, where it is not on `PIXI.particles`. */
     particles?: Exports<Pixi6Particles>;
-    /** The runtime a project's game reads an export minor with, where it is another minor's. */
+    /**
+     * The runtime a project's game reads an export minor with, where it is another minor's;
+     * under `'*'`, the one it reads the exports that name no version with.
+     */
     pin?: RuntimePin;
     /**
      * Where a skeleton read by a runtime other than its own, or a runtime the page loaded twice, is

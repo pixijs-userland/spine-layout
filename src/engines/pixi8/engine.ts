@@ -41,7 +41,10 @@ export type Pixi8Runtime = EsotericRuntime | LazyEsotericRuntime | Pixi8Adapter 
 export interface Pixi8EngineOptions {
     /** The Spine runtimes a skeleton is read by: the one its export version picks. */
     runtimes: readonly Pixi8Runtime[];
-    /** The runtime a project's game reads an export minor with, where it is another minor's. */
+    /**
+     * The runtime a project's game reads an export minor with, where it is another minor's;
+     * under `'*'`, the one it reads the exports that name no version with.
+     */
     pin?: RuntimePin;
     /** Where a skeleton read by a runtime other than its own is reported. */
     warn?: (message: string) => void;

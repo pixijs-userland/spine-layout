@@ -213,7 +213,7 @@ export interface PixiSpineAtlas {
 
 export type PixiSpineTextureLoader = (
     path: string,
-    load: (baseTexture: PixiSpineBaseTexture) => void,
+    load: (baseTexture: PixiSpineBaseTexture | null) => void,
 ) => void;
 
 export interface PixiSpineAtlasClass {

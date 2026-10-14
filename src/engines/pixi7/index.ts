@@ -54,7 +54,10 @@ export interface Pixi7EngineOptions {
     runtimes?: readonly Pixi7Runtime[];
     /** @pixi/particle-emitter 5, where it is not on `PIXI.particles`: an ES module namespace takes nothing. */
     particles?: Exports<LegacyParticles>;
-    /** The runtime a project's game reads an export minor with, where it is another minor's. */
+    /**
+     * The runtime a project's game reads an export minor with, where it is another minor's;
+     * under `'*'`, the one it reads the exports that name no version with.
+     */
     pin?: RuntimePin;
     /** Where a skeleton read by a runtime other than its own, or a runtime left out, is reported. */
     warn?: (message: string) => void;
