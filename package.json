@@ -103,6 +103,7 @@
     },
     "devDependencies": {
         "@changesets/cli": "^2.27.10",
+        "@esotericsoftware/spine-pixi-v8": "4.3.7",
         "@pixi-spine-v6/base": "npm:@pixi-spine/base@3.1.2",
         "@pixi-spine-v6/runtime-3.7": "npm:@pixi-spine/runtime-3.7@3.1.2",
         "@pixi-spine-v6/runtime-3.8": "npm:@pixi-spine/runtime-3.8@3.1.2",
@@ -124,6 +125,7 @@
         "pixi-spine-v4-37": "npm:pixi-spine@1.5.23",
         "pixi-spine-v5-37": "npm:pixi-spine@2.0.5",
         "pixi-spine-v5-38": "npm:pixi-spine@2.1.14",
+        "pixi.js": "8.19.0",
         "pixi.js-v4": "npm:pixi.js@4.8.9",
         "pixi.js-v5": "npm:pixi.js@5.3.12",
         "pixi.js-v6": "npm:pixi.js@6.5.10",
@@ -134,5 +136,19 @@
         "typescript": "^5.8.3",
         "vite": "^8.0.16",
         "vitest": "^4.1.6"
+    },
+    "pnpm": {
+        "packageExtensions": {
+            "@esotericsoftware/spine-pixi-v8@4.2.120": {
+                "dependencies": {
+                    "@esotericsoftware/spine-core": "4.2.120"
+                }
+            },
+            "@esotericsoftware/spine-pixi-v8@4.3.7": {
+                "dependencies": {
+                    "@esotericsoftware/spine-core": "4.3.7"
+                }
+            }
+        }
     }
 }
