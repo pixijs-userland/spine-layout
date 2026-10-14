@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { UnsupportedSpineVersionError } from '../../../src/engine/errors';
-import { pickRuntime } from '../../../src/core/versions/pickRuntime';
+import { pickRuntime, UNVERSIONED } from '../../../src/core/versions/pickRuntime';
 import { runtimesOf } from '../../../src/core/versions/runtimeMatrix';
 
 const thrown = (run: () => unknown) => {
@@ -60,7 +60,7 @@ describe('pickRuntime', () => {
         expect(
             thrown(() => pickRuntime('4.0.64', runtimesOf(8), undefined, { binary: true })),
         ).toMatchObject({
-            pixiMajors: [6, 7],
+            pixiMajors: [6],
         });
     });
 
@@ -80,9 +80,73 @@ describe('pickRuntime', () => {
         );
     });
 
-    it("prefers the export minor's own runtime, and pre-passes, over a pin", () => {
-        expect(pickRuntime('4.2.43', runtimesOf(8), { '4.2': '4.3' }).runtime.minor).toBe('4.2');
-        expect(pickRuntime('4.1.24', runtimesOf(8), { '4.1': '4.3' }).runtime.minor).toBe('4.2');
+    it("takes a registered pinned runtime over the export minor's own, as goosicorn's games read 4.2", () => {
+        const pick = pickRuntime('4.2.43', runtimesOf(8), { '4.2': '4.3' }, { file: 'bg.json' });
+
+        expect(pick.runtime.minor).toBe('4.3');
+        expect(pick.prePasses).toEqual([]);
+        expect(pick.warning).toBe(
+            'bg.json: Spine 4.2.43 cross-read by the 4.3 runtime, as the project pins over its own ' +
+                '4.2 runtime: its top-level ik/transform/path/physics constraints are not read; ' +
+                'some such exports throw',
+        );
+    });
+
+    it('takes a registered pinned runtime over a pre-pass route, and runs no pre-pass', () => {
+        const pick = pickRuntime('4.1.24', runtimesOf(8), { '4.1': '4.3' });
+
+        expect(pick.runtime.minor).toBe('4.3');
+        expect(pick.prePasses).toEqual([]);
+        expect(pick.warning).toMatch(
+            /cross-read by the 4\.3 runtime, as the project pins over the 4\.2 runtime after pre-passes: bone `transform` and every constraint are lost/,
+        );
+        expect(pickRuntime('4.0.64', runtimesOf(7), { '4.0': '4.1' })).toMatchObject({
+            runtime: { minor: '4.1', packageName: '@pixi-spine/runtime-4.1' },
+            prePasses: [],
+            warning: expect.stringMatching(
+                /: none measured: pixi-spine's runtime-4\.1 converts a 4\.0 export itself, as the 4\.0->4\.1 pre-pass does$/,
+            ),
+        });
+    });
+
+    it('names what a cross-read loses by the family of the runtime that reads it', () => {
+        const spineCore41 = { ...runtimesOf(7)[2], family: 'esoteric' };
+
+        expect(spineCore41.minor).toBe('4.1');
+        expect(pickRuntime('4.0.64', [spineCore41], { '4.0': '4.1' }).warning).toMatch(
+            /: its mesh deform keys are dropped$/,
+        );
+    });
+
+    it(`reads an export that names no version with the runtime pinned under "${UNVERSIONED}"`, () => {
+        expect(UNVERSIONED).toBe('*');
+        expect(pickRuntime(undefined, runtimesOf(8), { '*': '4.3' }, { file: 'bg.json' })).toEqual({
+            runtime: runtimesOf(8)[1],
+            prePasses: [],
+            warning:
+                'bg.json: the export names no Spine version: read by the 4.3 runtime, as the project pins',
+        });
+        expect(pickRuntime('', runtimesOf(8), { '*': '4.2' }).runtime.minor).toBe('4.2');
+        expect(pickRuntime('4.2.43', runtimesOf(8), { '*': '4.3' }).runtime.minor).toBe('4.2');
+        expect(thrown(() => pickRuntime(undefined, runtimesOf(8), { '*': '3.8' }))).toBeInstanceOf(
+            UnsupportedSpineVersionError,
+        );
+    });
+
+    it('cross-reads a binary as its pin says', () => {
+        const pick = pickRuntime('4.2.43', runtimesOf(8), { '4.2': '4.3' }, { binary: true });
+
+        expect(pick).toMatchObject({ runtime: { minor: '4.3' }, prePasses: [] });
+    });
+
+    it('ignores a pin whose runtime is not registered, or that names the minor itself', () => {
+        expect(pickRuntime('4.2.43', runtimesOf(8), { '4.2': '4.1' })).toEqual(
+            pickRuntime('4.2.43', runtimesOf(8)),
+        );
+        expect(pickRuntime('4.1.24', runtimesOf(8), { '4.1': '4.1' })).toEqual(
+            pickRuntime('4.1.24', runtimesOf(8)),
+        );
+        expect(pickRuntime('4.2.43', runtimesOf(8), { '4.2': '4.2' }).warning).toBeUndefined();
     });
 
     it('names the file, its version, the registered runtimes and the Pixi that could render it', () => {
@@ -109,6 +173,13 @@ describe('pickRuntime', () => {
         expect(thrown(() => pickRuntime(undefined, runtimesOf(7)))).toMatchObject({
             version: undefined,
             pixiMajors: [],
+            message:
+                'no export version — registered runtimes: 3.7, 3.8, 4.1, 4.2, 4.3; a runtime is picked by the version an export names, or by a pin under "*"',
+        });
+        expect(thrown(() => pickRuntime('', runtimesOf(8)))).toMatchObject({
+            version: '',
+            message:
+                'no export version — registered runtimes: 4.2, 4.3; a runtime is picked by the version an export names, or by a pin under "*"',
         });
         expect(
             thrown(() => pickRuntime('3.7.94', runtimesOf(7), undefined, { binary: true })),

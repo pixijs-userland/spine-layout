@@ -30,7 +30,6 @@ describe('the runtime matrix', () => {
         expect(row(7)).toEqual([
             '3.7 pixi-spine-modular @pixi-spine/runtime-3.7 4.0.6',
             '3.8 pixi-spine-modular @pixi-spine/runtime-3.8 4.0.6',
-            '4.0 pixi-spine-modular @pixi-spine/runtime-4.0 4.0.6',
             '4.1 pixi-spine-modular @pixi-spine/runtime-4.1 4.0.6',
             '4.2 esoteric @esotericsoftware/spine-pixi-v7 4.2.120',
             '4.3 esoteric @esotericsoftware/spine-pixi-v7 4.3.13',
@@ -41,7 +40,7 @@ describe('the runtime matrix', () => {
         ]);
     });
 
-    it('defaults every export minor to a Pixi with its own runtime', () => {
+    it('defaults every export minor to a Pixi that reads it, by its own runtime or a pre-pass', () => {
         expect(DEFAULT_PIXI).toEqual({
             '3.7': 4,
             '3.8': 4,
@@ -51,15 +50,21 @@ describe('the runtime matrix', () => {
             '4.3': 8,
         });
         Object.entries(DEFAULT_PIXI).forEach(([minor, pixi]) =>
-            expect(RUNTIME_MATRIX[pixi][minor]).toBeDefined(),
+            expect(
+                RUNTIME_MATRIX[pixi][minor] ?? (minor === '4.0' && RUNTIME_MATRIX[pixi]['4.1']),
+            ).toBeTruthy(),
         );
     });
 
-    it('has Pixi 7 alone reading every minor with its own runtime', () => {
-        const everyMinor = Object.keys(DEFAULT_PIXI);
+    it('has Pixi 6 alone with an own runtime for 3.7 to 4.1, and Pixi 7 reading 4.0 through 4.1', () => {
+        const legacyMinors = ['3.7', '3.8', '4.0', '4.1'];
 
         expect(
-            PIXI_MAJORS.filter((pixi) => everyMinor.every((minor) => RUNTIME_MATRIX[pixi][minor])),
-        ).toEqual([7]);
+            PIXI_MAJORS.filter((pixi) =>
+                legacyMinors.every((minor) => RUNTIME_MATRIX[pixi][minor]),
+            ),
+        ).toEqual([6]);
+        expect(RUNTIME_MATRIX[7]['4.0']).toBeUndefined();
+        expect(RUNTIME_MATRIX[7]['4.1']).toBeDefined();
     });
 });

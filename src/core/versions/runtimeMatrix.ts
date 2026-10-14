@@ -50,7 +50,8 @@ export const RUNTIME_MATRIX: Readonly<
     7: {
         '3.7': modular('3.7', '4.0.6'),
         '3.8': modular('3.8', '4.0.6'),
-        '4.0': modular('4.0', '4.0.6'),
+        // pixi-spine 4.0.6's runtime-4.0 mis-turns chain path constraints; runtime-4.1 after the
+        // 4.0 pre-pass matches Esoteric's 4.0 core, as on Pixi 6.
         '4.1': modular('4.1', '4.0.6'),
         '4.2': esoteric(7, '4.2.120'),
         '4.3': esoteric(7, '4.3.13'),

@@ -55,6 +55,9 @@ export default tseslint.config(
         // may name their types, never load them.
         files: [
             'src/engines/pixi4/**/*.ts',
+            'src/engines/pixi5/**/*.ts',
+            'src/engines/pixi6/**/*.ts',
+            'src/engines/pixi7/**/*.ts',
             'src/engines/legacy/**/*.ts',
             'src/engines/pixiSpine/**/*.ts',
             'src/engines/esoteric/**/*.ts',

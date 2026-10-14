@@ -391,6 +391,22 @@ describe('SpineLayout — an engine that loads its runtimes lazily', () => {
         expect([...layout.spines.keys()]).toEqual(['root']);
     });
 
+    it('prepares the runtime pinned under "*" for a skeleton that names no version', async () => {
+        const { engine, prepare, load } = lazyEngine();
+        const root = { ...bonesOnly, skins: [] };
+        const unversioned = { ...root, skeleton: { hash: 'odd' } };
+        const layout = new SpineLayout({ engine });
+
+        const building = layout.createInstancesFromDataArray([
+            { name: 'root', skeleton: root, atlasText: '', textures: {} },
+            { name: 'odd', skeleton: unversioned, atlasText: '', textures: {} },
+        ]);
+
+        expect(prepare).toHaveBeenCalledWith(['4.3', '*']);
+        load();
+        await building;
+    });
+
     it('prepares what a manifest put in the asset cache', async () => {
         const { engine, prepare, load } = lazyEngine();
         Assets.cache.set('spine/root.json', bonesOnly);

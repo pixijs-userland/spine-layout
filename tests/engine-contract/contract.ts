@@ -1,17 +1,42 @@
 import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it } from 'vitest';
-import type { ContainerLike, Engine, EngineTypes, SpineLike } from '../../src/engine/Engine';
+import type {
+    ContainerLike,
+    Engine,
+    EngineTypes,
+    RectLike,
+    SpineLike,
+} from '../../src/engine/Engine';
 import type { SkeletonDataLike } from '../../src/engine/runtime';
 
 /**
  * What a runtime reads the contract fixtures from, by the export minor it reads — the same
  * skeleton, exported for that Spine version, and an atlas in that runtime's format whose one
- * page, `contract.png`, the suite fills with the engine's white texture.
+ * page, `contract.png`, the suite fills with the engine's white texture. A minor whose export
+ * reads like a neighbour's is that file under its own `version`.
  */
-export const CONTRACT_FIXTURES: Record<string, { skeleton: string; atlas: string }> = {
+export const CONTRACT_FIXTURES: Record<
+    string,
+    { skeleton: string; atlas: string; version?: string }
+> = {
     '4.3': { skeleton: 'contract-4.3.json', atlas: 'contract-4.3.atlas' },
+    '4.2': { skeleton: 'contract-4.3.json', atlas: 'contract-4.3.atlas', version: '4.2.43' },
+    '4.1': { skeleton: 'contract-3.8.json', atlas: 'contract-3.8.atlas', version: '4.1.24' },
+    '4.0': { skeleton: 'contract-3.8.json', atlas: 'contract-3.8.atlas', version: '4.0.64' },
     '3.8': { skeleton: 'contract-3.8.json', atlas: 'contract-3.8.atlas' },
+    '3.7': { skeleton: 'contract-3.7.json', atlas: 'contract-3.8.atlas' },
 };
+
+type ContractSkeleton = { skeleton: { spine: string }; skins?: { name: string }[] };
+
+/** The contract skeleton and atlas text a runtime of `minor` reads. */
+export function contractFixture(minor: string): { skeleton: ContractSkeleton; atlasText: string } {
+    const files = CONTRACT_FIXTURES[minor];
+    const skeleton: ContractSkeleton = JSON.parse(fixture(files.skeleton));
+    if (files.version) skeleton.skeleton.spine = files.version;
+
+    return { skeleton, atlasText: fixture(files.atlas) };
+}
 
 /** The fixtures' page with its `square` region packed turned, in a format both runtimes read. */
 const TURNED_ATLAS = `contract.png
@@ -77,10 +102,11 @@ function attachmentCornersOf(attachment: unknown, page: unknown): number[] {
     const region = attachment as {
         region?: { texture?: { _uvs?: Uvs } };
         sequence?: { uvs?: ArrayLike<number>[] };
+        uvs?: ArrayLike<number>;
     };
     if (region.region?.texture?._uvs) return cornersOf(region.region.texture, page);
 
-    const uvs = region.sequence!.uvs![0];
+    const uvs = region.sequence?.uvs?.[0] ?? region.uvs!;
     const vertex = (i: number) => [uvs[i * 2] * 64, uvs[i * 2 + 1] * 32];
 
     return [1, 2, 3, 0].flatMap(vertex);
@@ -112,9 +138,7 @@ export function engineContract(name: string, load: () => Promise<Engine>, minor?
 
         const setUp = async () => {
             engine = await load();
-            const files = CONTRACT_FIXTURES[minor ?? engine.spine.runtimes[0].minor];
-            skeleton = JSON.parse(fixture(files.skeleton));
-            atlasText = fixture(files.atlas);
+            ({ skeleton, atlasText } = contractFixture(minor ?? engine.spine.runtimes[0].minor));
         };
 
         afterEach(() => {
@@ -282,7 +306,7 @@ export function engineContract(name: string, load: () => Promise<Engine>, minor?
                     { x: region.x, y: region.y, width: region.height, height: region.width },
                     region.rotate,
                 );
-                const sprite = engine.display.sprite(cut, 0);
+                const sprite = engine.display.sprite(cut, 0) as ContainerLike & RectLike;
 
                 expect([sprite.width, sprite.height]).toEqual([20, 10]);
                 cornersOf(cut, region.page).forEach((value, i) =>
@@ -527,5 +551,149 @@ export function engineContract(name: string, load: () => Promise<Engine>, minor?
                 parent.destroy();
             });
         });
+    });
+}
+
+/** Puts the contract export of `minor` in the engine's asset cache, and names its aliases. */
+export type CacheContractExport = (
+    engine: Engine,
+    minor: string,
+) => { skeleton: string; atlas: string };
+
+/** {@link CacheContractExport} for an engine whose asset cache is a registry it can `set`. */
+export const cacheInRegistry: CacheContractExport = (engine, minor) => {
+    const assets = engine.assets as Engine['assets'] & { set(alias: string, value: unknown): void };
+    const { skeleton, atlasText } = contractFixture(minor);
+
+    assets.set('contract.png', engine.display.whiteTexture);
+    assets.set(`two-${minor}.json`, skeleton);
+    assets.set(`two-${minor}.atlas`, atlasText);
+
+    return { skeleton: `two-${minor}.json`, atlas: `two-${minor}.atlas` };
+};
+
+/**
+ * One engine over two runtimes, their objects side by side: each skeleton read by its own
+ * runtime, and every later call on it, interleaved with the other's, reaching that runtime.
+ * Run {@link engineContract} once per minor besides.
+ *
+ * An engine that reads its asset cache across its runtimes is given `cache`; one without it is
+ * held to reading the cache with one runtime only, as a bare composite port does.
+ */
+export function twoRuntimesContract(
+    name: string,
+    load: () => Promise<Engine>,
+    minors: [string, string],
+    { cache }: { cache?: CacheContractExport } = {},
+) {
+    describe(`engine contract, two runtimes: ${name}`, () => {
+        let engine: Engine<EngineTypes>;
+        const spines: SpineLike[] = [];
+
+        const both = async () => {
+            engine = await load();
+            const page = { 'contract.png': engine.display.whiteTexture };
+
+            return minors.map((minor) => {
+                const { skeleton, atlasText } = contractFixture(minor);
+                const data = engine.spine.readSkeleton(skeleton, atlasText, page, {
+                    file: `contract-${minor}.json`,
+                });
+                const spine = engine.spine.create(data);
+                spines.push(spine);
+                return { minor, data, spine };
+            });
+        };
+
+        afterEach(() => {
+            spines.splice(0).forEach((spine) => spine.destroy());
+        });
+
+        it('reads each export with its own runtime, and names it', async () => {
+            const read = await both();
+            const runtimes = read.map(({ data }) => engine.spine.runtimeOf(data));
+
+            expect(runtimes.map((runtime) => runtime?.minor)).toEqual(minors);
+            expect(engine.spine.runtimes).toEqual(expect.arrayContaining(runtimes));
+            read.forEach(({ spine }, i) => expect(engine.spine.runtimeOf(spine)).toBe(runtimes[i]));
+        });
+
+        it("poses, resets and outlines each skeleton through its runtime, the other's in between", async () => {
+            const read = await both();
+            const slot = (spine: SpineLike, name: string) => spine.skeleton.findSlot(name)!;
+
+            read.forEach(({ spine }) => spine.state.setAnimation(0, 'move', false));
+            read.forEach(({ spine }) => engine.spine.update(spine, 0.75));
+            read.forEach(({ spine }) =>
+                expect(engine.spine.slotAttachment(slot(spine, 'slot_b'))).toBeFalsy(),
+            );
+            read.forEach(({ spine }) => engine.spine.setupPose(spine.skeleton, 'slots'));
+            read.forEach(({ spine, data }) => {
+                const attachment = engine.spine.slotAttachment(slot(spine, 'slot_a'));
+                const claims = engine.spine.claimOf(data.findAnimation('move')!, data);
+
+                expect(engine.spine.slotAttachment(slot(spine, 'slot_b'))).toBeTruthy();
+                expect(new Set(claims.map((claim) => claim.kind))).toEqual(
+                    new Set(['bone', 'slot', 'drawOrder', 'event']),
+                );
+                expect(engine.spine.hitPolygon(slot(spine, 'slot_a'), attachment)).toHaveLength(8);
+                expect(engine.spine.regionTexture(attachment)).toMatchObject({
+                    width: 40,
+                    height: 20,
+                });
+            });
+        });
+
+        it('keeps each spine’s hooks and slot objects with its own runtime', async () => {
+            const read = await both();
+            const seen: string[] = [];
+            const children = read.map(({ minor, spine }) => {
+                const child = engine.display.container({ label: minor });
+                engine.spine.onUpdate(spine, () => seen.push(minor));
+                engine.spine.beforeWorldTransforms(spine, () => {
+                    engine.spine.bonePose(spine.skeleton.findBone('bone_a')!).x = 33;
+                });
+                engine.spine.attachSlotObject(spine, 'slot_b', child);
+                return child;
+            });
+
+            read.forEach(({ spine }) => engine.spine.update(spine, 0));
+
+            expect(seen).toEqual(minors);
+            read.forEach(({ spine }, i) => {
+                const origin = spine.toLocal(children[i].toGlobal(engine.display.point(0, 0)));
+
+                expect(engine.spine.getSlotObject(spine, 'slot_b')).toBe(children[i]);
+                expect(origin.x).toBeCloseTo(33);
+                engine.spine.detachSlotObject(spine, 'slot_b');
+                expect(engine.spine.getSlotObject(spine, 'slot_b')).toBeUndefined();
+            });
+        });
+
+        if (cache) {
+            it('reads each export in the asset cache with its own runtime', async () => {
+                engine = await load();
+
+                const read = minors.map((minor) => {
+                    const { skeleton, atlas } = cache(engine, minor);
+                    const data = engine.spine.readSkeletonFromAssets(skeleton, atlas);
+                    spines.push(engine.spine.create(data));
+                    return engine.spine.runtimeOf(data)?.minor;
+                });
+
+                expect(read).toEqual(minors);
+                expect(() => engine.spine.readSkeletonFromAssets('contract')).toThrow(
+                    'No skeleton loaded as "contract"',
+                );
+            });
+        } else {
+            it('reads from the asset cache with one runtime only', async () => {
+                await both();
+
+                expect(() => engine.spine.readSkeletonFromAssets('contract')).toThrow(
+                    /read each skeleton with readSkeleton/,
+                );
+            });
+        }
     });
 }

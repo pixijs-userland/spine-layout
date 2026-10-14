@@ -9,6 +9,8 @@ export interface UnsupportedSpineVersion {
     registered: readonly string[];
     /** The Pixi majors with a runtime that reads the export. */
     pixiMajors: readonly PixiMajor[];
+    /** Those of `registered` that read no binary, named so where the export is a `.skel`. */
+    jsonOnly?: readonly string[];
 }
 
 /** No runtime the engine registered reads this skeleton's export version. */
@@ -18,16 +20,21 @@ export class UnsupportedSpineVersionError extends Error implements UnsupportedSp
     readonly registered: readonly string[];
     readonly pixiMajors: readonly PixiMajor[];
 
-    constructor({ file, version, registered, pixiMajors }: UnsupportedSpineVersion) {
-        const exported = version === undefined ? 'no export version' : `Spine ${version}`;
-        const runtimes = registered.length ? registered.join(', ') : 'none';
+    constructor({ file, version, registered, pixiMajors, jsonOnly }: UnsupportedSpineVersion) {
+        const named = version !== undefined && /^\d+\.\d+/.test(version);
+        const runtimes = registered.length
+            ? registered
+                  .map((minor) => (jsonOnly?.includes(minor) ? `${minor} (JSON only)` : minor))
+                  .join(', ')
+            : 'none';
         const elsewhere = pixiMajors.length
             ? `Pixi ${pixiMajors.join(', ')} can render it`
             : 'no Pixi has a runtime for it';
+        const why = named
+            ? `Spine ${version} — registered runtimes: ${runtimes}; ${elsewhere}`
+            : `no export version — registered runtimes: ${runtimes}; a runtime is picked by the version an export names, or by a pin under "*"`;
 
-        super(
-            `${file ? `${file}: ` : ''}${exported} — registered runtimes: ${runtimes}; ${elsewhere}`,
-        );
+        super(`${file ? `${file}: ` : ''}${why}`);
         this.name = 'UnsupportedSpineVersionError';
         this.file = file;
         this.version = version;

@@ -40,6 +40,37 @@ export interface SpineRuntimeInfo {
     packageVersion: string;
 }
 
+/**
+ * One Spine runtime as an engine with several drives it: its own port, and which objects are
+ * its. The port reads whatever skeleton it is handed as this runtime's export — picking the
+ * runtime, running the pre-passes and warning are the engine's.
+ */
+export interface SpineRuntimeAdapter<T extends EngineTypes = EngineTypes> extends SpineRuntimeInfo {
+    readonly port: SpinePort<T>;
+    /**
+     * Whether this runtime made `object`: a skeleton data, spine, skeleton, bone, slot, animation
+     * or attachment of its own classes.
+     */
+    owns(object: unknown): boolean;
+    /** Whether it reads a binary `.skel`; no 3.7 runtime does. */
+    readonly readsBinary: boolean;
+}
+
+/**
+ * An adapter loaded on demand, its `import()` in the caller's code: it names the runtime it
+ * will be, and `SpinePort.prepare` calls it once an export needs that runtime.
+ */
+export interface LazySpineRuntimeAdapter<
+    T extends EngineTypes = EngineTypes,
+> extends SpineRuntimeInfo {
+    (): Promise<SpineRuntimeAdapter<T>>;
+}
+
+export interface ReadSkeletonOptions {
+    /** The skeleton's file, for the warnings and errors. */
+    file?: string;
+}
+
 /** The concrete classes an engine renders with. `Spine` doubles as a container. */
 export interface EngineTypes {
     Spine: SpineLike;
@@ -161,6 +192,7 @@ export interface SpinePort<T extends EngineTypes> {
         source: SkeletonSource,
         atlasText: string,
         textures: Record<string, T['Texture']>,
+        options?: ReadSkeletonOptions,
     ): SkeletonDataLike;
     /** Reads a skeleton that the engine's asset cache already holds under those aliases. */
     readSkeletonFromAssets(skeletonAlias: string, atlasAlias?: string): SkeletonDataLike;

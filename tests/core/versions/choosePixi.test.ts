@@ -43,7 +43,7 @@ describe('choosePixi', () => {
             '4.0 and 4.1 (slot)',
             { '4.0.64': 19, '4.0.61': 2, '4.1.23': 7, '4.1-from-4.2.37': 15, '4.0.63': 2 },
             7,
-            ['4.0', '4.1'],
+            ['4.1'],
         ],
         [
             '3.8 downgraded from 4.3',
@@ -96,13 +96,19 @@ describe('choosePixi', () => {
         });
     });
 
-    it('opens a binary 4.0 export where a runtime reads it as it is', () => {
-        const choice = choosePixi([
+    it('opens a binary 4.0 export only where a runtime reads it as it is', () => {
+        expect(choosePixi([{ file: 'a.skel', version: '4.0.64', binary: true }])).toMatchObject({
+            pixi: 6,
+            reason: 'covering',
+        });
+
+        const mixed = choosePixi([
             { file: 'a.skel', version: '4.0.64', binary: true },
             { file: 'b.json', version: '4.3.23' },
         ]);
 
-        expect(choice).toMatchObject({ pixi: 7, reason: 'covering' });
+        expect(mixed).toMatchObject({ pixi: 8, reason: 'uncovered' });
+        expect(mixed.perFile.find((entry) => entry.file === 'a.skel')).toHaveProperty('error');
     });
 
     it('keeps the pinned Pixi, and skips what it cannot read', () => {
@@ -124,7 +130,7 @@ describe('choosePixi', () => {
         expect(choice.perFile[1]).toMatchObject({ runtimeMinor: '3.8' });
     });
 
-    it('cross-reads with the pinned runtime only where the Pixi has no other way', () => {
+    it('cross-reads with the pinned runtime wherever the Pixi has it', () => {
         const pinned = choosePixi(folder({ '4.2.43': 1 }), { pixi: 6, spine: { '4.2': '4.1' } });
 
         expect(pinned.perFile[0]).toMatchObject({
@@ -136,12 +142,32 @@ describe('choosePixi', () => {
 
         const own = choosePixi(folder({ '4.2.43': 1 }), { pixi: 7, spine: { '4.2': '4.1' } });
         const prePassed = choosePixi(folder({ '4.1.24': 1 }), { pixi: 8, spine: { '4.1': '4.3' } });
-
-        expect(own.perFile[0]).toMatchObject({ runtimeMinor: '4.2', prePasses: [] });
-        expect(prePassed.perFile[0]).toMatchObject({
-            runtimeMinor: '4.2',
-            prePasses: ['4.1->4.2'],
+        const goosicorn = choosePixi(folder({ '4.2.43': 2, '4.3.23': 1 }), {
+            spine: { '4.2': '4.3' },
         });
+
+        expect(own.perFile[0]).toMatchObject({ runtimeMinor: '4.1', prePasses: [] });
+        expect(prePassed.perFile[0]).toMatchObject({ runtimeMinor: '4.3', prePasses: [] });
+        expect(goosicorn).toMatchObject({ pixi: 8, reason: 'default' });
+        expect(runtimesOf(goosicorn)).toEqual(['4.3']);
+    });
+
+    it('loads the pinned runtime on a Pixi that loads one runtime a page', () => {
+        const choice = choosePixi(folder({ '3.8.99': 2 }), { pixi: 4, spine: { '3.8': '3.7' } });
+
+        expect(runtimesOf(choice)).toEqual(['3.7']);
+        expect(choice.perFile[0]).toMatchObject({
+            runtimeMinor: '3.7',
+            warning: expect.stringContaining('cross-read by the 3.7 runtime'),
+        });
+    });
+
+    it('names the newest export minor it starts from', () => {
+        expect(choosePixi(folder({ '4.1-from-4.2.43': 1, '4.2.43': 1 })).newest).toBe('4.2');
+        expect(choosePixi(folder({ '3.3.07': 1, '4.1.24': 1 })).newest).toBe('4.1');
+        expect(choosePixi(folder({ '4.3.23': 1 }), { pixi: 7 }).newest).toBe('4.3');
+        expect(choosePixi(folder({ '3.3.07': 1 }))).not.toHaveProperty('newest');
+        expect(choosePixi([])).not.toHaveProperty('newest');
     });
 
     it('skips what no Pixi reads, and opens on Pixi 8 when nothing is readable', () => {

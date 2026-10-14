@@ -41,6 +41,8 @@ export interface PixiChoice {
     reason: PixiChoiceReason;
     /** One line saying why, for the console. */
     message: string;
+    /** The newest export minor any Pixi has a runtime for, which an unpinned choice starts from. */
+    newest?: string;
     /** The runtimes the files need on that Pixi, oldest minor first. */
     runtimes: SpineRuntimeInfo[];
     perFile: FileRuntime[];
@@ -49,10 +51,14 @@ export interface PixiChoice {
 /** Where a folder with no readable export version opens. */
 const FALLBACK_PIXI: PixiMajor = 8;
 
-function routes(entries: readonly ExportVersion[], available: readonly SpineRuntimeInfo[]) {
+function routes(
+    entries: readonly ExportVersion[],
+    available: readonly SpineRuntimeInfo[],
+    pin?: RuntimePin,
+) {
     return entries.map((entry) => {
         try {
-            return pickRuntime(entry.version, available, undefined, entry).runtime;
+            return pickRuntime(entry.version, available, pin, entry).runtime;
         } catch {
             return undefined;
         }
@@ -63,11 +69,15 @@ function routes(entries: readonly ExportVersion[], available: readonly SpineRunt
  * The runtimes a page of `pixi` registers for these exports: all its own, but where it loads a
  * single runtime per page, the one the newest export needs.
  */
-function pageRuntimes(pixi: PixiMajor, entries: readonly ExportVersion[]): SpineRuntimeInfo[] {
+function pageRuntimes(
+    pixi: PixiMajor,
+    entries: readonly ExportVersion[],
+    pin?: RuntimePin,
+): SpineRuntimeInfo[] {
     const available = runtimesOf(pixi);
     if (!ONE_RUNTIME_PER_PAGE.has(pixi)) return available;
 
-    const needed = routes(entries, available).filter((runtime) => runtime !== undefined);
+    const needed = routes(entries, available, pin).filter((runtime) => runtime !== undefined);
     const newest = needed.sort((a, b) => compareMinors(b.minor, a.minor))[0];
 
     return newest ? [newest] : available;
@@ -140,7 +150,7 @@ export function choosePixi(
         reason = covering ? 'covering' : 'uncovered';
     }
 
-    const available = pageRuntimes(pixi, entries);
+    const available = pageRuntimes(pixi, entries, pin.spine);
     const used = new Map<string, SpineRuntimeInfo>();
     const perFile = entries.map((entry): FileRuntime => {
         const { file, version } = entry;
@@ -170,6 +180,7 @@ export function choosePixi(
         pixi,
         reason,
         message: describe(pixi, reason, newest),
+        ...(newest && { newest }),
         runtimes: [...used.values()].sort((a, b) => compareMinors(a.minor, b.minor)),
         perFile,
     };

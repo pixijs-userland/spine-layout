@@ -15,6 +15,7 @@ import { log } from './utils/Log';
 import { ManifestParser, type SpineAssetData } from './utils/ManifestParser';
 import { skeletonVersion } from './utils/skeletonVersion';
 import { minorOf } from './versions/minorOf';
+import { UNVERSIONED } from './versions/pickRuntime';
 import { planMultipleInstances, spinePointerBases } from './utils/multiInstance';
 import { AnimationsController } from './controllers/Animations.controller';
 import { SkinsController } from './controllers/Skins.controller';
@@ -64,6 +65,8 @@ export class SpineLayoutCore<T extends EngineTypes = EngineTypes> extends Layout
     #scene: SceneController<T>;
     #pointer: PointerController<T>;
     #orientation: OrientationController<T>;
+    /** Bumped by every reset, so a build that waited on `prepare` sees the layout moved on. */
+    #generation = 0;
     private options?: SpineLayoutOptions;
 
     constructor(options: SpineLayoutCoreOptions<T>) {
@@ -227,7 +230,11 @@ export class SpineLayoutCore<T extends EngineTypes = EngineTypes> extends Layout
         const { spine } = this.engine;
         if (!spine.prepare) return build();
 
-        return spine.prepare(exportMinors(skeletons())).then(build);
+        const generation = this.#generation;
+
+        return spine.prepare(exportMinors(skeletons())).then(() => {
+            if (generation === this.#generation) build();
+        });
     }
 
     private buildFromManifest(
@@ -249,7 +256,7 @@ export class SpineLayoutCore<T extends EngineTypes = EngineTypes> extends Layout
 
         this.closeRegistryLogs();
 
-        this.render(rootID);
+        this.#mount(rootID);
 
         sounds.init(manifest);
 
@@ -267,7 +274,14 @@ export class SpineLayoutCore<T extends EngineTypes = EngineTypes> extends Layout
             sources.set(item.name, {
                 create: () =>
                     this.engine.spine.create(
-                        this.engine.spine.readSkeleton(item.skeleton, item.atlasText, item.textures),
+                        this.engine.spine.readSkeleton(
+                            item.skeleton,
+                            item.atlasText,
+                            item.textures,
+                            {
+                                file: item.name,
+                            },
+                        ),
                     ),
                 registered: (spineID, spine) => this.registerDataSkins(spineID, spine, item),
             });
@@ -277,7 +291,7 @@ export class SpineLayoutCore<T extends EngineTypes = EngineTypes> extends Layout
 
         this.closeRegistryLogs();
 
-        this.render(rootID);
+        this.#mount(rootID);
 
         this.#animations.playState('init');
         this.#animations.playByName('init');
@@ -508,7 +522,7 @@ export class SpineLayoutCore<T extends EngineTypes = EngineTypes> extends Layout
     }
 
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    protected onSpineRegistered(_spineID: string, _spine: T['Spine']) { }
+    protected onSpineRegistered(_spineID: string, _spine: T['Spine']) {}
 
     /**
      * Registration is done — flush its tables before anything is played, so the console reads in
@@ -529,7 +543,7 @@ export class SpineLayoutCore<T extends EngineTypes = EngineTypes> extends Layout
         log.close(LOG.SPINE_EVENTS);
     }
 
-    private render(rootID?: SpineID) {
+    #mount(rootID?: SpineID) {
         this.#texts.loadSettings();
         this.#particles.loadSettings();
         this.#scene.attachBones();
@@ -559,6 +573,7 @@ export class SpineLayoutCore<T extends EngineTypes = EngineTypes> extends Layout
     // ─── Lifecycle ───────────────────────────────────────────────────────────────
 
     reset() {
+        this.#generation++;
         this.#texts.clear();
         this.#particles.clear();
         this.#animations.clear();
@@ -593,10 +608,7 @@ export class SpineLayoutCore<T extends EngineTypes = EngineTypes> extends Layout
     getSpineByID(spineID: string): T['Spine'] | undefined {
         return this.#spines.get(spineID);
     }
-    getSpinesByNamePattern(
-        pattern: string,
-        options?: { not?: string[] },
-    ): Map<string, T['Spine']> {
+    getSpinesByNamePattern(pattern: string, options?: { not?: string[] }): Map<string, T['Spine']> {
         return this.#spine.getSpinesByNamePattern(pattern, options);
     }
 
@@ -819,11 +831,11 @@ export class SpineLayoutCore<T extends EngineTypes = EngineTypes> extends Layout
 export type SpineLayoutView<T extends EngineTypes = EngineTypes> = SpineLayoutCore<T> &
     T['Container'];
 
-/** Each export minor among `skeletons`, once; whatever names no version is left out. */
+/** Each export minor among `skeletons`, once, and {@link UNVERSIONED} for those that name none. */
 function exportMinors(skeletons: unknown[]): string[] {
     const minors = skeletons.map((skeleton) =>
         skeleton && typeof skeleton === 'object'
-            ? minorOf(skeletonVersion(skeleton as SkeletonSource))
+            ? (minorOf(skeletonVersion(skeleton as SkeletonSource)) ?? UNVERSIONED)
             : undefined,
     );
 
@@ -832,7 +844,10 @@ function exportMinors(skeletons: unknown[]): string[] {
 
 /** The skins a skeleton exported. A skeleton that attaches no image carries no `skins` key. */
 function skinsOf(skeleton: SkeletonSource): { name: string }[] {
-    return isBinarySkeleton(skeleton) ? [] : skeleton.skins ?? [];
+    if (isBinarySkeleton(skeleton)) return [];
+
+    const skins = skeleton.skins ?? [];
+    return Array.isArray(skins) ? skins : Object.keys(skins).map((name) => ({ name }));
 }
 
 function alias(filename: string, folderName?: string): string {

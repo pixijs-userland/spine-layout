@@ -1,5 +1,5 @@
 import type { Engine, EngineTypes, PointerEventLike } from '../../engine/Engine';
-import type { BoneLike, SkinEntryLike, SlotLike } from '../../engine/runtime';
+import type { BoneLike, SkinEntryLike, SkinLike, SlotLike } from '../../engine/runtime';
 import type { SpineID, SpineLayoutOptions } from '../config/types';
 import { parcePointers } from '../config/parcePointers';
 import { LOG } from '../config/logs';
@@ -272,11 +272,9 @@ export class SceneController<T extends EngineTypes = EngineTypes> {
 
     private skinAttachmentOf(spine: T['Spine'], slot: SlotLike): unknown {
         const skin = spine.skeleton.skin ?? spine.skeleton.data.defaultSkin;
-        const entries: SkinEntryLike[] = [];
+        const attachments = skin ? attachmentsOf(skin, slot.data.index) : [];
 
-        skin?.getAttachmentsForSlot(slot.data.index, entries as never[]);
-
-        return entries.length === 1 ? entries[0]?.attachment : undefined;
+        return attachments.length === 1 ? attachments[0] : undefined;
     }
 
     /** Walks the registry, narrowed to the given ids when the caller passes a set. */
@@ -509,4 +507,12 @@ export class SceneController<T extends EngineTypes = EngineTypes> {
         this.buttons.clear();
         this.buttonGroups.clear();
     }
+}
+
+function attachmentsOf(skin: SkinLike, slotIndex: number): unknown[] {
+    if (!skin.getAttachmentsForSlot) return Object.values(skin.attachments?.[slotIndex] ?? {});
+
+    const entries: SkinEntryLike[] = [];
+    skin.getAttachmentsForSlot(slotIndex, entries as never[]);
+    return entries.map((entry) => entry.attachment);
 }

@@ -5,5 +5,15 @@
         "tsBuildInfoFile": "dist/.tsbuildinfo/runtimes.tsbuildinfo"
     },
     "include": ["src/runtimes"],
-    "references": [{ "path": "./tsconfig.core.json" }]
+    "references": [
+        {
+            "path": "./tsconfig.core.json"
+        },
+        {
+            "path": "./tsconfig.esoteric.json"
+        },
+        {
+            "path": "./tsconfig.pixiSpine.json"
+        }
+    ]
 }

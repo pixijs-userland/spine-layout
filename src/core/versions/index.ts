@@ -16,6 +16,7 @@ export {
     type PickOptions,
     type RuntimePick,
     type RuntimePin,
+    UNVERSIONED,
 } from './pickRuntime';
 export {
     choosePixi,

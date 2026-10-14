@@ -676,6 +676,7 @@ export class TextsController<T extends EngineTypes = EngineTypes> {
         this.#textRunners.clear();
         this.#offset.clear();
         this.#centring.clear();
+        this.texts.forEach((text) => text.destroy());
         this.texts.clear();
         this.#meta.clear();
         this.#textSettings = undefined;
