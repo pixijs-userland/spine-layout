@@ -1,4 +1,5 @@
 import type { SpineRuntimeInfo } from '../../engine/Engine';
+import type { Exports } from '../shared/exports';
 import { core3, core4, type CoreShim } from './cores';
 import type {
     PixiSpineAtlasClass,
@@ -46,10 +47,10 @@ const coreOf = (minor: PixiSpineMinor) => (minor.startsWith('3.') ? core3 : core
  * attachments carry no `type`. Which runtime that is shows in its classes.
  */
 export function pixiSpineLegacy(
-    ns: PixiSpineLegacyNamespace,
+    ns: Exports<PixiSpineLegacyNamespace>,
     { packageVersion }: PixiSpineAdapterOptions,
 ): PixiSpineRuntime {
-    const { core: classes, Spine } = ns;
+    const { core: classes, Spine } = ns as PixiSpineLegacyNamespace;
     const minor = minorOfRuntime(classes);
 
     return {
@@ -74,10 +75,11 @@ export function pixiSpineLegacy(
  * export with no more than a `console.error`.
  */
 export function pixiSpineModular(
-    base: PixiSpineModularBase,
-    runtimes: Partial<Record<PixiSpineMinor, PixiSpineModularRuntime>>,
+    given: Exports<PixiSpineModularBase>,
+    runtimes: Partial<Record<PixiSpineMinor, Exports<PixiSpineModularRuntime>>>,
     { packageVersion }: PixiSpineAdapterOptions,
 ): PixiSpineRuntime[] {
+    const base = given as PixiSpineModularBase;
     const { AttachmentType, TextureAtlas, settings } = base;
 
     const kindOf = (attachment: unknown): AttachmentKind | undefined => {
@@ -89,7 +91,9 @@ export function pixiSpineModular(
         return undefined;
     };
 
-    return Object.entries(runtimes).map(([key, classes]) => {
+    const modules = runtimes as Partial<Record<PixiSpineMinor, PixiSpineModularRuntime>>;
+
+    return Object.entries(modules).map(([key, classes]) => {
         const minor = minorOfRuntime(classes);
         if (key !== minor) {
             throw new Error(`pixiSpineModular: the runtime given as ${key} reads Spine ${minor}`);

@@ -1,9 +1,20 @@
 // @vitest-environment happy-dom
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import fixture from '../../fixtures/contract-3.8.json';
+import { UnsupportedSpineVersionError } from '../../../src/engine/errors';
 import { createPixi4Engine, type Pixi4Engine } from '../../../src/engines/pixi4';
 import type { Pixi4Container, Pixi4Texture } from '../../../src/engines/pixi4/pixi4.types';
-import { canvasTexture, loadPixi4, updateTransforms, type LoadedPixi4 } from './loadPixi4';
+import { discoverGlobalRuntimes, pixiSpineLegacy, type SpineRuntime } from '../../../src/runtimes';
+import { contractSkeleton } from '../pixiSpine/fixtures';
+import { hitTestingSuite } from './hitTesting';
+import {
+    canvasTexture,
+    loadPixi4,
+    pixi5Spine,
+    scopedPixiSpine,
+    updateTransforms,
+    type LoadedPixi4,
+} from './loadPixi4';
 
 const ATLAS = `
 contract.png
@@ -331,7 +342,8 @@ describe('slot objects', () => {
         engine.spine.update(spine, 1);
         updateTransforms(PIXI, stage);
 
-        const slotSprite = spine.slotContainers[1].children.find((view) => view !== child.parent)!;
+        const holder: object | null = child.parent;
+        const slotSprite = spine.slotContainers[1].children.find((view) => view !== holder)!;
         expect(engine.spine.slotAttachment(spine.skeleton.slots[1])).toBeNull();
         expect(child.visible).toBe(true);
         expect(slotSprite.visible).toBe(false);
@@ -407,54 +419,6 @@ describe('hit-testing', () => {
         return new PIXI.interaction.InteractionManager({ view, resolution: 1 });
     }
 
-    it('keeps a skeleton in front of a button from answering for it, sprites made later too', () => {
-        const manager = interactionManager();
-        const stage = new PIXI.Container();
-        const button = new PIXI.Sprite(PIXI.Texture.WHITE);
-        button.width = button.height = 200;
-        button.position.set(-100, -100);
-        button.interactive = true;
-
-        const layer = new PIXI.Container();
-        layer.interactive = true;
-        const spine = spineOf();
-        layer.addChild(spine);
-        stage.addChild(button, layer);
-
-        engine.spine.update(spine, 0);
-        updateTransforms(PIXI, stage);
-        expect(manager.hitTest(new PIXI.Point(0, 0), stage)).toBe(layer);
-
-        engine.display.shieldFromHitTesting(spine);
-        expect(manager.hitTest(new PIXI.Point(0, 0), stage)).toBe(button);
-
-        const fresh = spine.newSprite(PIXI.Texture.WHITE) as Pixi4Container;
-        expect(fresh.containsPoint?.(new PIXI.Point(0, 0))).toBe(false);
-
-        engine.display.exposeToHitTesting(spine);
-        expect(Object.hasOwn(spine, 'newSprite')).toBe(false);
-        expect(manager.hitTest(new PIXI.Point(0, 0), stage)).toBe(layer);
-
-        manager.destroy();
-    });
-
-    it('leaves slot objects hittable on a shielded skeleton', () => {
-        const manager = interactionManager();
-        const spine = spineOf();
-        const button = new PIXI.Sprite(PIXI.Texture.WHITE);
-        button.interactive = true;
-        button.anchor.set(0.5);
-        button.width = button.height = 4;
-
-        engine.spine.attachSlotObject(spine, 'slot_a', button);
-        engine.display.shieldFromHitTesting(spine);
-        engine.spine.update(spine, 0);
-        updateTransforms(PIXI, spine);
-
-        expect(manager.hitTest(new PIXI.Point(0, 0), spine)).toBe(button);
-        manager.destroy();
-    });
-
     it('reports every move through the renderer, or through an empty interactive child', () => {
         const interaction = new PIXI.utils.EventEmitter();
         const withRenderer = createPixi4Engine(PIXI, { renderer: { plugins: { interaction } } });
@@ -504,6 +468,23 @@ describe('hit-testing', () => {
         engine.display.pin(view, 'alpha', 0);
         view.alpha = 1;
         expect(view.alpha).toBe(0);
+    });
+
+    it('shields a game subclass of Spine through its own factories', () => {
+        const Tinted: LoadedPixi4 = class extends PIXI.spine.Spine {
+            newSprite(texture: unknown) {
+                const sprite = super.newSprite(texture);
+                sprite.name = 'tinted';
+                return sprite;
+            }
+        };
+        const data = engine.spine.readSkeleton(skeleton(), ATLAS, { 'contract.png': page });
+        const spine = new Tinted(data);
+        engine.display.shieldFromHitTesting(spine);
+        const sprite = spine.newSprite(PIXI.Texture.WHITE);
+
+        expect(sprite.name).toBe('tinted');
+        expect(sprite.containsPoint(new PIXI.Point(0, 0))).toBe(false);
     });
 });
 
@@ -718,8 +699,8 @@ describe('particles', () => {
     });
 
     it('is absent when pixi-particles is not loaded', () => {
-        const { particles: _, ...withoutParticles } = PIXI;
-        expect(createPixi4Engine(withoutParticles as LoadedPixi4).particles).toBeUndefined();
+        const withoutParticles = { ...PIXI, particles: undefined };
+        expect(createPixi4Engine(withoutParticles).particles).toBeUndefined();
     });
 });
 
@@ -744,4 +725,144 @@ describe('createPixi4Engine', () => {
         view.scale.copyFrom({ x: 2, y: 2 });
         expect([view.x, view.y, view.scale.x]).toEqual([3, 4, 2]);
     });
+
+    it('renders with PIXI.spine, named by the release its runtime belongs to', () => {
+        expect(engine.spine.runtimes).toEqual([
+            {
+                minor: '3.8',
+                family: 'pixi-spine-legacy',
+                packageName: 'pixi-spine',
+                packageVersion: '1.6.2',
+            },
+        ]);
+    });
+
+    it('renders with the pixi-spine it is handed instead, its spines apart from PIXI.spine', () => {
+        const spine37 = scopedPixiSpine(PIXI, 'pixi-spine-v4-37');
+        const with37 = createPixi4Engine(PIXI, {
+            runtime: pixiSpineLegacy(spine37, { packageVersion: '1.5.23' }),
+        });
+
+        const spine = with37.spine.create(
+            with37.spine.readSkeleton(contractSkeleton('3.7'), ATLAS, { 'contract.png': page }),
+        );
+
+        expect(spine).toBeInstanceOf(spine37.Spine);
+        expect(spine).not.toBeInstanceOf(PIXI.spine.Spine);
+        expect(with37.spine.runtimeOf(spine)).toMatchObject({
+            minor: '3.7',
+            packageVersion: '1.5.23',
+        });
+        expect(engine.spine.runtimeOf(spine)).toBeUndefined();
+        expect(() =>
+            with37.spine.readSkeleton(skeleton(), ATLAS, { 'contract.png': page }),
+        ).toThrow(UnsupportedSpineVersionError);
+
+        const byPixiSpine = engine.spine.readSkeleton(skeleton(), ATLAS, { 'contract.png': page });
+        PIXI.loader!.resources.hero = { url: 'assets/hero.json', spineData: byPixiSpine } as never;
+        expect(() => with37.spine.readSkeletonFromAssets('hero.json')).toThrow(
+            'No pixi-spine runtime of this engine made this SkeletonData',
+        );
+        delete PIXI.loader!.resources.hero;
+    });
+
+    it('takes a runtime discoverGlobalRuntimes found, and only a pixi-spine 1.x one', () => {
+        const [found] = discoverGlobalRuntimes({ PIXI });
+        expect(createPixi4Engine(PIXI, { runtime: found }).spine.runtimes[0]).toMatchObject({
+            minor: '3.8',
+            packageVersion: '1.x',
+        });
+
+        const esoteric = {
+            info: {
+                minor: '4.2',
+                family: 'esoteric',
+                packageName: '@esotericsoftware/spine-pixi-v7',
+                packageVersion: '4.2.120',
+            },
+        } as SpineRuntime;
+        expect(() => createPixi4Engine(PIXI, { runtime: esoteric })).toThrow(
+            'Pixi 4 renders with pixi-spine 1.x, not @esotericsoftware/spine-pixi-v7@4.2.120',
+        );
+    });
+
+    it('refuses pixi-spine 2.x, as legacy as 1.x but a runtime of Pixi 5', () => {
+        const runtime = pixiSpineLegacy(pixi5Spine(), { packageVersion: '2.1.14' });
+
+        expect(runtime.info).toMatchObject({ minor: '3.8', family: 'pixi-spine-legacy' });
+        expect(() => createPixi4Engine(PIXI, { runtime })).toThrow(
+            'createPixi4Engine: the Spine of pixi-spine@2.1.14 is no container of this PIXI 4.8.9',
+        );
+    });
+
+    it('names what PIXI.spine reads when no pixi-spine 1.x reads it', () => {
+        const core = {
+            ...PIXI.spine.core,
+            Timeline: class {
+                getPropertyIds() {}
+            },
+        };
+
+        expect(() => createPixi4Engine({ ...PIXI, spine: { ...PIXI.spine, core } })).toThrow(
+            'createPixi4Engine: PIXI.spine reads Spine 4.0; Pixi 4 renders with pixi-spine 1.5.23 (3.7) or 1.6.2 (3.8)',
+        );
+    });
+
+    it('refuses an export of another minor or of none, unless the project pins it', () => {
+        const textures = { 'contract.png': page };
+        const unversioned = { ...skeleton(), skeleton: { ...fixture.skeleton, spine: undefined } };
+
+        expect(() => engine.spine.readSkeleton(contractSkeleton('3.7'), ATLAS, textures)).toThrow(
+            'Spine 3.7.94 — registered runtimes: 3.8; Pixi 4, 5, 6, 7 can render it',
+        );
+        expect(() => engine.spine.readSkeleton(unversioned, ATLAS, textures)).toThrow(
+            'no export version — registered runtimes: 3.8; a runtime is picked by the version an export names, or by a pin under "*"',
+        );
+        expect(
+            createPixi4Engine(PIXI, { pin: { '*': '3.8' }, warn: () => {} }).spine.readSkeleton(
+                unversioned,
+                ATLAS,
+                textures,
+            ),
+        ).toBeInstanceOf(PIXI.spine.core.SkeletonData);
+
+        const warnings: string[] = [];
+        const pinned = createPixi4Engine(PIXI, {
+            pin: { '3.7': '3.8' },
+            warn: (message) => warnings.push(message),
+        });
+        const data = pinned.spine.readSkeleton(contractSkeleton('3.7'), ATLAS, textures, {
+            file: 'contract-3.7.json',
+        });
+
+        pinned.assets.set('legacy.json', contractSkeleton('3.7'));
+        pinned.assets.set('legacy.atlas', ATLAS);
+        pinned.assets.set('contract.png', page);
+        const cached = pinned.spine.readSkeletonFromAssets('legacy.json', 'legacy.atlas');
+
+        expect(pinned.spine.runtimeOf(data)?.minor).toBe('3.8');
+        expect(pinned.spine.runtimeOf(cached)?.minor).toBe('3.8');
+        expect(warnings).toEqual([
+            expect.stringMatching(
+                /^contract-3\.7\.json: Spine 3\.7\.94 cross-read by the 3\.8 runtime, as the project pins/,
+            ),
+            expect.stringMatching(/^legacy\.json: Spine 3\.7\.94 cross-read by the 3\.8 runtime/),
+        ]);
+    });
+
+    it('needs pixi-spine on PIXI, or handed in, and PIXI v4', () => {
+        const { spine, ...withoutSpine } = PIXI;
+
+        expect(() => createPixi4Engine(withoutSpine)).toThrow('PIXI.spine is missing');
+        expect(
+            createPixi4Engine(withoutSpine, {
+                runtime: pixiSpineLegacy(spine, { packageVersion: '1.6.2' }),
+            }).spine.runtimes[0].minor,
+        ).toBe('3.8');
+        expect(() => createPixi4Engine({ ...PIXI, VERSION: '5.3.12' })).toThrow(
+            'PIXI is 5.3.12, not v4',
+        );
+    });
 });
+
+hitTestingSuite(() => ({ PIXI, engine }), '3.8');

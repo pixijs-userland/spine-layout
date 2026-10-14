@@ -54,7 +54,11 @@ export function createDisplayPort<S extends LegacySpine>(
 
     const shapesOf = (view: LegacyContainer) => {
         const shapes = spine?.();
-        return shapes?.runtimeOf(view as S) ? shapes : undefined;
+        if (!shapes || shapes.runtimeOf(view as S)) return shapes;
+        if ('skeleton' in view && 'state' in view) {
+            throw new Error('No Spine runtime of this engine made this spine');
+        }
+        return undefined;
     };
 
     function listenForMoves(root: LegacyContainer, event: string, onMove: LegacyListener) {

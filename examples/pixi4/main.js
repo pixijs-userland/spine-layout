@@ -1,6 +1,17 @@
 import { createPixi4Engine } from '../../src/pixi4.ts';
 import { SpineLayoutCore } from '../../src/core.ts';
 
+const RUNTIMES = {
+    3.8: {
+        script: '../../node_modules/pixi-spine-v4/dist/pixi-spine.js',
+        skeleton: '../../tests/fixtures/contract-3.8.json',
+    },
+    3.7: {
+        script: '../../node_modules/pixi-spine-v4-37/bin/pixi-spine.js',
+        skeleton: '../../tests/engines/pixi4/contract-3.7.json',
+    },
+};
+
 const ATLAS = `
 contract.png
 size: 64,64
@@ -27,13 +38,26 @@ function atlasPage() {
     return PIXI.Texture.fromCanvas(canvas);
 }
 
+function loadScript(src) {
+    return new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = src;
+        script.onload = resolve;
+        script.onerror = () => reject(new Error(`Could not load ${src}`));
+        document.head.appendChild(script);
+    });
+}
+
+const minor = new URLSearchParams(location.search).get('spine') ?? '3.8';
+const runtime = RUNTIMES[minor];
+if (!runtime) throw new Error(`No pixi-spine for Spine ${minor}: try ?spine=3.7 or ?spine=3.8`);
+await loadScript(runtime.script);
+
 const app = new PIXI.Application({ width: 480, height: 320, backgroundColor: 0x1d1f24 });
 document.body.appendChild(app.view);
 
 const engine = createPixi4Engine(PIXI, { renderer: app.renderer });
-const skeleton = await fetch('../../tests/fixtures/contract-3.8.json').then((response) =>
-    response.json(),
-);
+const skeleton = await fetch(runtime.skeleton).then((response) => response.json());
 
 const layout = new SpineLayoutCore({ engine });
 layout.createInstancesFromDataArray([
@@ -50,6 +74,7 @@ const status = document.getElementById('status');
 spine.state.addListener({
     event: (_, event) => (status.textContent = `event: ${event.data.name}`),
 });
-status.textContent = `PIXI ${PIXI.VERSION}, spine ${spine.spineData.version}`;
+const [{ packageName, packageVersion }] = engine.spine.runtimes;
+status.textContent = `PIXI ${PIXI.VERSION}, ${packageName} ${packageVersion}, export ${spine.spineData.version}`;
 
 Object.assign(window, { app, engine, layout, spine });

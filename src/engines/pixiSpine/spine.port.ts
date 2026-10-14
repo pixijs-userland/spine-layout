@@ -1,4 +1,5 @@
 import { skeletonVersion } from '../../core/utils/skeletonVersion';
+import { minorOf } from '../../core/versions/minorOf';
 import { applyPrePasses } from '../../core/versions/prePasses';
 import { pickRuntime, type RuntimePin } from '../../core/versions/pickRuntime';
 import type { BonePose, PointLike, SpinePort, SpineRuntimeInfo } from '../../engine/Engine';
@@ -138,6 +139,17 @@ function sequenceRegion(
 }
 
 /**
+ * The export as one of `minor` where its header names no version: pixi-spine's 3.8 and 4.x readers
+ * take the first three characters of `skeleton.spine`, and throw where there is none.
+ */
+function versioned(source: object, minor: string): object {
+    const { skeleton } = source as { skeleton?: { spine?: unknown } };
+    if (!skeleton || minorOf(skeletonVersion(source as SkeletonSource))) return source;
+
+    return { ...source, skeleton: { ...skeleton, spine: minor } };
+}
+
+/**
  * pixi-spine 3.1.2 builds the mesh of a 4.1 sequence before any frame is applied, with no
  * texture, and Pixi 6's `MeshMaterial` throws on its first update. Each sequence starts on its
  * setup frame instead, as 4.0.6 does for itself.
@@ -229,7 +241,9 @@ export function createPixiSpinePort<T extends PixiSpineTypes = PixiSpineTypes>({
         const loader = new runtime.classes.AtlasAttachmentLoader(atlas);
 
         if (!isBinarySkeleton(source)) {
-            return new runtime.classes.SkeletonJson(loader).readSkeletonData(source);
+            return new runtime.classes.SkeletonJson(loader).readSkeletonData(
+                versioned(source, runtime.info.minor),
+            );
         }
 
         const { SkeletonBinary } = runtime.classes;
@@ -446,7 +460,8 @@ export function createPixiSpinePort<T extends PixiSpineTypes = PixiSpineTypes>({
         },
 
         shieldShapes(spine) {
-            const { prototype } = spineOwner(spine).Spine;
+            spineOwner(spine);
+            const prototype = Object.getPrototypeOf(spine) as PixiSpineView;
 
             shapesOf(spine).forEach((view) => shield(view));
 
