@@ -1,0 +1,9 @@
+{
+    "extends": "./tsconfig.base.json",
+    "compilerOptions": {
+        "types": [],
+        "tsBuildInfoFile": "dist/.tsbuildinfo/pixiSpine.tsbuildinfo"
+    },
+    "include": ["src/engines/pixiSpine"],
+    "references": [{ "path": "./tsconfig.core.json" }]
+}

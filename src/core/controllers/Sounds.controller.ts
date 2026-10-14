@@ -77,6 +77,7 @@ export class Sounds {
     private onActivationCallbacks: (() => void)[] = [];
     private onReadyCallbacks: (() => void)[] = [];
     private settings: SoundSettings;
+    private listening = false;
     activated = false;
 
     constructor(settings: Partial<SoundSettings> = {}) {
@@ -92,13 +93,22 @@ export class Sounds {
             ...settings,
         };
 
-        window.addEventListener('visibilitychange', () => this.onVisibilityChange());
-        window.addEventListener('pointerdown', () => this.onUserInteraction(), { once: true });
-
+        this.listen();
         this.mute();
     }
 
+    /** Where there is no page yet, as in a test or a tool, the first `init` listens instead. */
+    private listen() {
+        if (this.listening || typeof window === 'undefined') return;
+
+        this.listening = true;
+        window.addEventListener('visibilitychange', () => this.onVisibilityChange());
+        window.addEventListener('pointerdown', () => this.onUserInteraction(), { once: true });
+    }
+
     init(pixiManifest?: ManifestLike, settings?: Partial<SoundSettings>) {
+        this.listen();
+
         if (settings) {
             this.settings = { ...this.settings, ...settings };
         }

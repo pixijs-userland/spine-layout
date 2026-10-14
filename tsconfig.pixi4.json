@@ -5,5 +5,10 @@
         "tsBuildInfoFile": "dist/.tsbuildinfo/pixi4.tsbuildinfo"
     },
     "include": ["src/engines/pixi4", "src/pixi4.ts"],
-    "references": [{ "path": "./tsconfig.core.json" }]
+    "references": [
+        { "path": "./tsconfig.core.json" },
+        { "path": "./tsconfig.legacy.json" },
+        { "path": "./tsconfig.pixiSpine.json" },
+        { "path": "./tsconfig.runtimes.json" }
+    ]
 }

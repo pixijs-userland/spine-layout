@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { Assets, BitmapFontManager, BitmapText, Cache, Container, Text } from 'pixi.js';
+import { BitmapFontManager, BitmapText, Cache, Container, Text } from 'pixi.js';
 import { TextsController } from '../../src/core/controllers/Texts.controller';
 import type { TextsJsonBitmapTextEntry } from '../../src/core/config/types';
 import {
@@ -626,34 +626,58 @@ describe('TextsController – attach / settings / clear', () => {
         expect(node.y).toBeCloseTo(-100 - 165);
     });
 
-    it('loadSettings picks up the texts.json shortcut alias from Assets when present', () => {
-        const fakeSettings = { foo: { type: 'text', value: 'x' } };
-        const spy = vi.spyOn(Assets, 'get').mockReturnValue(fakeSettings as never);
+    describe('loadSettings', () => {
+        const fakeSettings = { foo: { type: 'text', value: 'x' } } as const;
+        const cached = (aliases: Record<string, unknown>) => ({
+            ...fakeEngine,
+            assets: {
+                get: vi.fn((alias: string) => aliases[alias] as never),
+                has: (alias: string) => alias in aliases,
+            },
+        });
 
-        const ctl = new TextsController(fakeEngine, new Map());
-        ctl.loadSettings();
+        it('picks up the texts.json shortcut alias from the asset cache when present', () => {
+            const engine = cached({ 'texts.json': fakeSettings, 'settings/texts.json': {} });
+            const ctl = new TextsController(engine, new Map());
 
-        expect(spy).toHaveBeenCalledWith('texts.json');
-        expect(ctl.settings).toBe(fakeSettings);
+            ctl.loadSettings();
 
-        spy.mockRestore();
-    });
+            expect(engine.assets.get).toHaveBeenCalledWith('texts.json');
+            expect(ctl.settings).toBe(fakeSettings);
+        });
 
-    it('loadSettings falls back to settings/texts.json when the shortcut is absent', () => {
-        const fakeSettings = { foo: { type: 'text', value: 'x' } };
-        const spy = vi
-            .spyOn(Assets, 'get')
-            .mockImplementation((key: unknown) =>
-                key === 'settings/texts.json' ? (fakeSettings as never) : (undefined as never),
-            );
+        it('falls back to settings/texts.json when the shortcut is absent, and gets nothing else', () => {
+            const engine = cached({ 'settings/texts.json': fakeSettings });
+            const ctl = new TextsController(engine, new Map());
 
-        const ctl = new TextsController(fakeEngine, new Map());
-        ctl.loadSettings();
+            ctl.loadSettings();
 
-        expect(spy).toHaveBeenCalledWith('settings/texts.json');
-        expect(ctl.settings).toBe(fakeSettings);
+            expect(engine.assets.get.mock.calls).toEqual([['settings/texts.json']]);
+            expect(ctl.settings).toBe(fakeSettings);
+        });
 
-        spy.mockRestore();
+        it('looks for texts.json without the warning a cache miss logs', () => {
+            const warn = vi.spyOn(console, 'warn');
+            const ctl = new TextsController(fakeEngine, new Map());
+
+            ctl.loadSettings();
+
+            expect(ctl.settings).toBeUndefined();
+            expect(warn).not.toHaveBeenCalled();
+            warn.mockRestore();
+        });
+
+        it('keeps settings that were set over the ones in the asset cache', () => {
+            const engine = cached({ 'texts.json': fakeSettings });
+            const ctl = new TextsController(engine, new Map());
+            const own = { hero: { a: { type: 'text', value: 'mine' } } } as const;
+
+            ctl.settings = own;
+            ctl.loadSettings();
+
+            expect(ctl.settings).toBe(own);
+            expect(engine.assets.get).not.toHaveBeenCalled();
+        });
     });
 
     it('keeps a max-width-scaled bitmap text centred on the spot the full-size text held', () => {

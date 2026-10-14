@@ -1,0 +1,24 @@
+{
+    "extends": "./tsconfig.base.json",
+    "compilerOptions": {
+        "types": [],
+        "tsBuildInfoFile": "dist/.tsbuildinfo/entries.tsbuildinfo"
+    },
+    "include": [
+        "src/engines/pixi5",
+        "src/engines/pixi6",
+        "src/engines/pixi7",
+        "src/pixi5.ts",
+        "src/pixi6.ts",
+        "src/pixi7.ts",
+        "src/pixi8.ts"
+    ],
+    "references": [
+        { "path": "./tsconfig.core.json" },
+        { "path": "./tsconfig.legacy.json" },
+        { "path": "./tsconfig.pixiSpine.json" },
+        { "path": "./tsconfig.esoteric.json" },
+        { "path": "./tsconfig.runtimes.json" },
+        { "path": "./tsconfig.pixi8.json" }
+    ]
+}

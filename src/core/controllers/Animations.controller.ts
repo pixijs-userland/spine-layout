@@ -492,9 +492,9 @@ export class AnimationsController<T extends EngineTypes = EngineTypes> {
     }
 
     private claimsOf(spine: T['Spine']): Map<string, AnimationClaim> {
-        return poseClaims(spine.state.data.skeletonData, (animation) =>
-            this.engine.spine.claimOf(animation),
-        );
+        const data = spine.state.data.skeletonData;
+
+        return poseClaims(data, (animation) => this.engine.spine.claimOf(animation, data));
     }
 
     /**

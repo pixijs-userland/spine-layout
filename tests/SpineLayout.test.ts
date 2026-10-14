@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import * as SP43 from '@esotericsoftware/spine-pixi-v8';
 import { Assets, type AssetsManifest } from 'pixi.js';
-import { SpineLayout } from '../src/index';
+import { pixi8Engine, SpineLayout } from '../src/index';
+import { createPixi8Engine } from '../src/pixi8';
+import { esotericRuntime } from '../src/runtimes';
 
 /**
  * What Spine exports for a skeleton that attaches no image: bones, slots and animations, no
@@ -349,5 +352,144 @@ describe('SpineLayout — posing the scene for the screen', () => {
         layout.createInstancesFromDataArray([instance('root')]);
 
         expect(layout.orientation.current).toBeUndefined();
+    });
+});
+
+describe('SpineLayout — an engine that loads its runtimes lazily', () => {
+    afterEach(() => vi.restoreAllMocks());
+
+    const lazyEngine = () => {
+        const loaded: (() => void)[] = [];
+        const prepare = vi.fn(() => new Promise<void>((resolve) => loaded.push(resolve)));
+        const engine = { ...pixi8Engine, spine: { ...pixi8Engine.spine, prepare } };
+
+        return { engine, prepare, load: () => loaded.splice(0).forEach((resolve) => resolve()) };
+    };
+    const downgraded = { ...bonesOnly, skeleton: { hash: 'old', spine: '4.1-from-4.2.43' } };
+
+    it('builds at once, and returns nothing, when the engine needs no preparing', () => {
+        const layout = new SpineLayout();
+
+        expect(layout.createInstancesFromDataArray([instance('root')])).toBeUndefined();
+        expect([...layout.spines.keys()]).toEqual(['root']);
+    });
+
+    it('prepares the export minors of every skeleton before it reads any', async () => {
+        const { engine, prepare, load } = lazyEngine();
+        const layout = new SpineLayout({ engine });
+
+        const building = layout.createInstancesFromDataArray([
+            { name: 'root', skeleton: bonesOnly, atlasText: '', textures: {} },
+            { name: 'popup', skeleton: downgraded, atlasText: '', textures: {} },
+            { name: 'again', skeleton: bonesOnly, atlasText: '', textures: {} },
+        ]);
+
+        expect(building).toBeInstanceOf(Promise);
+        expect(prepare).toHaveBeenCalledWith(['4.3', '4.1']);
+        expect(layout.spines.size).toBe(0);
+
+        load();
+        await building;
+
+        expect([...layout.spines.keys()]).toEqual(['root']);
+    });
+
+    it('prepares the runtime pinned under "*" for a skeleton that names no version', async () => {
+        const { engine, prepare, load } = lazyEngine();
+        const root = { ...bonesOnly, skins: [] };
+        const unversioned = { ...root, skeleton: { hash: 'odd' } };
+        const layout = new SpineLayout({ engine });
+
+        const building = layout.createInstancesFromDataArray([
+            { name: 'root', skeleton: root, atlasText: '', textures: {} },
+            { name: 'odd', skeleton: unversioned, atlasText: '', textures: {} },
+        ]);
+
+        expect(prepare).toHaveBeenCalledWith(['4.3', '*']);
+        load();
+        await building;
+    });
+
+    it('prepares what a manifest put in the asset cache', async () => {
+        const { engine, prepare, load } = lazyEngine();
+        Assets.cache.set('spine/root.json', bonesOnly);
+
+        const layout = new SpineLayout({ engine });
+        const loading = layout.loadInstancesFromManifest(
+            manifest(['spine/hero.atlas', 'spine/root.json']),
+            'spine',
+        );
+
+        expect(prepare).toHaveBeenCalledWith(['4.3']);
+        expect(layout.spines.size).toBe(0);
+
+        load();
+        await loading;
+
+        expect([...layout.spines.keys()]).toEqual(['root']);
+        Assets.cache.remove('spine/root.json');
+    });
+
+    it('prepares a manifest handed to the constructor, then builds it', async () => {
+        const { engine, prepare, load } = lazyEngine();
+        Assets.cache.set('root.json', bonesOnly);
+
+        const layout = new SpineLayout({ engine, manifest: manifest(['hero.atlas', 'root.json']) });
+
+        expect(prepare).toHaveBeenCalledWith(['4.3']);
+        expect(layout.spines.size).toBe(0);
+
+        load();
+        await vi.waitFor(() => expect([...layout.spines.keys()]).toEqual(['root']));
+        Assets.cache.remove('root.json');
+    });
+
+    it('always returns a promise from the load variants', async () => {
+        const layout = new SpineLayout();
+        const loading = layout.loadInstancesFromDataArray([instance('root')]);
+
+        expect(loading).toBeInstanceOf(Promise);
+        await loading;
+        expect([...layout.spines.keys()]).toEqual(['root']);
+    });
+});
+
+describe('SpineLayout — a skeleton it cannot build', () => {
+    afterEach(() => vi.restoreAllMocks());
+
+    it('skips one no runtime of the engine reads with a single warning line, and builds the rest', () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+        const engine = createPixi8Engine({ runtimes: [esotericRuntime(SP43)] });
+        const old = instance('old');
+        old.skeleton.skeleton.spine = '3.8.99';
+        const layout = new SpineLayout({ engine });
+
+        layout.createInstancesFromDataArray([instance('root', ['spine_old']), old]);
+
+        expect([...layout.spines.keys()]).toEqual(['root']);
+        expect(warn.mock.calls).toEqual([
+            [
+                '[SpineLayout] Skipped spine "old": old: Spine 3.8.99 — registered runtimes: 4.3; ' +
+                    'Pixi 4, 5, 6, 7 can render it',
+            ],
+        ]);
+        expect(error).not.toHaveBeenCalled();
+    });
+
+    it('logs any other error with the error itself', () => {
+        const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+        const broken = new Error('no page named hero.png');
+        const readSkeleton = () => {
+            throw broken;
+        };
+        const layout = new SpineLayout({
+            engine: { ...pixi8Engine, spine: { ...pixi8Engine.spine, readSkeleton } },
+        });
+
+        layout.createInstancesFromDataArray([instance('root')]);
+
+        expect(layout.spines.size).toBe(0);
+        expect(error.mock.calls).toEqual([['[SpineLayout] Error loading spine "root":', broken]]);
     });
 });

@@ -1,0 +1,254 @@
+{
+    "skeleton": {
+        "hash": "examples-legacy",
+        "spine": "3.8.99",
+        "x": -100,
+        "y": -150,
+        "width": 200,
+        "height": 300,
+        "images": "",
+        "audio": ""
+    },
+    "bones": [
+        {
+            "name": "root"
+        },
+        {
+            "name": "bone_a",
+            "parent": "root",
+            "x": 10,
+            "y": 20
+        },
+        {
+            "name": "title",
+            "parent": "root",
+            "y": 120
+        },
+        {
+            "name": "score",
+            "parent": "root",
+            "y": 80
+        },
+        {
+            "name": "btn",
+            "parent": "root",
+            "y": -100
+        }
+    ],
+    "slots": [
+        {
+            "name": "slot_a",
+            "bone": "root",
+            "attachment": "square"
+        },
+        {
+            "name": "slot_b",
+            "bone": "bone_a",
+            "attachment": "square"
+        },
+        {
+            "name": "particles_spark",
+            "bone": "bone_a"
+        },
+        {
+            "name": "button_play",
+            "bone": "btn",
+            "attachment": "square"
+        },
+        {
+            "name": "text_title",
+            "bone": "title"
+        },
+        {
+            "name": "text_score",
+            "bone": "score"
+        }
+    ],
+    "skins": [
+        {
+            "name": "default",
+            "attachments": {
+                "slot_a": {
+                    "square": {
+                        "width": 40,
+                        "height": 20
+                    }
+                },
+                "slot_b": {
+                    "square": {
+                        "width": 40,
+                        "height": 20
+                    }
+                },
+                "button_play": {
+                    "square": {
+                        "width": 120,
+                        "height": 48,
+                        "color": "33cc33ff"
+                    }
+                }
+            }
+        },
+        {
+            "name": "night",
+            "attachments": {
+                "slot_a": {
+                    "square": {
+                        "width": 40,
+                        "height": 20,
+                        "color": "3060ffff"
+                    }
+                },
+                "slot_b": {
+                    "square": {
+                        "width": 40,
+                        "height": 20,
+                        "color": "3060ffff"
+                    }
+                }
+            }
+        }
+    ],
+    "events": {
+        "hit": {}
+    },
+    "animations": {
+        "move": {
+            "slots": {
+                "slot_b": {
+                    "attachment": [
+                        {
+                            "name": "square"
+                        },
+                        {
+                            "time": 0.5,
+                            "name": null
+                        }
+                    ]
+                }
+            },
+            "bones": {
+                "bone_a": {
+                    "translate": [
+                        {
+                            "x": 0,
+                            "y": 0
+                        },
+                        {
+                            "time": 1,
+                            "x": 30,
+                            "y": 0
+                        }
+                    ]
+                }
+            },
+            "drawOrder": [
+                {
+                    "time": 0.5,
+                    "offsets": [
+                        {
+                            "slot": "slot_a",
+                            "offset": 1
+                        }
+                    ]
+                }
+            ],
+            "events": [
+                {
+                    "time": 0.5,
+                    "name": "hit"
+                }
+            ]
+        },
+        "event_play_hover/btn_hover": {
+            "bones": {
+                "btn": {
+                    "scale": [
+                        {
+                            "x": 1,
+                            "y": 1
+                        },
+                        {
+                            "time": 0.2,
+                            "x": 1.2,
+                            "y": 1.2
+                        }
+                    ]
+                }
+            }
+        },
+        "event_play_out/btn_out": {
+            "bones": {
+                "btn": {
+                    "scale": [
+                        {
+                            "x": 1.2,
+                            "y": 1.2
+                        },
+                        {
+                            "time": 0.2,
+                            "x": 1,
+                            "y": 1
+                        }
+                    ]
+                }
+            }
+        },
+        "event_play_down/btn_down": {
+            "bones": {
+                "btn": {
+                    "scale": [
+                        {
+                            "x": 1.2,
+                            "y": 1.2
+                        },
+                        {
+                            "time": 0.1,
+                            "x": 0.9,
+                            "y": 0.9
+                        }
+                    ]
+                }
+            }
+        },
+        "event_play_up/btn_up": {
+            "bones": {
+                "btn": {
+                    "scale": [
+                        {
+                            "x": 0.9,
+                            "y": 0.9
+                        },
+                        {
+                            "time": 0.1,
+                            "x": 1.2,
+                            "y": 1.2
+                        }
+                    ]
+                }
+            }
+        },
+        "state_idle/bone_a_loop": {
+            "bones": {
+                "bone_a": {
+                    "translate": [
+                        {
+                            "x": 0,
+                            "y": 0
+                        },
+                        {
+                            "time": 0.5,
+                            "x": 0,
+                            "y": 20
+                        },
+                        {
+                            "time": 1,
+                            "x": 0,
+                            "y": 0
+                        }
+                    ]
+                }
+            }
+        }
+    }
+}

@@ -36,6 +36,31 @@
             "source": "./src/pixi4.ts",
             "import": "./dist/pixi4.js",
             "types": "./dist/pixi4.d.ts"
+        },
+        "./pixi5": {
+            "source": "./src/pixi5.ts",
+            "import": "./dist/pixi5.js",
+            "types": "./dist/pixi5.d.ts"
+        },
+        "./pixi6": {
+            "source": "./src/pixi6.ts",
+            "import": "./dist/pixi6.js",
+            "types": "./dist/pixi6.d.ts"
+        },
+        "./pixi7": {
+            "source": "./src/pixi7.ts",
+            "import": "./dist/pixi7.js",
+            "types": "./dist/pixi7.d.ts"
+        },
+        "./pixi8": {
+            "source": "./src/pixi8.ts",
+            "import": "./dist/pixi8.js",
+            "types": "./dist/pixi8.d.ts"
+        },
+        "./runtimes": {
+            "source": "./src/runtimes/index.ts",
+            "import": "./dist/runtimes/index.js",
+            "types": "./dist/runtimes/index.d.ts"
         }
     },
     "files": [
@@ -53,6 +78,7 @@
         "test": "vitest run",
         "test:watch": "vitest",
         "test:coverage": "vitest run --coverage",
+        "examples": "vite --config examples/vite.config.mjs",
         "lint": "eslint src",
         "format": "prettier --write .",
         "check-types": "tsc -p tsconfig.core.json --noEmit && tsc -p tsconfig.check.json",
@@ -77,15 +103,52 @@
     },
     "devDependencies": {
         "@changesets/cli": "^2.27.10",
+        "@esotericsoftware/spine-pixi-v8": "4.3.7",
+        "@pixi-spine-v6/base": "npm:@pixi-spine/base@3.1.2",
+        "@pixi-spine-v6/runtime-3.7": "npm:@pixi-spine/runtime-3.7@3.1.2",
+        "@pixi-spine-v6/runtime-3.8": "npm:@pixi-spine/runtime-3.8@3.1.2",
+        "@pixi-spine-v6/runtime-4.0": "npm:@pixi-spine/runtime-4.0@3.1.2",
+        "@pixi-spine-v6/runtime-4.1": "npm:@pixi-spine/runtime-4.1@3.1.2",
+        "@pixi-spine-v7/base": "npm:@pixi-spine/base@4.0.6",
+        "@pixi-spine-v7/runtime-3.7": "npm:@pixi-spine/runtime-3.7@4.0.6",
+        "@pixi-spine-v7/runtime-3.8": "npm:@pixi-spine/runtime-3.8@4.0.6",
+        "@pixi-spine-v7/runtime-4.0": "npm:@pixi-spine/runtime-4.0@4.0.6",
+        "@pixi-spine-v7/runtime-4.1": "npm:@pixi-spine/runtime-4.1@4.0.6",
+        "@pixi/particle-emitter-v5": "npm:@pixi/particle-emitter@5.0.8",
         "@types/howler": "^2.2.12",
         "@vitest/coverage-v8": "^4.1.6",
+        "esbuild": "^0.28.1",
         "eslint": "^9.25.0",
         "happy-dom": "^20.9.0",
         "pixi-particles": "4.3.0",
         "pixi-spine-v4": "npm:pixi-spine@1.6.2",
+        "pixi-spine-v4-37": "npm:pixi-spine@1.5.23",
+        "pixi-spine-v5-37": "npm:pixi-spine@2.0.5",
+        "pixi-spine-v5-38": "npm:pixi-spine@2.1.14",
+        "pixi.js": "8.19.0",
         "pixi.js-v4": "npm:pixi.js@4.8.9",
+        "pixi.js-v5": "npm:pixi.js@5.3.12",
+        "pixi.js-v6": "npm:pixi.js@6.5.10",
+        "pixi.js-v7": "npm:pixi.js@7.4.3",
+        "spine-pixi-v7-42": "npm:@esotericsoftware/spine-pixi-v7@4.2.120",
+        "spine-pixi-v7-43": "npm:@esotericsoftware/spine-pixi-v7@4.3.13",
+        "spine-pixi-v8-42": "npm:@esotericsoftware/spine-pixi-v8@4.2.120",
         "typescript": "^5.8.3",
         "vite": "^8.0.16",
         "vitest": "^4.1.6"
+    },
+    "pnpm": {
+        "packageExtensions": {
+            "@esotericsoftware/spine-pixi-v8@4.2.120": {
+                "dependencies": {
+                    "@esotericsoftware/spine-core": "4.2.120"
+                }
+            },
+            "@esotericsoftware/spine-pixi-v8@4.3.7": {
+                "dependencies": {
+                    "@esotericsoftware/spine-core": "4.3.7"
+                }
+            }
+        }
     }
 }

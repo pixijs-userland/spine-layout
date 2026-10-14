@@ -27,16 +27,25 @@ All spines are stored in a central `Map<SpineID, Spine>` registry and each contr
 
 ## Engines
 
-The core renders through an `Engine`, so one scene runs on two stacks:
+The core renders through an `Engine`, so one scene runs on every Pixi from 4 to 8. A game picks its
+Pixi when it creates the engine; the Spine runtime is then picked per skeleton from that
+skeleton's export version, among the runtimes registered for that Pixi:
 
-| Entry                                 | Stack                                                     | Spine |
-| ------------------------------------- | --------------------------------------------------------- | ----- |
-| `@pixijs-userland/spine-layout`       | pixi.js v8 + `@esotericsoftware/spine-pixi-v8`            | 4.3   |
-| `@pixijs-userland/spine-layout/pixi4` | PIXI v4.8.9 + pixi-spine 1.6.2 + pixi-particles 4.3.0     | 3.8   |
-| `@pixijs-userland/spine-layout/core`  | No rendering stack: `SpineLayoutCore` and the controllers | -     |
+| Entry                                 | Pixi                        | Spine runtimes                                                                  |
+| ------------------------------------- | --------------------------- | ------------------------------------------------------------------------------- |
+| `@pixijs-userland/spine-layout`       | pixi.js v8                  | spine-pixi-v8 4.3 (unchanged default entry)                                     |
+| `@pixijs-userland/spine-layout/pixi8` | pixi.js v8                  | spine-pixi-v8 4.2 and 4.3                                                       |
+| `@pixijs-userland/spine-layout/pixi7` | Pixi 7 (`window.PIXI`)      | `@pixi-spine/*` 4.0 (3.7, 3.8, 4.1; 4.0 through 4.1), spine-pixi-v7 4.2 and 4.3 |
+| `@pixijs-userland/spine-layout/pixi6` | Pixi 6 (`window.PIXI`)      | `@pixi-spine/*` 3.1 (3.7, 3.8, 4.0, 4.1)                                        |
+| `@pixijs-userland/spine-layout/pixi5` | Pixi 5 (`window.PIXI`)      | pixi-spine 2.1 (3.8) or 2.0 (3.7), one per page                                 |
+| `@pixijs-userland/spine-layout/pixi4` | PIXI v4.8.9 (`window.PIXI`) | pixi-spine 1.6 (3.8) or 1.5 (3.7), one per page                                 |
+| `@pixijs-userland/spine-layout/core`  | none                        | `SpineLayoutCore`, the runtime matrix, `choosePixi`, `pickRuntime`              |
 
-The default entry is unchanged. On PIXI v4 the stack is loaded as `<script>` tags and the engine
-is handed `window.PIXI`:
+`@pixijs-userland/spine-layout/runtimes` binds runtime packages to an engine and discovers the ones
+a page loaded as globals. A Spine export is read by the runtime of its own editor major.minor; a
+project pin can name another, and 4.0 and 4.1 exports reach the next runtime through a JSON
+pre-pass. On Pixi 4–7 the stack is loaded as `<script>` tags and the engine is handed
+`window.PIXI`:
 
 ```typescript
 import { createPixi4Engine, SpineLayoutCore } from '@pixijs-userland/spine-layout/pixi4';
@@ -45,9 +54,27 @@ const engine = createPixi4Engine(PIXI, { renderer: app.renderer });
 const layout = new SpineLayoutCore({ engine });
 ```
 
-A project is one Spine version; `skeletonVersion(skeleton)` reads it from a `.json` or `.skel`.
-One engine family is live per page. See the [Engines guide](https://userland.pixijs.io/spine-layout/engines)
-for loading, the differences between the engines and how to write another.
+`skeletonVersion(skeleton)` reads an export's version from a `.json` or `.skel`. One Pixi major is
+live per page. See the [Engines guide](https://userland.pixijs.io/spine-layout/engines) for
+loading, the differences between the engines and how to write another.
+
+---
+
+## Examples
+
+`examples/` has one scene per Pixi major, each built with that major's engine from the exports in
+`examples/assets/`: Pixi 8 with spine-pixi-v8 4.3 and a lazily loaded 4.2 in one scene, Pixi 7
+with a Spine 3.8 and a 4.3 layout on one engine, and Pixi 6, 5 and 4 each on their own pixi-spine
+with the 3.8 layout (texts, a bitmap font, a button, a second skin and particles). From this
+package, after `pnpm install`:
+
+```sh
+pnpm examples --port <port> --strictPort --no-open
+```
+
+Then open `http://localhost:<port>/examples/`. Vite serves the layout from `src`; the legacy
+stacks load as `<script>` globals, and the runtimes with no browser script of their own
+(`@pixi-spine/*`, spine-pixi-v7) are bundled into `examples/vendor/` as the server starts.
 
 ---
 
@@ -223,8 +250,8 @@ Configuration lives in `settings/particles.json`, keyed by spine id like `texts.
 }
 ```
 
-`textures` are asset aliases; `config` is handed to the engine's emitter as it is (a
-pixi-particles config on `pixi4`). Emitters advance with their spine, at its `state.timeScale`
+`textures` are asset aliases; `config` is handed to the engine's emitter as it is (a pixi-particles
+4.3 config on Pixi 4–6, or a `@pixi/particle-emitter` 5 config on Pixi 6 and 7). Emitters advance with their spine, at its `state.timeScale`
 — the layout `speed`, a per-spine speed, a pause. On a multiple-instance spine the key is
 `<spineID>_<key>`, and the instance's section is merged over the base spine's. A bare key with no
 spine id reaches that key on every spine.

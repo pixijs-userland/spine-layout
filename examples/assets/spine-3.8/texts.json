@@ -1,0 +1,17 @@
+{
+    "root": {
+        "title": {
+            "type": "text",
+            "fontFamily": "Arial",
+            "fontSize": 28,
+            "fill": "#ffffff",
+            "value": "Legacy example"
+        },
+        "score": {
+            "type": "bitmapText",
+            "fontFamily": "digits",
+            "fontSize": 32,
+            "value": "12,340"
+        }
+    }
+}
