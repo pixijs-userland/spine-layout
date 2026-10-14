@@ -201,7 +201,11 @@ describe('createPixi6Engine', () => {
             runtimes: [runtimeOf('3.8'), lazy('4.1', async () => bound as PixiSpineRuntime)],
         });
 
-        await expect(engine.spine.prepare!(['4.1'])).rejects.toThrow('is bound already');
+        await engine.spine.prepare!(['4.1']);
+
+        expect(() => engine.spine.readSkeleton(contractSkeleton('4.1'), ATLAS, textures())).toThrow(
+            'The Spine 4.1 runtime failed to load: createPixi6Engine: @pixi-spine/runtime-4.1@3.1.2 (Spine 4.1) is bound already',
+        );
     });
 
     it('refuses particles built against another copy of Pixi', () => {
@@ -368,8 +372,10 @@ describe('createPixi6Engine', () => {
             runtimes: [runtimeOf('3.8'), lazy('4.1', async () => commonJsRuntime('4.1'))],
         });
 
-        await expect(engine.spine.prepare!(['4.1'])).rejects.toThrow(
-            'was built against another Pixi than this 6.5.10',
+        await engine.spine.prepare!(['4.1']);
+
+        expect(() => engine.spine.readSkeleton(contractSkeleton('4.1'), ATLAS, textures())).toThrow(
+            /^The Spine 4\.1 runtime failed to load: .*was built against another Pixi than this 6\.5\.10/,
         );
     });
 

@@ -247,7 +247,7 @@ describe('reading a skeleton', () => {
         });
         expect(warnings).toHaveLength(1);
         expect(warnings[0]).toMatch(
-            /^4\.0\.64\.json: Spine 4\.0\.64 read by the 4\.1 runtime after pre-passes 4\.0->4\.1/,
+            /^4\.0\.64\.json: Spine 4\.0\.64 read by the 4\.1 runtime after pre-pass 4\.0->4\.1 /,
         );
     });
 
@@ -335,7 +335,7 @@ describe('reading from the asset cache', () => {
             version === '4.0.64'
                 ? [
                       expect.stringMatching(
-                          /^text-4\.0\.64\.json: Spine 4\.0\.64 read by the 4\.1 runtime after pre-passes/,
+                          /^text-4\.0\.64\.json: Spine 4\.0\.64 read by the 4\.1 runtime after pre-pass 4\.0->4\.1 /,
                       ),
                   ]
                 : [],
@@ -377,6 +377,28 @@ describe('reading from the asset cache', () => {
         expect(lazy.spine.runtimeOf(data)?.minor).toBe('4.3');
     });
 
+    it('names the failed load of a lazy Esoteric runtime that would read a parsed atlas', async () => {
+        const failure = new Error('offline');
+        const lazy = engineWith({
+            runtimes: [
+                stack.pixiSpine['3.8'],
+                Object.assign(() => Promise.reject(failure), stack.esoteric['4.3'].info),
+            ],
+        });
+        const { skeleton, atlasText } = exportOf('4.3.23');
+        cache('failed43.json', skeleton);
+        cache('failed43.atlas', parsedAtlas(atlasText));
+
+        await lazy.spine.prepare!(['4.3']);
+
+        expect(() => lazy.spine.readSkeletonFromAssets('failed43.json', 'failed43.atlas')).toThrow(
+            expect.objectContaining({
+                message: 'The Spine 4.3 runtime failed to load: offline',
+                cause: failure,
+            }),
+        );
+    });
+
     it('reads no parsed atlas with pixi-spine, and says how to load it as text', () => {
         const { skeleton, atlasText } = exportOf('3.8.99');
         cache('parsed38.json', skeleton);
@@ -408,10 +430,13 @@ describe('reading from the asset cache', () => {
         );
     });
 
-    it("reads with the project's pin on an engine of one runtime, and says so once", () => {
+    it("reads with the project's pin on an engine of one runtime, and says once what it does not read", () => {
         const pinned = engineWith({ runtimes: [stack.esoteric['4.3']], pin: { '4.2': '4.3' } });
         const { skeleton, atlasText } = exportOf('4.2.43', '4.3');
-        cache('pinned.json', skeleton);
+        cache('pinned.json', {
+            ...skeleton,
+            ik: [{ name: 'aim', bones: ['bone_a'], target: 'root' }],
+        });
         cache('pinned.atlas', parsedAtlas(atlasText));
 
         const data = pinned.spine.readSkeletonFromAssets('pinned.json', 'pinned.atlas');
@@ -419,7 +444,7 @@ describe('reading from the asset cache', () => {
         expect(pinned.spine.runtimeOf(data)?.minor).toBe('4.3');
         expect(warnings).toEqual([
             expect.stringMatching(
-                /^pinned\.json: Spine 4\.2\.43 cross-read by the 4\.3 runtime, as the project pins/,
+                /^pinned\.json: Spine 4\.2\.43 cross-read by the 4\.3 runtime, as the project pins.*: its top-level ik constraints are not read; it may throw$/,
             ),
         ]);
     });
@@ -532,8 +557,10 @@ describe('runtimes loaded on demand', () => {
             ],
         });
 
-        await expect(engine.spine.prepare!(['4.3'])).rejects.toThrow(
-            '@esotericsoftware/spine-pixi-v8@4.3.x (Spine 4.3) does not run on Pixi 7',
+        await engine.spine.prepare!(['4.3']);
+
+        expect(() => read(engine, '4.3.23')).toThrow(
+            /^The Spine 4\.3 runtime failed to load: .*@esotericsoftware\/spine-pixi-v8@4\.3\.x \(Spine 4\.3\) does not run on Pixi 7/,
         );
         expect(add).not.toHaveBeenCalled();
         expect(engine.spine.runtimes.map(({ packageName }) => packageName)).toEqual([
@@ -659,6 +686,7 @@ describe('SpineLayoutCore on it', () => {
         });
         const layout = new SpineLayoutCore<Pixi7Types>({ engine });
         const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
         const root = exportOf('4.3.23');
         (root.skeleton as unknown as { slots: object[] }).slots.push(
             ...['alpha', 'beta'].map((id) => ({ name: `spine_${id}`, bone: 'root' })),
@@ -673,11 +701,17 @@ describe('SpineLayoutCore on it', () => {
             ]),
         ).resolves.toBeUndefined();
         const logged = errors.mock.calls.slice();
+        const warned = warn.mock.calls.slice();
         errors.mockRestore();
+        warn.mockRestore();
 
         expect([...layout.spines.keys()]).toEqual(['root', 'alpha']);
-        expect(logged).toEqual([
-            ['[SpineLayout] Error loading spine "beta":', expect.any(UnsupportedSpineVersionError)],
+        expect(logged).toEqual([]);
+        expect(warned).toEqual([
+            [
+                '[SpineLayout] Skipped spine "beta": beta: Spine 3.6.53 — registered runtimes: 3.8, 4.3; ' +
+                    'no Pixi has a runtime for it',
+            ],
         ]);
         layout.reset();
     });

@@ -98,7 +98,11 @@ export function createEsotericSpinePort<T extends EngineTypes = EsotericTypes>({
     /** The export as this runtime reads it; throws `UnsupportedSpineVersionError` for another's. */
     function readable(source: SkeletonSource, file?: string): SkeletonSource {
         const binary = isBinarySkeleton(source);
-        const pick = pickRuntime(skeletonVersion(source), [info], pin, { file, binary });
+        const pick = pickRuntime(skeletonVersion(source), [info], pin, {
+            file,
+            binary,
+            json: binary ? undefined : source,
+        });
         if (pick.warning) warn(pick.warning);
 
         return applyPrePasses(source, pick.prePasses);

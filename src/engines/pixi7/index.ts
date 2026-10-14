@@ -30,7 +30,7 @@ import {
     type LegacyTypes,
 } from '../legacy';
 import type { PixiSpineDisplayClasses } from '../pixiSpine';
-import { createCompositeSpinePort } from '../shared/compositeSpinePort';
+import { createCompositeSpinePort, type CompositeSpinePort } from '../shared/compositeSpinePort';
 import type { Exports } from '../shared/exports';
 
 export type Pixi7Types = LegacyTypes;
@@ -142,9 +142,8 @@ const isLoaderResult = (value: unknown): value is { spineData: SkeletonDataLike 
     typeof value === 'object' && value !== null && 'spineData' in value && !!value.spineData;
 
 interface AssetReader {
-    spine: SpinePort<Pixi7Types>;
+    spine: CompositeSpinePort<Pixi7Types>;
     assets: LegacyAssetsRegistry;
-    bound: ReadonlyMap<string, Pixi7Adapter>;
     pin?: RuntimePin;
     warn: (message: string) => void;
 }
@@ -157,7 +156,6 @@ interface AssetReader {
 function assetReader({
     spine,
     assets,
-    bound,
     pin,
     warn,
 }: AssetReader): SpinePort<Pixi7Types>['readSkeletonFromAssets'] {
@@ -175,9 +173,11 @@ function assetReader({
     }
 
     function withParsedAtlas(source: SkeletonSource, skeletonAlias: string, atlasAlias: string) {
+        const binary = isBinarySkeleton(source);
         const pick = pickRuntime(skeletonVersion(source), spine.runtimes, pin, {
             file: skeletonAlias,
-            binary: isBinarySkeleton(source),
+            binary,
+            json: binary ? undefined : source,
         });
         const { minor, family } = pick.runtime;
 
@@ -188,12 +188,7 @@ function assetReader({
             );
         }
 
-        const adapter = bound.get(minor);
-        if (!adapter) {
-            throw new Error(
-                `The Spine ${minor} runtime has not loaded: await prepare(['${minor}']) first`,
-            );
-        }
+        const adapter = spine.adapterFor(minor);
 
         if (pick.warning) warn(pick.warning);
         return adapter.port.readSkeletonFromAssets(skeletonAlias, atlasAlias);
@@ -261,12 +256,6 @@ export function createPixi7Engine(
     const ports = createLegacyPorts(namespace, { spine: () => spine });
     // the engine reports each pick itself; a runtime's port would report it again
     const host: RuntimeHost = { PIXI, assets: ports.assets, pin, warn: () => {} };
-    const bound = new Map<string, Pixi7Adapter>();
-
-    const keep = (adapter: Pixi7Adapter) => {
-        bound.set(adapter.minor, adapter);
-        return adapter;
-    };
     const bind = (runtime: SpineRuntime | Pixi7Adapter) =>
         isAdapter(runtime) ? runtime : runtimeAdapters<Pixi7Types>([runtime], host)[0];
 
@@ -277,13 +266,13 @@ export function createPixi7Engine(
 
     const adapters = chosen.map((runtime): Pixi7Adapter | LazySpineRuntimeAdapter<Pixi7Types> => {
         if (isLazy(runtime)) {
-            return lazyRuntime(runtime, async () => keep(bind(onPixi7(await runtime()))));
+            return lazyRuntime(runtime, async () => bind(onPixi7(await runtime())));
         }
-        return keep(isAdapter(runtime) ? runtime : eager[unbound.indexOf(runtime)]);
+        return isAdapter(runtime) ? runtime : eager[unbound.indexOf(runtime)];
     });
 
     const spine = createCompositeSpinePort<Pixi7Types>(adapters, { pin, warn });
-    spine.readSkeletonFromAssets = assetReader({ spine, assets: ports.assets, bound, pin, warn });
+    spine.readSkeletonFromAssets = assetReader({ spine, assets: ports.assets, pin, warn });
 
     return {
         name: 'pixi7',

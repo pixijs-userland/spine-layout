@@ -152,6 +152,29 @@ describe('choosePixi', () => {
         expect(runtimesOf(goosicorn)).toEqual(['4.3']);
     });
 
+    it('names in a cross-read warning the constraint lists a scan kept of each JSON', () => {
+        const choice = choosePixi(
+            [
+                { file: 'aim.json', version: '4.2.43', json: { ik: [{ name: 'aim' }] } },
+                { file: 'plain.json', version: '4.2.43', json: {} },
+                { file: 'unknown.json', version: '4.2.43' },
+            ],
+            { spine: { '4.2': '4.3' } },
+        );
+
+        expect(choice.perFile.map((entry) => 'warning' in entry && entry.warning)).toEqual([
+            expect.stringMatching(
+                /^aim\.json: .*: its top-level ik constraints are not read; it may throw$/,
+            ),
+            expect.stringMatching(
+                /^plain\.json: .*: it has no top-level ik\/transform\/path\/physics constraints, so nothing is expected to be lost$/,
+            ),
+            expect.stringMatching(
+                /^unknown\.json: .*: any top-level ik\/transform\/path\/physics constraints are not read; exports with them may throw$/,
+            ),
+        ]);
+    });
+
     it('loads the pinned runtime on a Pixi that loads one runtime a page', () => {
         const choice = choosePixi(folder({ '3.8.99': 2 }), { pixi: 4, spine: { '3.8': '3.7' } });
 

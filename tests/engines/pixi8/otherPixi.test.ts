@@ -11,6 +11,10 @@ const v7 = async (minor: '4.2' | '4.3') =>
 
 const REFUSED = (minor: string) =>
     `createPixi8Engine takes spine-pixi-v8 runtimes; this is @esotericsoftware/spine-pixi-v7 ${minor}`;
+const FAILED = (minor: string) => `The Spine ${minor} runtime failed to load: ${REFUSED(minor)}`;
+
+const readExport = (engine: ReturnType<typeof createPixi8Engine>, version: string) =>
+    engine.spine.readSkeleton({ skeleton: { spine: version } } as never, '', {});
 
 describe('createPixi8Engine given a runtime of another Pixi', () => {
     it('refuses a spine-pixi-v7 runtime as it is created', async () => {
@@ -36,13 +40,15 @@ describe('createPixi8Engine given a runtime of another Pixi', () => {
         expect(() => createPixi8Engine({ runtimes: [lazy as never] })).toThrow(REFUSED('4.2'));
     });
 
-    it('rejects the load of a lazy runtime that turns out to be spine-pixi-v7', async () => {
+    it('refuses the exports of a lazy runtime that turns out to be spine-pixi-v7', async () => {
         const engine = createPixi8Engine({ runtimes: [{ minor: '4.2', load: () => v7('4.2') }] });
 
-        await expect(engine.spine.prepare!(['4.2'])).rejects.toThrow(REFUSED('4.2'));
+        await engine.spine.prepare!(['4.2']);
+
+        expect(() => readExport(engine, '4.2.43')).toThrow(FAILED('4.2'));
     });
 
-    it('rejects a lazy adapter named for spine-pixi-v8 that loads one bound to another Pixi', async () => {
+    it('refuses the exports of a lazy adapter named for spine-pixi-v8 that loads one bound to another Pixi', async () => {
         const { info } = esotericRuntime(await v7('4.2'));
         const bound = { ...info, port: {}, owns: () => false, readsBinary: true };
         const named = Object.assign(() => Promise.resolve(bound), {
@@ -51,6 +57,8 @@ describe('createPixi8Engine given a runtime of another Pixi', () => {
         });
         const engine = createPixi8Engine({ runtimes: [named as never] });
 
-        await expect(engine.spine.prepare!(['4.2'])).rejects.toThrow(REFUSED('4.2'));
+        await engine.spine.prepare!(['4.2']);
+
+        expect(() => readExport(engine, '4.2.43')).toThrow(FAILED('4.2'));
     });
 });

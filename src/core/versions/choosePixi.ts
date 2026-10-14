@@ -1,7 +1,7 @@
 import type { PixiMajor, SpineRuntimeInfo } from '../../engine/Engine';
 import { UnsupportedSpineVersionError } from '../../engine/errors';
 import { compareMinors, minorOf } from './minorOf';
-import { pickRuntime, pixiMajorsFor, type RuntimePin } from './pickRuntime';
+import { pickRuntime, pixiMajorsFor, type PickOptions, type RuntimePin } from './pickRuntime';
 import { DEFAULT_PIXI, ONE_RUNTIME_PER_PAGE, PIXI_MAJORS, runtimesOf } from './runtimeMatrix';
 
 export interface ExportVersion {
@@ -9,6 +9,8 @@ export interface ExportVersion {
     /** As the skeleton gives it; `undefined` when it gives none. */
     version: string | undefined;
     binary?: boolean;
+    /** The parsed `.json`, or its `constraintLists`, for a cross-read warning to name what it loses. */
+    json?: PickOptions['json'];
 }
 
 /** What `settings/project.json` pins: the game's Pixi, and the runtime it reads a minor with. */

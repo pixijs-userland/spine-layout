@@ -1,8 +1,7 @@
 // @vitest-environment happy-dom
 import * as SP43 from '@esotericsoftware/spine-pixi-v8';
-import { CanvasRenderer, Container, Texture, TextureSource, Ticker } from 'pixi.js';
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { UnsupportedSpineVersionError } from '../../../src/engine/errors';
+import { Assets, CanvasRenderer, Container, Texture, TextureSource, Ticker } from 'pixi.js';
+import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { SpineLayout } from '../../../src/index';
 import { createPixi8Engine } from '../../../src/pixi8';
 import { esotericRuntime } from '../../../src/runtimes';
@@ -104,6 +103,7 @@ describe('a layout over a lazy 4.2, its folder holding an export no runtime read
     };
 
     it('loads 4.2, builds what its runtimes read, and skips the 3.8 export alone', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
         const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
         const engine = createPixi8Engine({
             runtimes: [
@@ -126,16 +126,52 @@ describe('a layout over a lazy 4.2, its folder holding an export no runtime read
 
         layout.createInstance('old');
 
-        expect(errors).toHaveBeenCalledWith(
-            '[SpineLayout] Error loading spine "old":',
-            expect.any(UnsupportedSpineVersionError),
-        );
+        expect(warn.mock.calls).toEqual([
+            [
+                '[SpineLayout] Skipped spine "old": old: Spine 3.8.99 — registered runtimes: 4.3, 4.2; ' +
+                    'Pixi 4, 5, 6, 7 can render it',
+            ],
+        ]);
+        expect(errors).not.toHaveBeenCalled();
         expect(layout.getSpineByID('old')).toBeUndefined();
 
         layout.destroy();
     });
 
-    it('still rejects what is not a version no runtime reads: a runtime that fails to load', async () => {
+    it('skips the exports of a runtime that fails to load alone, and builds them once it loads', async () => {
+        const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+        const load = vi
+            .fn(() => import('spine-pixi-v8-42'))
+            .mockRejectedValueOnce(new Error('chunk failed to load'));
+        const engine = createPixi8Engine({
+            runtimes: [esotericRuntime(SP43), { minor: '4.2', load }],
+        });
+        const layout = new SpineLayout({ engine });
+
+        await expect(
+            layout.loadInstancesFromDataArray([
+                asData('root', 'okButton-4.3'),
+                asData('settings', 'settingsButton-4.2'),
+            ]),
+        ).resolves.toBeUndefined();
+
+        expect([...layout.getSpines().keys()]).toEqual(['root']);
+        expect(errors).toHaveBeenCalledWith(
+            '[SpineLayout] Error loading spine "settings":',
+            expect.objectContaining({
+                message: 'The Spine 4.2 runtime failed to load: chunk failed to load',
+            }),
+        );
+
+        await engine.spine.prepare!(['4.2']);
+
+        expect(load).toHaveBeenCalledTimes(2);
+        expect(engine.spine.runtimeOf(layout.createInstance('settings')!)?.minor).toBe('4.2');
+
+        layout.destroy();
+    });
+
+    it('names the failed load, not a missing prepare, when the asset cache holds an export of that runtime', async () => {
         const failure = new Error('chunk failed to load');
         const engine = createPixi8Engine({
             runtimes: [
@@ -143,8 +179,17 @@ describe('a layout over a lazy 4.2, its folder holding an export no runtime read
                 { minor: '4.2', load: () => Promise.reject(failure) },
             ],
         });
+        Assets.cache.set('failed42.json', spineExport('settingsButton-4.2').skeleton);
+        onTestFinished(() => Assets.cache.remove('failed42.json'));
 
-        await expect(engine.spine.prepare!(['4.3', '4.2', '3.8'])).rejects.toBe(failure);
+        await engine.spine.prepare!(['4.2']);
+
+        expect(() => engine.spine.readSkeletonFromAssets('failed42.json')).toThrow(
+            expect.objectContaining({
+                message: 'The Spine 4.2 runtime failed to load: chunk failed to load',
+                cause: failure,
+            }),
+        );
     });
 });
 

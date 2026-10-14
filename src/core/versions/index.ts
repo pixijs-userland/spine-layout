@@ -11,6 +11,7 @@ export {
 } from './runtimeMatrix';
 export { applyPrePasses, PRE_PASSES, type PrePass } from './prePasses';
 export {
+    constraintLists,
     pickRuntime,
     pixiMajorsFor,
     type PickOptions,

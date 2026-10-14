@@ -48,6 +48,7 @@ interface Json {
     skeleton: { spine: string };
     skins?: { name: string }[];
     bones?: { name: string; transform?: string; inherit?: string }[];
+    path?: { name: string }[];
 }
 
 const json = (version: string, extra: Partial<Json> = {}): Json => ({
@@ -109,6 +110,29 @@ describe('createCompositeSpinePort', () => {
             expect(warn.mock.calls.map(([message]) => message)).toEqual([
                 expect.stringMatching(/^Spine 4\.2\.43 cross-read by the 4\.3 runtime/),
                 expect.stringMatching(/^Spine 4\.1\.24 cross-read by the 4\.3 runtime/),
+            ]);
+        });
+
+        it('names the constraint sections of the 4.2 export it cross-reads with 4.3', () => {
+            const v43 = fakeRuntime(info(PIXI8, '4.3'));
+            const warn = vi.fn();
+            const port = createCompositeSpinePort([v43.adapter], { pin: { '4.2': '4.3' }, warn });
+
+            port.readSkeleton(
+                json('4.2.43', { path: [{ name: 'rail' }] }),
+                '',
+                {},
+                { file: 'bg.json' },
+            );
+            port.readSkeleton(json('4.2.43'), '', {}, { file: 'plain.json' });
+
+            expect(warn.mock.calls.map(([message]) => message)).toEqual([
+                expect.stringMatching(
+                    /^bg\.json: .*: its top-level path constraints are not read; it may throw$/,
+                ),
+                expect.stringMatching(
+                    /^plain\.json: .*: it has no top-level ik\/transform\/path\/physics constraints, so nothing is expected to be lost$/,
+                ),
             ]);
         });
 
@@ -348,20 +372,38 @@ describe('createCompositeSpinePort', () => {
             );
         });
 
-        it('tries a failed load again, and refuses a runtime of another minor', async () => {
+        it('refuses only the exports of a runtime that failed to load, and tries it again on the next prepare', async () => {
+            const v42 = lazy(info(PIXI8, '4.2'));
             const v43 = lazy(info(PIXI8, '4.3'));
-            v43.load.mockRejectedValueOnce(new Error('offline'));
-            const port = createCompositeSpinePort([v43.adapter]);
+            const offline = new Error('offline');
+            v42.load.mockRejectedValueOnce(offline);
+            const port = createCompositeSpinePort([v42.adapter, v43.adapter]);
 
-            await expect(port.prepare!(['4.3'])).rejects.toThrow('offline');
-            await port.prepare!(['4.3']);
-            expect(v43.load).toHaveBeenCalledTimes(2);
+            await expect(port.prepare!(['4.2', '4.3'])).resolves.toBeUndefined();
+            expect(port.readSkeleton(json('4.3.23'), '', {})).toMatchObject({ from: '4.3' });
+            expect(() => port.readSkeleton(json('4.2.43'), '', {})).toThrow(
+                expect.objectContaining({
+                    message: 'The Spine 4.2 runtime failed to load: offline',
+                    cause: offline,
+                }),
+            );
 
+            await port.prepare!(['4.2']);
+
+            expect(v42.load).toHaveBeenCalledTimes(2);
+            expect(v43.load).toHaveBeenCalledTimes(1);
+            expect(port.readSkeleton(json('4.2.43'), '', {})).toMatchObject({ from: '4.2' });
+        });
+
+        it('refuses the exports of a lazy runtime that loaded one of another minor', async () => {
             const wrong = createCompositeSpinePort([
                 lazy(info(PIXI8, '4.3'), fakeRuntime(info(PIXI8, '4.2')).adapter).adapter,
             ]);
-            await expect(wrong.prepare!(['4.3'])).rejects.toThrow(
-                'The lazy Spine 4.3 runtime loaded one of Spine 4.2',
+
+            await wrong.prepare!(['4.3']);
+
+            expect(() => wrong.readSkeleton(json('4.3.23'), '', {})).toThrow(
+                'The Spine 4.3 runtime failed to load: The lazy Spine 4.3 runtime loaded one of Spine 4.2',
             );
         });
     });

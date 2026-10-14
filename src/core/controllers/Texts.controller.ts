@@ -537,13 +537,15 @@ export class TextsController<T extends EngineTypes = EngineTypes> {
     }
 
     loadSettings() {
+        if (this.#textSettings) return;
+
         // The pixi manifest registers the settings file under its shortcut alias
         // (`texts.json`) and full relative path (`<skin>/settings/texts.json`),
         // never `settings/texts.json`. Try the shortcut first, then fall back.
         const { assets } = this.engine;
-        const texts = assets.get<TextsJson>('texts.json') ?? assets.get<TextsJson>('settings/texts.json');
+        const alias = ['texts.json', 'settings/texts.json'].find((name) => assets.has(name));
 
-        if (texts) this.#textSettings = texts;
+        if (alias) this.#textSettings = assets.get<TextsJson>(alias);
     }
 
     /**

@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import * as SP43 from '@esotericsoftware/spine-pixi-v8';
 import { Assets, type AssetsManifest } from 'pixi.js';
 import { pixi8Engine, SpineLayout } from '../src/index';
+import { createPixi8Engine } from '../src/pixi8';
+import { esotericRuntime } from '../src/runtimes';
 
 /**
  * What Spine exports for a skeleton that attaches no image: bones, slots and animations, no
@@ -448,5 +451,45 @@ describe('SpineLayout — an engine that loads its runtimes lazily', () => {
         expect(loading).toBeInstanceOf(Promise);
         await loading;
         expect([...layout.spines.keys()]).toEqual(['root']);
+    });
+});
+
+describe('SpineLayout — a skeleton it cannot build', () => {
+    afterEach(() => vi.restoreAllMocks());
+
+    it('skips one no runtime of the engine reads with a single warning line, and builds the rest', () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+        const engine = createPixi8Engine({ runtimes: [esotericRuntime(SP43)] });
+        const old = instance('old');
+        old.skeleton.skeleton.spine = '3.8.99';
+        const layout = new SpineLayout({ engine });
+
+        layout.createInstancesFromDataArray([instance('root', ['spine_old']), old]);
+
+        expect([...layout.spines.keys()]).toEqual(['root']);
+        expect(warn.mock.calls).toEqual([
+            [
+                '[SpineLayout] Skipped spine "old": old: Spine 3.8.99 — registered runtimes: 4.3; ' +
+                    'Pixi 4, 5, 6, 7 can render it',
+            ],
+        ]);
+        expect(error).not.toHaveBeenCalled();
+    });
+
+    it('logs any other error with the error itself', () => {
+        const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+        const broken = new Error('no page named hero.png');
+        const readSkeleton = () => {
+            throw broken;
+        };
+        const layout = new SpineLayout({
+            engine: { ...pixi8Engine, spine: { ...pixi8Engine.spine, readSkeleton } },
+        });
+
+        layout.createInstancesFromDataArray([instance('root')]);
+
+        expect(layout.spines.size).toBe(0);
+        expect(error.mock.calls).toEqual([['[SpineLayout] Error loading spine "root":', broken]]);
     });
 });

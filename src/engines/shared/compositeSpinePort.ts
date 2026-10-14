@@ -18,11 +18,17 @@ export interface CompositeSpinePortOptions {
     warn?: (message: string) => void;
 }
 
+export type CompositeSpinePort<T extends EngineTypes> = SpinePort<T> & {
+    /** The runtime that reads Spine `minor`; throws when it has not loaded, or failed to. */
+    adapterFor(minor: string): SpineRuntimeAdapter<T>;
+};
+
 interface Registered<T extends EngineTypes> {
     info: SpineRuntimeInfo;
     adapter?: SpineRuntimeAdapter<T>;
     load?: () => Promise<SpineRuntimeAdapter<T>>;
     loading?: Promise<void>;
+    failure?: unknown;
 }
 
 const infoOf = ({ minor, family, packageName, packageVersion }: SpineRuntimeInfo) => ({
@@ -52,12 +58,13 @@ function register<T extends EngineTypes>(
  * the runtime that `owns` its argument. Over a single runtime those calls go to it unchecked, and
  * only then is `readSkeletonFromAssets` served. `prepare` exists where a runtime is lazy, and
  * loads the ones the given export minors need; a minor no runtime reads loads nothing, and each of
- * its skeletons is refused as it is read.
+ * its skeletons is refused as it is read. A runtime that fails to load fails only the skeletons it
+ * would read, each as it is read, and the next `prepare` that needs it tries it again.
  */
 export function createCompositeSpinePort<T extends EngineTypes = EngineTypes>(
     adapters: readonly (SpineRuntimeAdapter<T> | LazySpineRuntimeAdapter<T>)[],
     { pin, warn = (message) => console.warn(message) }: CompositeSpinePortOptions = {},
-): SpinePort<T> {
+): CompositeSpinePort<T> {
     if (!adapters.length) throw new Error('createCompositeSpinePort: no Spine runtime given');
 
     const entries = adapters.map(register);
@@ -77,6 +84,13 @@ export function createCompositeSpinePort<T extends EngineTypes = EngineTypes>(
     const entryOf = (runtime: SpineRuntimeInfo) => entries.find((entry) => entry.info === runtime)!;
 
     function adapterOf(entry: Registered<T>): SpineRuntimeAdapter<T> {
+        if (!entry.adapter && entry.failure !== undefined) {
+            const cause =
+                entry.failure instanceof Error ? entry.failure.message : String(entry.failure);
+            throw new Error(`The Spine ${entry.info.minor} runtime failed to load: ${cause}`, {
+                cause: entry.failure,
+            });
+        }
         if (!entry.adapter) {
             throw new Error(
                 `The Spine ${entry.info.minor} runtime has not loaded: await prepare(['${entry.info.minor}']) first`,
@@ -130,7 +144,7 @@ export function createCompositeSpinePort<T extends EngineTypes = EngineTypes>(
                 skeletonVersion(source),
                 readers.map((entry) => entry.info),
                 pin,
-                { file, binary },
+                { file, binary, json: binary ? undefined : source },
             );
         } catch (error) {
             if (!(error instanceof UnsupportedSpineVersionError) || !jsonOnly.length) throw error;
@@ -156,7 +170,13 @@ export function createCompositeSpinePort<T extends EngineTypes = EngineTypes>(
             }
         }
 
-        await Promise.all([...needed].map(load));
+        await Promise.all(
+            [...needed].map((entry) =>
+                load(entry).catch((error: unknown) => {
+                    entry.failure = error;
+                }),
+            ),
+        );
     }
 
     return {
@@ -165,6 +185,12 @@ export function createCompositeSpinePort<T extends EngineTypes = EngineTypes>(
         },
         runtimeOf: (spineOrData) => ownerOf(spineOrData)?.info,
         ...(entries.some((entry) => entry.load) && { prepare }),
+
+        adapterFor(minor) {
+            const entry = entries.find(({ info }) => info.minor === minor);
+            if (!entry) throw new Error(`No Spine ${minor} runtime is registered`);
+            return adapterOf(entry);
+        },
 
         readSkeleton(source, atlasText, textures, { file } = {}) {
             const pick = pickFor(source, file);

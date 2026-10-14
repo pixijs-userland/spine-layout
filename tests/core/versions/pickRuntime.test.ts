@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { UnsupportedSpineVersionError } from '../../../src/engine/errors';
-import { pickRuntime, UNVERSIONED } from '../../../src/core/versions/pickRuntime';
+import { constraintLists, pickRuntime, UNVERSIONED } from '../../../src/core/versions/pickRuntime';
 import { runtimesOf } from '../../../src/core/versions/runtimeMatrix';
 
 const thrown = (run: () => unknown) => {
@@ -50,6 +50,19 @@ describe('pickRuntime', () => {
         expect(pick.prePasses).toEqual(['4.0->4.1', '4.1->4.2']);
     });
 
+    it('says "pre-pass" for the one it runs, and "pre-passes" for more', () => {
+        expect(pickRuntime('4.1.24', runtimesOf(8)).warning).toBe(
+            'Spine 4.1.24 read by the 4.2 runtime after pre-pass 4.1->4.2 (bone transform -> inherit)',
+        );
+        expect(pickRuntime('4.0.64', runtimesOf(8)).warning).toBe(
+            'Spine 4.0.64 read by the 4.2 runtime after pre-passes 4.0->4.1 (animation deform -> attachments), ' +
+                '4.1->4.2 (bone transform -> inherit)',
+        );
+        expect(pickRuntime('4.0.64', runtimesOf(8), { '4.0': '4.3' }).warning).toMatch(
+            /^Spine 4\.0\.64 cross-read by the 4\.3 runtime, as the project pins over the 4\.2 runtime after pre-passes 4\.0->4\.1, 4\.1->4\.2: /,
+        );
+    });
+
     it('stops at the nearest runtime the chain reaches', () => {
         const only41and43 = runtimesOf(7).filter(({ minor }) => minor === '4.1' || minor === '4.3');
 
@@ -87,9 +100,44 @@ describe('pickRuntime', () => {
         expect(pick.prePasses).toEqual([]);
         expect(pick.warning).toBe(
             'bg.json: Spine 4.2.43 cross-read by the 4.3 runtime, as the project pins over its own ' +
-                '4.2 runtime: its top-level ik/transform/path/physics constraints are not read; ' +
-                'some such exports throw',
+                '4.2 runtime: any top-level ik/transform/path/physics constraints are not read; ' +
+                'exports with them may throw',
         );
+    });
+
+    it('names the constraint sections of a 4.2 JSON the 4.3 runtime does not read, or that it has none', () => {
+        const crossRead = (json: Record<string, unknown>) =>
+            pickRuntime('4.2.43', runtimesOf(8), { '4.2': '4.3' }, { file: 'bg.json', json })
+                .warning;
+
+        expect(
+            crossRead({ ik: [{ name: 'aim' }], transform: [], physics: [{ name: 'hair' }] }),
+        ).toBe(
+            'bg.json: Spine 4.2.43 cross-read by the 4.3 runtime, as the project pins over its own ' +
+                '4.2 runtime: its top-level ik/physics constraints are not read; it may throw',
+        );
+        expect(crossRead({ bones: [{ name: 'root' }], transform: [] })).toBe(
+            'bg.json: Spine 4.2.43 cross-read by the 4.3 runtime, as the project pins over its own ' +
+                '4.2 runtime: it has no top-level ik/transform/path/physics constraints, so nothing ' +
+                'is expected to be lost',
+        );
+    });
+
+    it('keeps of a JSON its constraint lists, which name in a warning what the JSON would', () => {
+        const json = {
+            skeleton: { spine: '4.2.43' },
+            bones: [{ name: 'root' }],
+            ik: [{ name: 'aim' }],
+            transform: [],
+            animations: { idle: {} },
+        };
+        const warningOf = (from: Record<string, unknown>) =>
+            pickRuntime('4.2.43', runtimesOf(8), { '4.2': '4.3' }, { json: from }).warning;
+
+        expect(constraintLists(json)).toEqual({ ik: [{ name: 'aim' }], transform: [] });
+        expect(constraintLists({ bones: [] })).toEqual({});
+        expect(warningOf(constraintLists(json))).toBe(warningOf(json));
+        expect(warningOf(constraintLists({ bones: [] }))).toBe(warningOf({ bones: [] }));
     });
 
     it('takes a registered pinned runtime over a pre-pass route, and runs no pre-pass', () => {
@@ -98,7 +146,7 @@ describe('pickRuntime', () => {
         expect(pick.runtime.minor).toBe('4.3');
         expect(pick.prePasses).toEqual([]);
         expect(pick.warning).toMatch(
-            /cross-read by the 4\.3 runtime, as the project pins over the 4\.2 runtime after pre-passes: bone `transform` and every constraint are lost/,
+            /cross-read by the 4\.3 runtime, as the project pins over the 4\.2 runtime after pre-pass 4\.1->4\.2: bone `transform` and every constraint are lost/,
         );
         expect(pickRuntime('4.0.64', runtimesOf(7), { '4.0': '4.1' })).toMatchObject({
             runtime: { minor: '4.1', packageName: '@pixi-spine/runtime-4.1' },

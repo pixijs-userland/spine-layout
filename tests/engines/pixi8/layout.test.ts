@@ -256,21 +256,27 @@ describe('SpineLayout over the "." engine with 4.2 added', () => {
         expect([...layout.getSpines().values()].map(runtimeOf)).toEqual(['4.3', '4.2']);
     });
 
-    it('reads a skeleton from the asset cache by the runtime the pin names', () => {
+    it('reads a skeleton from the asset cache by the runtime the pin names, saying what it does not read', () => {
         const warn = vi.fn();
         const pinned = createPixi8Engine({
             runtimes: [esotericRuntime(SP42)],
             pin: { '4.2': '4.3' },
             warn,
         });
-        cached.push(...cache('settings', spineExport('settingsButton-4.2')));
+        const settings = spineExport('settingsButton-4.2');
+        settings.skeleton.ik = [
+            { name: 'aim', bones: ['settingsButton'], target: 'settingsButton' },
+        ];
+        cached.push(...cache('settings', settings));
 
         const data = pinned.spine.readSkeletonFromAssets('settings.json', 'settings.atlas');
 
         expect(data).toBeInstanceOf(SP43.SkeletonData);
         expect(warn).toHaveBeenCalledTimes(1);
         expect(warn).toHaveBeenCalledWith(
-            expect.stringMatching(/^settings\.json: Spine 4\.2\.43 cross-read by the 4\.3 runtime/),
+            expect.stringMatching(
+                /^settings\.json: Spine 4\.2\.43 cross-read by the 4\.3 runtime.*: its top-level ik constraints are not read; it may throw$/,
+            ),
         );
     });
 

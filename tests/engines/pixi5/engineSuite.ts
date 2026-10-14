@@ -405,6 +405,7 @@ export function describePixi5Engine(minor: Pixi5Minor) {
         describe('SpineLayoutCore on the engine', () => {
             const layoutOf = (data: { name: string; skeleton: SkeletonSource }[]) => {
                 const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+                const warnings = vi.spyOn(console, 'warn').mockImplementation(() => {});
                 const engine = createPixi5Engine(PIXI);
                 const layout = new SpineLayoutCore<Pixi5Types>({ engine });
 
@@ -412,9 +413,15 @@ export function describePixi5Engine(minor: Pixi5Minor) {
                     layout.createInstancesFromDataArray(
                         data.map((item) => ({ ...item, atlasText: ATLAS, textures: textures() })),
                     );
-                    return { engine, layout, logged: errors.mock.calls.slice() };
+                    return {
+                        engine,
+                        layout,
+                        logged: errors.mock.calls.slice(),
+                        warned: warnings.mock.calls.slice(),
+                    };
                 } finally {
                     errors.mockRestore();
+                    warnings.mockRestore();
                 }
             };
 
@@ -453,24 +460,24 @@ export function describePixi5Engine(minor: Pixi5Minor) {
                 expect(drawn.map((sprite) => regions.indexOf(sprite as never))).toEqual([0, 1]);
             });
 
-            it(`builds the root, and logs the ${other} skeleton it cannot read`, () => {
+            it(`builds the root, and warns once of the ${other} skeleton it cannot read`, () => {
                 const root = contractSkeleton(minor);
                 (root.slots as object[]).push({ name: 'spine_child', bone: 'root' });
 
-                const { layout, logged } = layoutOf([
+                const { layout, logged, warned } = layoutOf([
                     { name: 'root', skeleton: root },
                     { name: 'child', skeleton: contractSkeleton(other) },
                 ]);
 
                 expect(layout.spines.get('root')).toBeInstanceOf(PIXI.spine.Spine);
                 expect(layout.spines.has('child')).toBe(false);
-                expect(logged).toHaveLength(1);
-                expect(logged[0][0]).toBe('[SpineLayout] Error loading spine "child":');
-                expect(logged[0][1]).toBeInstanceOf(UnsupportedSpineVersionError);
-                expect(logged[0][1]).toMatchObject({
-                    version: EXPORTED[other],
-                    registered: [minor],
-                });
+                expect(logged).toEqual([]);
+                expect(warned).toEqual([
+                    [
+                        `[SpineLayout] Skipped spine "child": child: Spine ${EXPORTED[other]} — ` +
+                            `registered runtimes: ${minor}; Pixi 4, 5, 6, 7 can render it`,
+                    ],
+                ]);
             });
 
             it('hits a button empty at setup where its skin draws it', () => {

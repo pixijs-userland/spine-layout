@@ -143,23 +143,20 @@ export function createPixi8Engine({
     pin,
     warn,
 }: Pixi8EngineOptions): Engine<Pixi8Types<Pixi8Spine>> {
-    const bound = new Map<string, Pixi8Adapter>();
-
-    const keep = (adapter: Pixi8Adapter): Pixi8Adapter => {
+    const onPixi8 = (adapter: Pixi8Adapter): Pixi8Adapter => {
         refuseOtherPixi(adapter);
-        bound.set(adapter.minor, adapter);
         return adapter;
     };
     const bind = (loaded: EsotericModule | EsotericRuntime) =>
-        keep(bindV8(isRuntime(loaded) ? loaded : esotericRuntime(loaded), pin, warn));
+        onPixi8(bindV8(isRuntime(loaded) ? loaded : esotericRuntime(loaded), pin, warn));
 
     function adapterOf(runtime: Pixi8Runtime): Pixi8Adapter | LazyPixi8Adapter {
         if (typeof runtime === 'function') {
             refuseOtherPixi(runtime);
             deferSpinePipe(pixi, runtime.minor as EsotericMinor);
-            return lazy(runtime, async () => keep(await runtime()));
+            return lazy(runtime, async () => onPixi8(await runtime()));
         }
-        if ('port' in runtime) return keep(runtime);
+        if ('port' in runtime) return onPixi8(runtime);
         if ('module' in runtime) return bind(runtime);
 
         deferSpinePipe(pixi, runtime.minor);
@@ -170,16 +167,6 @@ export function createPixi8Engine({
 
     const spine = createCompositeSpinePort(runtimes.map(adapterOf), { pin, warn });
     const { readSkeletonFromAssets: readWithOnlyRuntime } = spine;
-
-    function loaded(minor: string): Pixi8Adapter {
-        const adapter = bound.get(minor);
-        if (!adapter) {
-            throw new Error(
-                `The Spine ${minor} runtime has not loaded: await prepare(['${minor}']) first`,
-            );
-        }
-        return adapter;
-    }
 
     function readerOf(skeletonAlias: string): Pixi8Adapter {
         const source = Assets.get<SkeletonSource | undefined>(skeletonAlias);
@@ -192,7 +179,7 @@ export function createPixi8Engine({
             file: skeletonAlias,
             binary: isBinarySkeleton(source),
         });
-        return loaded(runtime.minor);
+        return spine.adapterFor(runtime.minor);
     }
 
     spine.readSkeletonFromAssets = (skeletonAlias, atlasAlias) =>

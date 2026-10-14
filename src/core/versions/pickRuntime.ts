@@ -18,20 +18,51 @@ export interface RuntimePick {
     warning?: string;
 }
 
+type Json = Readonly<Record<string, unknown>>;
+
 export interface PickOptions {
     /** The skeleton's file, for the warning and the error. */
     file?: string;
     /** A `.skel`, which pre-passes cannot rewrite. */
     binary?: boolean;
+    /** The parsed `.json`, so a warning names what this export holds rather than what one may. */
+    json?: Json;
+}
+
+/** Where a 4.2 export keeps its constraints; 4.3 reads them from one `constraints` list. */
+const CONSTRAINT_SECTIONS_4_2 = ['ik', 'transform', 'path', 'physics'];
+
+/** The top-level constraint lists of a parsed `.json`: all `pickRuntime` reads of it, and small. */
+export function constraintLists(json: Json): Json {
+    return Object.fromEntries(
+        CONSTRAINT_SECTIONS_4_2.filter((section) => section in json).map((section) => [
+            section,
+            json[section],
+        ]),
+    );
+}
+
+function constraintsUnread(json?: Json): string {
+    if (!json) {
+        return 'any top-level ik/transform/path/physics constraints are not read; exports with them may throw';
+    }
+
+    const held = CONSTRAINT_SECTIONS_4_2.filter((section) => {
+        const constraints = json[section];
+        return Array.isArray(constraints) && constraints.length > 0;
+    });
+
+    return held.length
+        ? `its top-level ${held.join('/')} constraints are not read; it may throw`
+        : 'it has no top-level ik/transform/path/physics constraints, so nothing is expected to be lost';
 }
 
 /**
  * What a runtime is known to lose reading another minor's export, as measured on our exports: by
  * `from->to`, or by `from->to family` where one family's runtime reads it differently.
  */
-const CROSS_READ_LOSSES: Readonly<Record<string, string>> = {
-    '4.2->4.3':
-        'its top-level ik/transform/path/physics constraints are not read; some such exports throw',
+const CROSS_READ_LOSSES: Readonly<Record<string, string | ((json?: Json) => string)>> = {
+    '4.2->4.3': constraintsUnread,
     '4.1->4.3': 'bone `transform` and every constraint are lost; some exports throw',
     '4.1->4.2': 'bone `transform` is ignored, so every bone inherits its full transform',
     '4.0->4.1': 'its mesh deform keys are dropped',
@@ -39,10 +70,13 @@ const CROSS_READ_LOSSES: Readonly<Record<string, string>> = {
         "none measured: pixi-spine's runtime-4.1 converts a 4.0 export itself, as the 4.0->4.1 pre-pass does",
 };
 
-function lossOf(from: string, { minor, family }: SpineRuntimeInfo): string {
+function lossOf(from: string, { minor, family }: SpineRuntimeInfo, json?: Json): string {
+    const loss =
+        CROSS_READ_LOSSES[`${from}->${minor} ${family}`] ?? CROSS_READ_LOSSES[`${from}->${minor}`];
+
+    if (typeof loss === 'function') return loss(json);
     return (
-        CROSS_READ_LOSSES[`${from}->${minor} ${family}`] ??
-        CROSS_READ_LOSSES[`${from}->${minor}`] ??
+        loss ??
         `the ${minor} runtime reads ${minor} exports only: expect missing data, wrong poses or a throw`
     );
 }
@@ -76,11 +110,17 @@ function route(
     return undefined;
 }
 
+const afterPrePasses = (named: readonly string[]) =>
+    `after ${named.length === 1 ? 'pre-pass' : 'pre-passes'} ${named.join(', ')}`;
+
+const described = (id: string) =>
+    `${id} (${PRE_PASSES.find((pass) => pass.id === id)!.description})`;
+
 function passedOver(found: Omit<RuntimePick, 'warning'> | undefined): string {
     if (!found) return '';
 
     return found.prePasses.length
-        ? ` over the ${found.runtime.minor} runtime after pre-passes`
+        ? ` over the ${found.runtime.minor} runtime ${afterPrePasses(found.prePasses)}`
         : ` over its own ${found.runtime.minor} runtime`;
 }
 
@@ -99,7 +139,7 @@ export function pickRuntime(
     exportVersion: string | undefined,
     available: readonly SpineRuntimeInfo[],
     pin?: RuntimePin,
-    { file, binary = false }: PickOptions = {},
+    { file, binary = false, json }: PickOptions = {},
 ): RuntimePick {
     const minor = minorOf(exportVersion);
     const at = file ? `${file}: ` : '';
@@ -128,19 +168,15 @@ export function pickRuntime(
             return {
                 runtime,
                 prePasses: [],
-                warning: `${at}Spine ${exportVersion} cross-read by the ${runtime.minor} runtime, as the project pins${passedOver(found)}: ${lossOf(minor, runtime)}`,
+                warning: `${at}Spine ${exportVersion} cross-read by the ${runtime.minor} runtime, as the project pins${passedOver(found)}: ${lossOf(minor, runtime, json)}`,
             };
         }
 
         if (found && !found.prePasses.length) return found;
         if (found) {
-            const passes = found.prePasses
-                .map((id) => `${id} (${PRE_PASSES.find((pass) => pass.id === id)!.description})`)
-                .join(', ');
-
             return {
                 ...found,
-                warning: `${at}Spine ${exportVersion} read by the ${found.runtime.minor} runtime after pre-passes ${passes}`,
+                warning: `${at}Spine ${exportVersion} read by the ${found.runtime.minor} runtime ${afterPrePasses(found.prePasses.map(described))}`,
             };
         }
     }

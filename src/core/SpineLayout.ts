@@ -1,4 +1,5 @@
 import type { Engine, EngineTypes, PointLike } from '../engine/Engine';
+import { UnsupportedSpineVersionError } from '../engine/errors';
 import { isBinarySkeleton, type SkeletonSource } from '../engine/runtime';
 import type {
     ManifestLike,
@@ -440,7 +441,11 @@ export class SpineLayoutCore<T extends EngineTypes = EngineTypes> extends Layout
 
             return spine;
         } catch (e) {
-            console.error(`[SpineLayout] Error loading spine "${spineID}":`, e);
+            if (e instanceof UnsupportedSpineVersionError) {
+                console.warn(`[SpineLayout] Skipped spine "${spineID}": ${e.message}`);
+            } else {
+                console.error(`[SpineLayout] Error loading spine "${spineID}":`, e);
+            }
             return undefined;
         }
     }
