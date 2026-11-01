@@ -19,7 +19,14 @@
             "name": "default",
             "attachments": {
                 "slot_a": { "square": { "width": 40, "height": 20 } },
-                "slot_b": { "square": { "width": 40, "height": 20 } }
+                "slot_b": {
+                    "square": { "width": 40, "height": 20 },
+                    "hit": {
+                        "type": "boundingbox",
+                        "vertexCount": 4,
+                        "vertices": [10, 20, 110, 20, 110, 80, 10, 80]
+                    }
+                }
             }
         }
     ],

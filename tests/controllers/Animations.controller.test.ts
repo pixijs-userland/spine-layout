@@ -220,6 +220,57 @@ describe('AnimationsController – track allocation', () => {
         await vi.runAllTimersAsync();
     });
 
+    it('lands on the lowest free track when a shorter animation ends before a longer one', async () => {
+        // a slot's round: a long win presentation under a short button flash, then a
+        // counter that poses something else again — three disjoint claims
+        const spine = createFakeSpine({
+            animations: [
+                { name: 'win', duration: 2, poses: ['bone:win'] },
+                { name: 'flash', duration: 0.2, poses: ['bone:button'] },
+                { name: 'count', duration: 0.5, poses: ['bone:counter'] },
+            ],
+        });
+        const controller = new AnimationsController(fakeEngine, asSpineMap({ reels: spine }));
+        controller.registerSpine('reels', spine as never);
+
+        void controller.play('reels', 'win'); // track 0
+        void controller.play('reels', 'flash'); // track 1
+        await vi.advanceTimersByTimeAsync(300); // flash is over, win is not
+        controller.stop('reels', 'flash'); // its track is free again
+
+        void controller.play('reels', 'count');
+
+        // the freed track, under the one still running — never over it
+        expect(trackOf(spine, 'count')).toBe(1);
+        expect(trackOf(spine, 'win')).toBe(0);
+        expect(spine.state.tracks.length).toBe(2);
+
+        await vi.runAllTimersAsync();
+    });
+
+    it('never grows the track list past the number of concurrent claims, spin after spin', async () => {
+        const spine = createFakeSpine({
+            animations: [
+                { name: 'state_spin/turn', duration: 0.3, poses: ['bone:reel'] },
+                { name: 'state_stop/land', duration: 0.1, poses: ['bone:reel'] },
+                { name: 'state_win/glow', duration: 0.5, poses: ['slot:frame'] },
+                { name: 'state_idle/rest', duration: 0.2, poses: ['slot:frame'] },
+            ],
+        });
+        const controller = new AnimationsController(fakeEngine, asSpineMap({ reels: spine }));
+        controller.registerSpine('reels', spine as never);
+
+        for (let round = 0; round < 200; round++) {
+            void controller.playState('spin');
+            await vi.advanceTimersByTimeAsync(300);
+            void controller.playState('stop'); // the reel's own track, taken over
+            void controller.playState(round % 2 ? 'win' : 'idle'); // the frame's own track
+            await vi.advanceTimersByTimeAsync(round % 2 ? 500 : 200);
+        }
+
+        expect(spine.state.tracks.length).toBe(2);
+    });
+
     it('parks animations that pose nothing on one track instead of growing the list', async () => {
         const spine = createFakeSpine({
             animations: [
@@ -541,6 +592,77 @@ describe('AnimationsController – playback', () => {
         await vi.runAllTimersAsync();
     });
 
+    describe('playState on a state the spine already sits in', () => {
+        const LOOP = 'state_freeSpins/ambience_loop';
+        const ENTER = 'state_freeSpins/enter';
+
+        const freeSpins = () => {
+            const hero = createFakeSpine({
+                animations: [
+                    { name: LOOP, duration: 2, poses: ['bone:fx'] },
+                    { name: ENTER, duration: 1, poses: ['slot:banner'] },
+                ],
+            });
+            const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero }));
+            ctl.registerSpine('hero', hero as never);
+            const entryOf = (name: string) =>
+                hero.state.tracks.find((entry) => entry?.animation.name === name)!;
+
+            return { hero, ctl, entryOf };
+        };
+
+        it('leaves its loops and its still-running one-shots on their tracks, time intact', async () => {
+            const { hero, ctl, entryOf } = freeSpins();
+
+            void ctl.playState('freeSpins');
+            const loop = entryOf(LOOP);
+            const enter = entryOf(ENTER);
+            loop.trackTime = 1.5;
+            enter.trackTime = 0.4;
+
+            void ctl.playState('freeSpins'); // a resumed game, already in free spins
+
+            expect(hero.__setAnimationCalls).toHaveLength(2);
+            expect(entryOf(LOOP)).toBe(loop);
+            expect(loop.trackTime).toBe(1.5);
+            expect(entryOf(ENTER)).toBe(enter);
+            expect(enter.trackTime).toBe(0.4);
+
+            await vi.runAllTimersAsync();
+        });
+
+        it('still restarts them when asked to', async () => {
+            const { hero, ctl, entryOf } = freeSpins();
+
+            void ctl.playState('freeSpins');
+            const loop = entryOf(LOOP);
+
+            void ctl.playState('freeSpins', { restart: true });
+
+            expect(hero.__setAnimationCalls).toHaveLength(4);
+            expect(entryOf(LOOP)).not.toBe(loop);
+
+            await vi.runAllTimersAsync();
+        });
+
+        it('replays a loop whose track moved on behind the registry, and a paused one', async () => {
+            const { hero, ctl, entryOf } = freeSpins();
+
+            void ctl.playState('freeSpins');
+            hero.state.clearTracks(); // Spine's own mixing, or a game's bare clear
+            void ctl.playState('freeSpins');
+            expect(hero.__setAnimationCalls).toHaveLength(4);
+
+            const loop = entryOf(LOOP);
+            ctl.pause('hero', LOOP);
+            void ctl.play('hero', LOOP); // how a paused loop gets going again
+            expect(entryOf(LOOP)).not.toBe(loop);
+            expect(entryOf(LOOP).timeScale).toBe(1);
+
+            await vi.runAllTimersAsync();
+        });
+    });
+
     it('playState dispatches to all spines that have an animation in that state', async () => {
         const hero = makeHero();
         const enemy = makeHero();
@@ -771,6 +893,98 @@ describe('AnimationsController – playback', () => {
         expect(hero.__setupPoseCount).toBeGreaterThan(0);
     });
 
+    describe('activeStates', () => {
+        const scene = () => {
+            const hero = createFakeSpine({
+                animations: [
+                    { name: 'state_init/enter', duration: 1 },
+                    { name: 'state_landscape/wide', duration: 1, poses: ['bone:frame'] },
+                    { name: 'state_portrait/tall', duration: 1, poses: ['bone:frame'] },
+                    { name: 'state_idle/breathe_loop', duration: 1, poses: ['bone:chest'] },
+                    { name: 'state_freeSpins/ambience_loop', duration: 2, poses: ['bone:fx'] },
+                    { name: 'state_overlay/show', duration: 0.5, poses: ['slot:overlay'] },
+                ],
+            });
+            const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero }));
+            ctl.registerSpine('hero', hero as never);
+
+            return ctl;
+        };
+
+        it('lists the states played and not stopped since, oldest first, a replay moved last', async () => {
+            const ctl = scene();
+
+            void ctl.playState('idle');
+            void ctl.playState('freeSpins');
+            void ctl.playState('overlay');
+            void ctl.stopState('overlay', false);
+            void ctl.playState('idle');
+
+            expect(ctl.activeStates()).toEqual(['freeSpins', 'idle']);
+
+            await vi.runAllTimersAsync();
+        });
+
+        it('keeps a state whose one-shots finished: it is still what the scene was told to be in', async () => {
+            const ctl = scene();
+
+            void ctl.playState('overlay');
+            await vi.runAllTimersAsync();
+
+            expect(ctl.activeStates()).toEqual(['overlay']);
+        });
+
+        it("leaves out the layout's own states unless asked for them", async () => {
+            const ctl = scene();
+
+            void ctl.playState('init');
+            void ctl.playState('landscape');
+            void ctl.playState('idle');
+            void ctl.playState('portrait');
+
+            expect(ctl.activeStates()).toEqual(['idle']);
+            expect(ctl.activeStates({ builtIn: true })).toEqual(['init', 'landscape', 'idle', 'portrait']);
+
+            await vi.runAllTimersAsync();
+        });
+
+        it('ignores a state no skeleton authors, and empties on stopAll and clear', async () => {
+            const ctl = scene();
+
+            void ctl.playState('nothingLikeIt');
+            void ctl.playState('idle');
+            expect(ctl.activeStates()).toEqual(['idle']);
+
+            ctl.stopAll();
+            expect(ctl.activeStates()).toEqual([]);
+
+            void ctl.playState('idle');
+            ctl.clear();
+            expect(ctl.activeStates()).toEqual([]);
+
+            await vi.runAllTimersAsync();
+        });
+    });
+
+    it('clear keeps the game listeners when asked to, and drops them by default', async () => {
+        const hero = makeHero();
+        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero }));
+        ctl.registerSpine('hero', hero as never);
+        const heard: string[] = [];
+        ctl.addEventListener('spin_click', () => heard.push('spin'));
+
+        ctl.clear({ keepListeners: true });
+        ctl.registerSpine('hero', hero as never); // the rebuilt scene
+        void ctl.playEvent('spin_click', 'hero');
+        expect(heard).toEqual(['spin']);
+
+        ctl.clear();
+        void ctl.playEvent('spin_click', 'hero');
+        expect(heard).toEqual(['spin']);
+
+        await vi.runAllTimersAsync();
+    });
+
     it('clear empties all internal maps', async () => {
         const hero = makeHero();
         const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero }));
@@ -785,6 +999,29 @@ describe('AnimationsController – playback', () => {
         expect(ctl.getActive()).toEqual([]);
         expect(ctl.getLooping()).toEqual([]);
         expect(ctl.speed).toBe(1);
+    });
+});
+
+describe('AnimationsController – clear', () => {
+    beforeEach(() => vi.useFakeTimers());
+    afterEach(() => vi.useRealTimers());
+
+    it('resolves every play() still waiting on its animation, and holds no timer for it', async () => {
+        const hero = makeHero();
+        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero }));
+        ctl.registerSpine('hero', hero as never);
+
+        let settled = false;
+        void ctl.play('hero', 'state_idle/breathe').then(() => {
+            settled = true;
+        });
+
+        ctl.clear();
+        await vi.advanceTimersByTimeAsync(0);
+
+        expect(settled).toBe(true);
+        expect(vi.getTimerCount()).toBe(0);
+        expect(ctl.getActive()).toEqual([]);
     });
 });
 

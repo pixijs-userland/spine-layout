@@ -7,7 +7,7 @@ import type {
     EngineTypes,
     SpineLike,
 } from '../../src/engine/Engine';
-import type { SkeletonDataLike } from '../../src/engine/runtime';
+import type { SkeletonDataLike, SkinLike } from '../../src/engine/runtime';
 
 /**
  * What each engine reads the contract fixtures from — the same skeleton, exported for the
@@ -242,6 +242,20 @@ export function engineContract(name: string, load: () => Promise<Engine>) {
 
                 expect(polygon).toHaveLength(8);
                 polygon!.forEach((value) => expect(Number.isFinite(value)).toBe(true));
+            });
+
+            it('outlines a bounding box as the polygon drawn in its bone, y the way a slot object runs', async () => {
+                await setUp();
+                const spine = create();
+                const slot = spine.skeleton.findSlot('slot_b')!;
+                const skin = spine.skeleton.data.defaultSkin as SkinLike & {
+                    getAttachment(slotIndex: number, name: string): unknown;
+                };
+                const box = skin.getAttachment(slot.data.index, 'hit');
+
+                expect(engine.spine.hitPolygon(slot, box)).toEqual([
+                    10, -20, 110, -20, 110, -80, 10, -80,
+                ]);
             });
 
             it('finds the image of a region on its page', async () => {
