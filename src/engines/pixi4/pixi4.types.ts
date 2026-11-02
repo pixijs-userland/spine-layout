@@ -303,6 +303,9 @@ export interface Spine38Timeline {
     transformConstraintIndex?: number;
     pathConstraintIndex?: number;
     attachment?: { id: number };
+    frames?: ArrayLike<number>;
+    attachmentNames?: (string | null)[];
+    drawOrders?: (number[] | null)[];
 }
 
 export interface Spine38Animation extends AnimationLike {

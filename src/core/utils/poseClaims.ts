@@ -1,4 +1,4 @@
-import type { PoseClaimEntry } from '../../engine/Engine';
+import type { PoseClaimEntry, PoseHold } from '../../engine/Engine';
 import type { AnimationLike, SkeletonDataLike } from '../../engine/runtime';
 
 /**
@@ -12,14 +12,28 @@ import type { AnimationLike, SkeletonDataLike } from '../../engine/runtime';
  */
 export type PoseClaim = ReadonlySet<string>;
 
-/** An animation's claim, and what each of its properties belongs to — for putting them back. */
+/**
+ * An animation's claim, what each of its properties belongs to — for putting them back — and
+ * the value it holds a property at throughout, where it keys only one.
+ */
 export type AnimationClaim = {
     ids: PoseClaim;
+    holds: ReadonlyMap<string, PoseHold>;
     entries: Exclude<PoseClaimEntry, { kind: 'event' }>[];
 };
 
 /** An animation with no pose timelines at all — a bare event trigger. */
-export const EMPTY_CLAIM: PoseClaim = new Set<string>();
+export const EMPTY_CLAIM: AnimationClaim = {
+    ids: new Set<string>(),
+    holds: new Map(),
+    entries: [],
+};
+
+/**
+ * One step of an 8-bit colour channel. Exports quantise colours to it, so one animation can
+ * key an alpha of `fe` where another keys `ff` for the same intent.
+ */
+const HOLD_TOLERANCE = 1 / 255 + 1e-6;
 
 /**
  * Claims are a property of the skeleton *data*, not of an instance, so they are computed
@@ -38,12 +52,33 @@ function claimOf(
     classify: (animation: AnimationLike) => PoseClaimEntry[],
 ): AnimationClaim {
     const byId = new Map<string, AnimationClaim['entries'][number]>();
+    const holds = new Map<string, PoseHold>();
+    const varies = new Set<string>();
 
     classify(animation).forEach((entry) => {
-        if (entry.kind !== 'event' && !byId.has(entry.id)) byId.set(entry.id, entry);
-    });
+        if (entry.kind === 'event') return;
+        if (!byId.has(entry.id)) byId.set(entry.id, entry);
 
-    return { ids: new Set(byId.keys()), entries: [...byId.values()] };
+        // two timelines on one property hold it only if both hold the same value
+        const held = holds.get(entry.id);
+        if (!entry.hold || (held && !sameHold(held, entry.hold))) varies.add(entry.id);
+        else holds.set(entry.id, entry.hold);
+    });
+    varies.forEach((id) => holds.delete(id));
+
+    return { ids: new Set(byId.keys()), holds, entries: [...byId.values()] };
+}
+
+function sameHold(a: PoseHold | undefined, b: PoseHold | undefined): boolean {
+    if (!a || !b || a.length !== b.length) return false;
+
+    return a.every((value, i) => {
+        const other = b[i];
+        if (typeof value === 'number' && typeof other === 'number') {
+            return Math.abs(value - other) <= HOLD_TOLERANCE;
+        }
+        return value === other;
+    });
 }
 
 /** Every animation's claim, keyed by animation name. */
@@ -65,17 +100,20 @@ export function poseClaims(
 
 /**
  * Whether two animations compete for the same skeleton properties, i.e. whether one playing
- * above the other would override it.
+ * above the other would override it. A property both hold at the same value is no contest:
+ * the pose is the same whichever applies last.
  *
  * Two animations that pose *nothing* are treated as colliding: neither has anything to
  * protect, and letting each take a fresh track would grow the track list for the life of
  * the session (a bet-change event animation plays on every press).
  */
-export function claimsCollide(a: PoseClaim, b: PoseClaim): boolean {
-    if (a.size === 0 || b.size === 0) return a.size === 0 && b.size === 0;
+export function claimsCollide(a: AnimationClaim, b: AnimationClaim): boolean {
+    if (a.ids.size === 0 || b.ids.size === 0) return a.ids.size === 0 && b.ids.size === 0;
 
-    const [small, large] = a.size <= b.size ? [a, b] : [b, a];
-    for (const id of small) if (large.has(id)) return true;
+    const [small, large] = a.ids.size <= b.ids.size ? [a, b] : [b, a];
+    for (const id of small.ids) {
+        if (large.ids.has(id) && !sameHold(small.holds.get(id), large.holds.get(id))) return true;
+    }
 
     return false;
 }

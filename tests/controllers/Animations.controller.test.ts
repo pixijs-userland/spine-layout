@@ -5,17 +5,21 @@ vi.mock('../../src/core/controllers/Sounds.controller', () => ({
 }));
 
 import {
+    AlphaTimeline,
     Animation,
     AnimationState,
     AnimationStateData,
+    AttachmentTimeline,
     BoneData,
     Property,
     RotateTimeline,
     Skeleton,
     SkeletonData,
+    SlotData,
     type Spine,
 } from '@esotericsoftware/spine-pixi-v8';
 import { AnimationsController } from '../../src/core/controllers/Animations.controller';
+import { pixi8Engine } from '../../src/engines/pixi8';
 import { sounds } from '../../src/core/controllers/Sounds.controller';
 import { asSpineMap, createFakeSpine, fakeEngine, type FakeSpine } from '../helpers/fakeEngine';
 import { log } from '../../src/core/utils/Log';
@@ -287,6 +291,73 @@ describe('AnimationsController – track allocation', () => {
         expect(spine.__setAnimationCalls.map((c) => c.track)).toEqual([0, 0]);
 
         await vi.runAllTimersAsync();
+    });
+});
+
+describe('AnimationsController – animations that hold the same value', () => {
+    /**
+     * The f2p slingshot: `charge1` shows the `sling` slot that carries the ball, and the
+     * tutorial played over it keys the spare `ball1` the same way `charge1` does. Exports key
+     * every slot like that, so the shared key decides nothing about which animation wins.
+     */
+    function slingshot(tutorialBall: string) {
+        const data = new SkeletonData();
+        const root = new BoneData(0, 'root', null);
+        data.bones.push(root);
+
+        const sling = new SlotData(0, 'sling', root);
+        const hand = new SlotData(2, 'hand', root);
+        sling.setupPose.color.a = 0;
+        hand.setupPose.color.a = 0;
+        data.slots.push(sling, new SlotData(1, 'ball1', root), hand);
+
+        const slingShown = new AlphaTimeline(1, 0, 0);
+        slingShown.setFrame(0, 0, 1);
+        const chargeBall = new AttachmentTimeline(1, 1);
+        chargeBall.setFrame(0, 0, 'ball');
+        data.animations.push(new Animation('charge1', [slingShown, chargeBall], 0.5));
+
+        const handFadesIn = new AlphaTimeline(2, 0, 2);
+        handFadesIn.setFrame(0, 0, 0);
+        handFadesIn.setFrame(1, 0.5, 1);
+        const tutorialBall1 = new AttachmentTimeline(1, 1);
+        tutorialBall1.setFrame(0, 0, tutorialBall);
+        data.animations.push(new Animation('show_tutorial', [handFadesIn, tutorialBall1], 0.5));
+
+        return {
+            skeleton: new Skeleton(data),
+            state: new AnimationState(new AnimationStateData(data)),
+        } as unknown as Spine;
+    }
+
+    const running = (spine: Spine) =>
+        spine.state.tracks.map((entry) => entry?.animation?.name ?? null).filter(Boolean);
+
+    function startRound(spine: Spine) {
+        const ctl = new AnimationsController(pixi8Engine, new Map([['slingshot', spine]]));
+        ctl.registerSpine('slingshot', spine);
+
+        void ctl.playByName('charge1', true);
+        void ctl.playByName('show_tutorial');
+        spine.state.update(0.1);
+        spine.state.apply(spine.skeleton);
+    }
+
+    it('keeps the charge applying under a tutorial that only holds what the charge holds', () => {
+        const spine = slingshot('ball');
+
+        startRound(spine);
+
+        expect(running(spine)).toEqual(['charge1', 'show_tutorial']);
+        expect(spine.skeleton.findSlot('sling')!.appliedPose.color.a).toBe(1);
+    });
+
+    it('still hands the track over when the tutorial holds a value of its own', () => {
+        const spine = slingshot('ball_spent');
+
+        startRound(spine);
+
+        expect(running(spine)).toEqual(['show_tutorial']);
     });
 });
 

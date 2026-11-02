@@ -1,6 +1,8 @@
 import {
     AtlasAttachmentLoader,
+    AttachmentTimeline,
     BoundingBoxAttachment,
+    DrawOrderTimeline,
     MeshAttachment,
     Physics,
     Property,
@@ -16,9 +18,10 @@ import {
     type SkeletonData,
     type Slot,
     type TextureAtlasRegion,
+    type Timeline,
 } from '@esotericsoftware/spine-pixi-v8';
 import { Assets, Cache, type Container, type Texture } from 'pixi.js';
-import type { BonePose, PoseClaimEntry, SpinePort } from '../../engine/Engine';
+import type { BonePose, PoseClaimEntry, PoseHold, SpinePort } from '../../engine/Engine';
 import {
     isBinarySkeleton,
     type AnimationLike,
@@ -28,6 +31,7 @@ import {
     type SlotLike,
 } from '../../engine/runtime';
 import { createHookSet } from '../shared/hookSet';
+import { framesHold, listHold } from '../shared/poseHold';
 import type { Pixi8Types } from './types';
 
 /**
@@ -81,6 +85,17 @@ export function classifyPropertyId(id: string): PoseClaimEntry {
     }
 
     return { kind: 'constraint', index, id };
+}
+
+// Attachment and draw-order timelines keep their values beside `frames`, which holds only times.
+// A folder draw order and a deform are left without one: they compete as before.
+function holdOf(timeline: Timeline): PoseHold | undefined {
+    if (timeline instanceof AttachmentTimeline) return listHold(timeline.attachmentNames);
+    if (timeline instanceof DrawOrderTimeline) {
+        return listHold((timeline as unknown as { drawOrders: (number[] | null)[] }).drawOrders);
+    }
+
+    return framesHold(timeline.frames, timeline.getFrameEntries());
 }
 
 type SpineUpdateInternals = { _updateAndApplyState(time: number): void };
@@ -206,9 +221,14 @@ export const spinePort: SpinePort<Pixi8Types> = {
     drawOrder: (skeleton) => skeletonOf(skeleton).drawOrder.appliedPose,
 
     claimOf: (animation: AnimationLike) =>
-        (animation as Animation).timelines.flatMap((timeline) =>
-            (timeline.propertyIds ?? []).map(classifyPropertyId),
-        ),
+        (animation as Animation).timelines.flatMap((timeline) => {
+            const hold = holdOf(timeline);
+
+            return (timeline.propertyIds ?? []).map((id) => {
+                const entry = classifyPropertyId(id);
+                return hold && entry.kind !== 'event' ? { ...entry, hold } : entry;
+            });
+        }),
 
     beforeWorldTransforms: beforeWorldTransformHooks,
     onUpdate: updateHooks,

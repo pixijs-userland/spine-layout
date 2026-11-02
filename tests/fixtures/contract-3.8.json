@@ -34,6 +34,21 @@
         "hit": {}
     },
     "animations": {
+        "hold": {
+            "slots": {
+                "slot_a": {
+                    "attachment": [{ "name": "square" }, { "time": 0.5, "name": "square" }]
+                }
+            },
+            "bones": {
+                "bone_a": {
+                    "translate": [
+                        { "x": 5, "y": 0 },
+                        { "time": 1, "x": 5, "y": 0 }
+                    ]
+                }
+            }
+        },
         "move": {
             "slots": {
                 "slot_b": {
