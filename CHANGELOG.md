@@ -1,5 +1,85 @@
 # @pixijs-userland/spine-layout
 
+## 0.5.0
+
+### Minor Changes
+
+- 812cec3: Engine-agnostic core, and a PIXI v4 / Spine 3.8 engine
+
+  `SpineLayout` and its controllers no longer import `pixi.js` or a Spine runtime; they render
+  through an `Engine` of five ports (`spine`, `display`, `text`, `assets`, `particles`). The
+  default entry is the pixi8 engine and behaves as before. Two entries are new:
+
+  - `@pixijs-userland/spine-layout/core` — `SpineLayoutCore`, the controllers and the `Engine`
+    types, with no rendering stack.
+  - `@pixijs-userland/spine-layout/pixi4` — `createPixi4Engine(PIXI, { renderer })`, which runs the
+    layout on PIXI v4.8.9 + pixi-spine 1.6 (spine-ts 3.8) + pixi-particles 4.3.0 handed in as
+    `window.PIXI`.
+
+  Also new: a `ParticlesController` (`layout.particles`) that hangs an emitter off every
+  `particles_<key>` slot, configured by `settings/particles.json` and started by skeleton events
+  (pixi4 only for now; pixi8 warns once and no-ops), and `skeletonVersion()`, which reads the Spine
+  version of a `.json` or `.skel`. `pixi.js` and `@esotericsoftware/spine-pixi-v8` are now optional
+  peer dependencies.
+
+  Public type changes:
+
+  - Bone and slot position getters return `PointLike` instead of Pixi's `Point`.
+  - `SpineLayout` is no longer `instanceof`-checkable against `SpineLayoutCore` subclasses such as
+    `MagicLayout`.
+  - `SpineInstanceData` is generic over the engine's types and defaults to pixi8.
+  - `getSlotTexture` on pixi8 cuts a rotated region turned the way the atlas packed it, upright
+    and at its own size: it was turned the other way, with width and height swapped.
+
+- e80163e: `layout.destroy()` releases everything the layout built, and the `sounds` singleton has a `dispose()`.
+
+  Spines are destroyed with their children, so the text nodes (and their canvas textures), button
+  overlays and particle containers the layout made go with them; a mount → play → destroy cycle
+  leaves the window listeners, the shared ticker and the text count where they were. What a game
+  hung on a slot through `addSlotChild` stays the game's: it is detached intact before the spines
+  go (`scene.releaseSlotChildren()` does the same by hand). A `play()` still waiting on its
+  animation resolves on destroy instead of holding the layout until its timer fires.
+
+  `sounds.dispose()` unloads every `Howl`, empties the caches and takes the window listeners off,
+  and `destroy()` calls it on the layout that ran `sounds.init` — the one built from a manifest. The
+  listeners and the global mute are now installed on the first `init` rather than when the module is
+  imported.
+
+  The debug log keeps the last 500 entries while disabled instead of every one for the page's
+  lifetime, and a row added to a label nothing opened — every animation played, every skeleton
+  event — is written straight through instead of collecting in a table nothing closes.
+
+### Patch Changes
+
+- e80163e: A `button_<key>` on a bounding box, `playState` that leaves a running state alone, spines that
+  know their id, and what a scene rebuilt in place needs
+
+  - A bounding box attachment is a button's hit area, as a region's quad and a mesh's hull are: a
+    skeleton that packs no image — a root of nothing but bones, the engine's own buttons — draws
+    its buttons as bounding boxes, and such a button used to get the overlay's one-pixel texture
+    for a hit area, so a "press anywhere" box over the whole screen answered nothing.
+  - `playState` on a state the spine already sits in is now a no-op: an animation still running
+    on its track, a loop included, is left where it is instead of being set again from frame 0.
+    Only `activeAnimations` was checked before, so a resumed game re-entering its feature state
+    snapped every ambience loop back to its first frame. `{ restart: true }` still starts over,
+    a loop whose track moved on behind the registry still replays, and so does a paused one.
+  - Every instance the layout builds, a multiplied one and a clone included, carries its id as
+    its `label` (`name` on PIXI v4), and `layout.spine.idOf(spine)` answers the registry id of a
+    `Spine` a consumer holds.
+  - `scene.releaseSlotChildren()` returns `{ spineID, slotName, child }` for each object instead
+    of the bare container, so a rebuild can hang it on the same slot of the new scene without
+    reading the runtime's own tables.
+  - `layout.reset({ keepListeners: true })` leaves the game's `animations.addEventListener`
+    subscriptions registered across the rebuild; a plain `reset()` drops them as before.
+  - `animations.activeStates()` lists the states `playState` played and nothing has stopped
+    since, oldest first, a replay moved last; the layout's own `init`, `landscape` and `portrait`
+    are left out unless `{ builtIn: true }` asks for them.
+
+- e80163e: A skeleton with no atlas is also picked up from a folder of its own name beside the atlases'
+  own folders — `spine/root/root.json` next to `spine/bg/bg.atlas`, the layout of a build that
+  packs each skeleton in a folder of its own. Before, only a folder that itself held an atlas
+  counted, so such a root was never instanced.
+
 ## 0.4.1
 
 ### Patch Changes
