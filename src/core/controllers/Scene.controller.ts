@@ -1,6 +1,6 @@
 import type { Engine, EngineTypes, PointerEventLike } from '../../engine/Engine';
 import type { BoneLike, SkinEntryLike, SlotLike } from '../../engine/runtime';
-import type { SpineID, SpineLayoutOptions } from '../config/types';
+import type { ReleasedSlotChild, SpineID, SpineLayoutOptions } from '../config/types';
 import { parcePointers } from '../config/parcePointers';
 import { LOG } from '../config/logs';
 import { log } from '../utils/Log';
@@ -52,6 +52,9 @@ export class SceneController<T extends EngineTypes = EngineTypes> {
     private buttons: Map<string, T['Container']> = new Map();
     /** Every wired button, by key — what lets {@link press} fire one without a pointer. */
     private buttonGroups: Map<string, ButtonGroup<T['Container']>[]> = new Map();
+    /** What {@link addSlotChild} hung where — the caller's objects, handed back on clear with their place. */
+    private slotChildren: Map<T['Container'], ReleasedSlotChild<T['Container']> & { spine: T['Spine'] }> =
+        new Map();
 
     constructor(
         private engine: Engine<T>,
@@ -458,7 +461,14 @@ export class SceneController<T extends EngineTypes = EngineTypes> {
         this.eachSpine(only, (spine) => this.engine.spine.syncSlotObjectsWithDrawOrder(spine));
     }
 
-    /** Manually attaches any Pixi.js `Container` into a named slot on a specific spine. */
+    /**
+     * Manually attaches any Pixi.js `Container` into a named slot on a specific spine.
+     *
+     * The child stays the caller's: the layout never destroys it. {@link releaseSlotChildren}
+     * — which `clear()` and the layout's `destroy()` run — detaches it intact, so a game can
+     * hang its own objects off bones and keep them across a teardown. A registered spine of
+     * the layout's own is the exception: it is the layout's, wherever it is hung.
+     */
     addSlotChild(spineID: string, slotName: string, child: T['Container']) {
         const spine = this.spines.get(spineID);
         if (!spine) {
@@ -474,6 +484,34 @@ export class SceneController<T extends EngineTypes = EngineTypes> {
 
         log.add(LOG.ADD_SLOT_CHILD, spineID, `${child} -> "${slotName}"`);
         this.engine.spine.attachSlotObject(spine, slot.name, child);
+
+        if (!this.isRegisteredSpine(child)) {
+            this.slotChildren.set(child, { spineID, slotName: slot.name, child, spine });
+        }
+    }
+
+    /**
+     * Detaches every child {@link addSlotChild} added, without destroying any of them, and
+     * returns each with the spine and slot it hung on — the way the caller's objects come back
+     * before the spines go, and what a rebuild hangs on the same slots of the new scene.
+     */
+    releaseSlotChildren(): ReleasedSlotChild<T['Container']>[] {
+        const released = [...this.slotChildren.values()].map(({ spineID, slotName, child }) => ({
+            spineID,
+            slotName,
+            child,
+        }));
+
+        this.slotChildren.forEach(({ spine, child }) => {
+            this.engine.spine.detachSlotObject(spine, child);
+        });
+        this.slotChildren.clear();
+
+        return released;
+    }
+
+    private isRegisteredSpine(object: T['Container']): boolean {
+        return this.findRegisteredSpine(object) !== undefined;
     }
 
     /**
@@ -506,6 +544,7 @@ export class SceneController<T extends EngineTypes = EngineTypes> {
     }
 
     clear() {
+        this.releaseSlotChildren();
         this.buttons.clear();
         this.buttonGroups.clear();
     }

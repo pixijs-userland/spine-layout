@@ -1,5 +1,6 @@
 import {
     AtlasAttachmentLoader,
+    BoundingBoxAttachment,
     MeshAttachment,
     Physics,
     Property,
@@ -219,6 +220,10 @@ export const spinePort: SpinePort<Pixi8Types> = {
             vertices = attachment.getOffsets(slotOf(slot).pose);
         } else if (attachment instanceof MeshAttachment && !attachment.bones) {
             vertices = Array.from(attachment.vertices).slice(0, attachment.hullLength);
+        } else if (attachment instanceof BoundingBoxAttachment && !attachment.bones) {
+            // a bounding box is a polygon and nothing else: the shape of a button on a skeleton
+            // that draws no image, whose atlas the attachment loader never consults for one
+            vertices = Array.from(attachment.vertices).slice(0, attachment.worldVerticesLength);
         }
         if (!vertices?.length) return undefined;
 

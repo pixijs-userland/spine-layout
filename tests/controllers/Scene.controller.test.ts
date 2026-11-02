@@ -1,6 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Container, Polygon, Sprite, Texture } from 'pixi.js';
-import { RegionAttachment, Sequence, type TextureRegion } from '@esotericsoftware/spine-pixi-v8';
+import {
+    BoundingBoxAttachment,
+    RegionAttachment,
+    Sequence,
+    type TextureRegion,
+} from '@esotericsoftware/spine-pixi-v8';
 
 import { SceneController } from '../../src/core/controllers/Scene.controller';
 import { AnimationsController } from '../../src/core/controllers/Animations.controller';
@@ -56,6 +61,14 @@ function makeRegion(): RegionAttachment {
     region.height = 30;
     region.updateSequence();
     return region;
+}
+
+/** A 100×60 box drawn up and right of its bone — the button of a skeleton that packs no image. */
+function makeBox(): BoundingBoxAttachment {
+    const box = new BoundingBoxAttachment('hit');
+    box.worldVerticesLength = 8;
+    box.vertices = [10, 20, 110, 20, 110, 80, 10, 80];
+    return box;
 }
 
 /** What a view answers a hit-test with — `undefined` for a plain container, which has no answer. */
@@ -231,6 +244,31 @@ describe('SceneController – activateButtonBones', () => {
         expect(hitArea).toBeInstanceOf(Polygon);
         expect(hitArea.contains(10, -20)).toBe(true);
         expect(hitArea.contains(10, 20)).toBe(false);
+    });
+
+    it('takes a bounding box as the hit area, so a button on a skeleton with no image answers over its polygon', () => {
+        const root = createFakeSpine({
+            slots: [{ name: 'button_anywhere', attachment: makeBox() }],
+            bones: [{ name: 'button_anywhere' }],
+        });
+        const spines = asSpineMap({ root });
+        const rootAnimations = new AnimationsController(fakeEngine, spines);
+        const scene = new SceneController(fakeEngine, spines,
+            new TextsController(fakeEngine, spines),
+            rootAnimations,
+            new SpineController(fakeEngine, spines, rootAnimations),
+        );
+        scene.activateButtonBones();
+
+        const sprite = root.__slotChildren.get('button_anywhere')?.[0] as Sprite;
+        const hitArea = sprite.hitArea as Polygon;
+
+        expect(hitArea).toBeInstanceOf(Polygon);
+        expect(hitArea.contains(50, -50)).toBe(true);
+        expect(hitArea.contains(109, -79)).toBe(true);
+        expect(hitArea.contains(50, 50)).toBe(false);
+        expect(hitArea.contains(50, -10)).toBe(false);
+        expect(hitArea.contains(5, -50)).toBe(false);
     });
 
     it('keeps the overlay invisible whatever alpha the runtime writes, and takes its mask', () => {
@@ -831,6 +869,53 @@ describe('SceneController – addSlotChild & clear', () => {
 
         scene.addSlotChild('hero', 'missing', new Container());
         expect(err).toHaveBeenCalledWith('Slot "missing" not found', expect.anything());
+    });
+
+    it('clear hands an addSlotChild object back detached and intact, but keeps a registered spine', () => {
+        const spine = createFakeSpine({ slots: [{ name: 'hook' }, { name: 'spine_popup' }] });
+        const popup = createFakeSpine();
+        const spines = asSpineMap({ hero: spine, popup });
+        const animations = new AnimationsController(fakeEngine, spines);
+        const texts = new TextsController(fakeEngine, spines);
+        const spineCtl = new SpineController(fakeEngine, spines, animations);
+        const scene = new SceneController(fakeEngine, spines, texts, animations, spineCtl);
+
+        const own = new Container();
+        scene.addSlotChild('hero', 'hook', own);
+        scene.addSlotChild('hero', 'spine_popup', popup);
+
+        scene.clear();
+
+        expect(own.destroyed).toBe(false);
+        expect(spine.__slotChildren.get('hook')).toBeUndefined();
+        expect(spine.__slotChildren.get('spine_popup')?.[0]).toBe(popup);
+    });
+
+    it('releaseSlotChildren hands each object back with the spine and slot it hung on', () => {
+        const hero = createFakeSpine({ slots: [{ name: 'hook' }, { name: 'spine_popup' }] });
+        const bg = createFakeSpine({ slots: [{ name: 'reels' }] });
+        const popup = createFakeSpine();
+        const spines = asSpineMap({ hero, bg, popup });
+        const animations = new AnimationsController(fakeEngine, spines);
+        const scene = new SceneController(fakeEngine, spines,
+            new TextsController(fakeEngine, spines),
+            animations,
+            new SpineController(fakeEngine, spines, animations),
+        );
+        const own = new Container();
+        const reels = new Container();
+
+        scene.addSlotChild('hero', 'hook', own);
+        scene.addSlotChild('bg', 'reels', reels);
+        scene.addSlotChild('hero', 'spine_popup', popup); // the layout's own, not handed back
+
+        expect(scene.releaseSlotChildren()).toEqual([
+            { spineID: 'hero', slotName: 'hook', child: own },
+            { spineID: 'bg', slotName: 'reels', child: reels },
+        ]);
+        expect(hero.__slotChildren.get('hook')).toBeUndefined();
+        expect(bg.__slotChildren.get('reels')).toBeUndefined();
+        expect(scene.releaseSlotChildren()).toEqual([]);
     });
 
     it('clear drops the internal button registry', () => {

@@ -52,10 +52,12 @@ Returns the instance — an already-built one included — or `undefined` when n
 ### reset
 
 ```ts
-reset();
+reset(options?: { keepListeners?: boolean });
 ```
 
-Destroys all spine instances, clears controller state, and removes all children from the container.
+Takes the scene down and leaves the layout empty, ready to build again. The spines are destroyed with their children — the text nodes, button overlays and particle containers the layout built — and the controllers, listeners and ticker subscriptions are cleared. What the game hung on a slot with `scene.addSlotChild()` is detached intact first, not destroyed.
+
+`keepListeners` leaves the game's `animations.addEventListener` subscriptions registered, so a scene rebuilt in place fires its events at the same subscribers; by default they go with everything else.
 
 ---
 
@@ -65,7 +67,7 @@ Destroys all spine instances, clears controller state, and removes all children 
 destroy();
 ```
 
-Calls `reset()` then the parent Pixi.js `Container.destroy()`.
+Calls `reset()`, then `sounds.dispose()` when this layout was the one that ran `sounds.init` (a layout built from a manifest), then the parent Pixi.js `Container.destroy()`.
 
 ---
 

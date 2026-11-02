@@ -11,6 +11,7 @@ import type {
     Pixi4Types,
     Spine38Animation,
     Spine38Bone,
+    Spine38BoundingBoxAttachment,
     Spine38MeshAttachment,
     Spine38RegionAttachment,
     Spine38Skeleton,
@@ -279,6 +280,10 @@ export function createSpinePort(
             } else if (attachment instanceof core.MeshAttachment) {
                 const mesh = attachment as Spine38MeshAttachment;
                 if (!mesh.bones) vertices = Array.from(mesh.vertices).slice(0, mesh.hullLength);
+            } else if (attachment instanceof core.BoundingBoxAttachment) {
+                const box = attachment as Spine38BoundingBoxAttachment;
+                if (!box.bones)
+                    vertices = Array.from(box.vertices).slice(0, box.worldVerticesLength);
             }
             if (!vertices?.length) return undefined;
 

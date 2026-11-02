@@ -77,6 +77,7 @@ export class Sounds {
     private onActivationCallbacks: (() => void)[] = [];
     private onReadyCallbacks: (() => void)[] = [];
     private settings: SoundSettings;
+    private listening = false;
     activated = false;
 
     constructor(settings: Partial<SoundSettings> = {}) {
@@ -91,17 +92,14 @@ export class Sounds {
             fxLevel: 1,
             ...settings,
         };
-
-        window.addEventListener('visibilitychange', () => this.onVisibilityChange());
-        window.addEventListener('pointerdown', () => this.onUserInteraction(), { once: true });
-
-        this.mute();
     }
 
     init(pixiManifest?: ManifestLike, settings?: Partial<SoundSettings>) {
         if (settings) {
             this.settings = { ...this.settings, ...settings };
         }
+
+        this.listen();
 
         if (pixiManifest) {
             this.extractSoundNames(pixiManifest);
@@ -545,13 +543,61 @@ export class Sounds {
         else this.unmute();
     }
 
-    private onVisibilityChange() {
+    /**
+     * Releases everything `init` and playback built up — every `Howl` is unloaded, the window
+     * listeners come off, the maps are emptied — and leaves the instance ready for another
+     * `init`. The module-level `sounds` is a singleton, so this is what a layout being torn down
+     * calls rather than letting the page's sound cache outlive it.
+     */
+    dispose() {
+        this.sounds.forEach((sound) => sound.unload());
+        this.sounds.clear();
+        this.fxSounds.clear();
+        this.musicSounds.clear();
+        this.lastFXPlayedAt.clear();
+        this.soundNames.clear();
+        this.activeMusic = null;
+        this.onActivationCallbacks = [];
+        this.onReadyCallbacks = [];
+        this.initialized = false;
+        this.unlisten();
+    }
+
+    /**
+     * Installed on the first `init` rather than at construction: the singleton is built when the
+     * module is imported, and a page that imports the library is not yet a page that plays sound.
+     * Muted from here too, for the same reason — nothing plays before `init`, and a layout built
+     * before the first interaction must start silent (see `_playFX`).
+     */
+    private listen() {
+        if (this.listening) return;
+
+        this.listening = true;
+        window.addEventListener('visibilitychange', this.onVisibilityChange);
+        if (!this.userInteraction) {
+            window.addEventListener('pointerdown', this.onFirstInteraction, { once: true });
+        }
+
+        this.mute();
+    }
+
+    private unlisten() {
+        if (!this.listening) return;
+
+        this.listening = false;
+        window.removeEventListener('visibilitychange', this.onVisibilityChange);
+        window.removeEventListener('pointerdown', this.onFirstInteraction);
+    }
+
+    private onFirstInteraction = () => this.onUserInteraction();
+
+    private onVisibilityChange = () => {
         if (document.hidden) {
             this.mute();
         } else if (!this.settings.muted) {
             this.unmute();
         }
-    }
+    };
 
     private requestKey(fx: string | string[]): string {
         return Array.isArray(fx) ? fx.join('|') : fx;

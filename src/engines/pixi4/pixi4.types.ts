@@ -242,6 +242,13 @@ export interface Spine38MeshAttachment {
     bones: number[] | null;
 }
 
+export interface Spine38BoundingBoxAttachment {
+    name: string;
+    vertices: ArrayLike<number>;
+    worldVerticesLength: number;
+    bones: number[] | null;
+}
+
 export interface Spine38Slot extends SlotLike {
     bone: Spine38Bone;
     attachment: unknown;
@@ -369,6 +376,7 @@ export interface Spine38Core {
     SkeletonBinary: new (attachmentLoader: object) => Spine38SkeletonReader<Uint8Array>;
     RegionAttachment: RuntimeClass;
     MeshAttachment: RuntimeClass;
+    BoundingBoxAttachment: RuntimeClass;
     ClippingAttachment: RuntimeClass;
     TimelineType: { event: number; drawOrder: number; color: number };
     TwoColorTimeline: RuntimeClass;
