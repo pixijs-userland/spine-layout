@@ -1,10 +1,14 @@
 import {
     AtlasAttachmentLoader,
+    AttachmentTimeline,
     BoundingBoxAttachment,
+    CurveTimeline,
+    DrawOrderTimeline,
     MeshAttachment,
     Physics,
     Property,
     RegionAttachment,
+    SequenceTimeline,
     SkeletonBinary,
     SkeletonJson,
     Spine,
@@ -16,9 +20,10 @@ import {
     type SkeletonData,
     type Slot,
     type TextureAtlasRegion,
+    type Timeline,
 } from '@esotericsoftware/spine-pixi-v8';
 import { Assets, Cache, type Container, type Texture } from 'pixi.js';
-import type { BonePose, PoseClaimEntry, SpinePort } from '../../engine/Engine';
+import type { BonePose, PoseClaimEntry, PoseHold, SpinePort } from '../../engine/Engine';
 import {
     isBinarySkeleton,
     type AnimationLike,
@@ -28,6 +33,7 @@ import {
     type SlotLike,
 } from '../../engine/runtime';
 import { createHookSet } from '../shared/hookSet';
+import { framesHold, listHold } from '../shared/poseHold';
 import type { Pixi8Types } from './types';
 
 /**
@@ -81,6 +87,29 @@ export function classifyPropertyId(id: string): PoseClaimEntry {
     }
 
     return { kind: 'constraint', index, id };
+}
+
+// Attachment and draw-order timelines keep their values beside `frames`, which holds only times.
+// A bezier keeps value control points in `curves`, so equal keys can still move between them;
+// a sequence's frame shown depends on track time. Those, a folder draw order and a deform are
+// left without a hold: they compete as before.
+function holdOf(timeline: Timeline): PoseHold | undefined {
+    if (timeline instanceof AttachmentTimeline) return listHold(timeline.attachmentNames);
+    if (timeline instanceof DrawOrderTimeline) {
+        return listHold((timeline as unknown as { drawOrders: (number[] | null)[] }).drawOrders);
+    }
+    if (timeline instanceof SequenceTimeline) return undefined;
+    if (timeline instanceof CurveTimeline && hasBezier(timeline)) return undefined;
+
+    return framesHold(timeline.frames, timeline.getFrameEntries());
+}
+
+// `curves` opens with one type per frame and grows past that only for bezier segments
+function hasBezier(timeline: CurveTimeline): boolean {
+    return (
+        (timeline as unknown as { curves: ArrayLike<number> }).curves.length >
+        timeline.getFrameCount()
+    );
 }
 
 type SpineUpdateInternals = { _updateAndApplyState(time: number): void };
@@ -206,9 +235,14 @@ export const spinePort: SpinePort<Pixi8Types> = {
     drawOrder: (skeleton) => skeletonOf(skeleton).drawOrder.appliedPose,
 
     claimOf: (animation: AnimationLike) =>
-        (animation as Animation).timelines.flatMap((timeline) =>
-            (timeline.propertyIds ?? []).map(classifyPropertyId),
-        ),
+        (animation as Animation).timelines.flatMap((timeline) => {
+            const hold = holdOf(timeline);
+
+            return (timeline.propertyIds ?? []).map((id) => {
+                const entry = classifyPropertyId(id);
+                return hold && entry.kind !== 'event' ? { ...entry, hold } : entry;
+            });
+        }),
 
     beforeWorldTransforms: beforeWorldTransformHooks,
     onUpdate: updateHooks,

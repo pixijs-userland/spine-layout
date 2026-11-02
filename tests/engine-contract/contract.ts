@@ -165,6 +165,21 @@ export function engineContract(name: string, load: () => Promise<Engine>) {
             });
         });
 
+        it('reports the one value a timeline holds throughout, and none for one that changes', async () => {
+            await setUp();
+            const data = read();
+            const holds = (animation: string, kind: 'bone' | 'slot') =>
+                engine.spine
+                    .claimOf(data.findAnimation(animation)!)
+                    .flatMap((claim) => (claim.kind === kind ? [claim.hold] : []));
+
+            // 4.3 claims a translation's x and y apart, 3.8 as one property
+            expect(new Set(holds('hold', 'slot').map(String))).toEqual(new Set(['"square"']));
+            expect(new Set(holds('hold', 'bone').map(String))).toEqual(new Set(['5,0']));
+            expect(new Set(holds('move', 'slot'))).toEqual(new Set([undefined]));
+            expect(new Set(holds('move', 'bone'))).toEqual(new Set([undefined]));
+        });
+
         describe('poses', () => {
             it("puts a slot's attachment back with the slots' setup pose", async () => {
                 await setUp();

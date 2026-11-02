@@ -411,14 +411,19 @@ export class AnimationsController<T extends EngineTypes = EngineTypes> {
      */
     private allocateTrack(spineID: SpineID, spine: T['Spine'], animation: string): number {
         const claims = this.claimsOf(spine);
-        const claim = claims.get(animation)?.ids ?? EMPTY_CLAIM;
+        const claim = claims.get(animation) ?? EMPTY_CLAIM;
         const tracks = spine.state.tracks;
         const colliding: number[] = [];
 
         for (let index = 0; index < tracks.length; index++) {
             const running = tracks[index]?.animation?.name;
             if (!running) continue;
-            if (claimsCollide(claim, claims.get(running)?.ids ?? EMPTY_CLAIM)) colliding.push(index);
+            // an animation that only holds values would not collide with itself, and stack a
+            // fresh track on every replay
+            const collides =
+                running === animation ||
+                claimsCollide(claim, claims.get(running) ?? EMPTY_CLAIM);
+            if (collides) colliding.push(index);
         }
 
         const owner = colliding.pop();

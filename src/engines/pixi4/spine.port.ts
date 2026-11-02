@@ -1,6 +1,7 @@
-import type { BonePose, PointLike, PoseClaimEntry, SpinePort } from '../../engine/Engine';
+import type { BonePose, PointLike, PoseClaimEntry, PoseHold, SpinePort } from '../../engine/Engine';
 import { isBinarySkeleton, type SkeletonSource } from '../../engine/runtime';
 import { createHookSet } from '../shared/hookSet';
+import { framesHold, listHold } from '../shared/poseHold';
 import type { AssetsRegistry } from './assets.port';
 import { degreesOf } from './groupD8';
 import type {
@@ -22,6 +23,17 @@ import type {
 } from './pixi4.types';
 import type { SlotObjects } from './slotObjects';
 import { onSpineUpdate } from './updateHooks';
+
+// 3.8 stores a timeline's stride as its class's `ENTRIES`; attachment, draw-order, deform and
+// event timelines keep their values beside `frames` and have none.
+function holdOf(timeline: Spine38Timeline): PoseHold | undefined {
+    if (timeline.attachmentNames) return listHold(timeline.attachmentNames);
+    if (timeline.drawOrders) return listHold(timeline.drawOrders);
+
+    const entries = (timeline.constructor as { ENTRIES?: number }).ENTRIES;
+
+    return timeline.frames && entries ? framesHold(timeline.frames, entries) : undefined;
+}
 
 const beforeWorldTransforms = createHookSet<Pixi4Spine['state'], []>((state, run) => {
     const previous = state.apply;
@@ -267,7 +279,13 @@ export function createSpinePort(
             const animation = target as Spine38Animation;
             const data = owners.get(animation);
 
-            return animation.timelines.flatMap((timeline) => claim(timeline, data));
+            return animation.timelines.flatMap((timeline) => {
+                const hold = holdOf(timeline);
+
+                return claim(timeline, data).map((entry) =>
+                    hold && entry.kind !== 'event' ? { ...entry, hold } : entry,
+                );
+            });
         },
 
         beforeWorldTransforms: (spine, hook) => beforeWorldTransforms(spine.state, hook),

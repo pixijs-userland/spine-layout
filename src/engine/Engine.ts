@@ -100,15 +100,22 @@ export interface BonePose extends PointLike {
 export type PoseScope = 'all' | 'bones' | 'slots' | 'drawOrder';
 
 /**
+ * The one value a timeline keys for its whole length — a colour, an attachment name, a draw
+ * order — in the order its runtime stores it.
+ */
+export type PoseHold = readonly (number | string | null)[];
+
+/**
  * What one timeline of an animation writes to. `index` is the bone/slot/constraint index, and
- * `id` the runtime's own label for the property: two claims compete exactly when an `id` is in
- * both, so a bone's rotation and its translation do not collide.
+ * `id` the runtime's own label for the property: two claims compete when an `id` is in both,
+ * so a bone's rotation and its translation do not collide. `hold` is set when the timeline
+ * keys one value throughout; two animations holding the same value there do not compete.
  */
 export type PoseClaimEntry =
-    | { kind: 'bone'; index: number; id: string }
-    | { kind: 'slot'; index: number; id: string }
-    | { kind: 'constraint'; index: number; id: string }
-    | { kind: 'drawOrder'; id: string }
+    | { kind: 'bone'; index: number; id: string; hold?: PoseHold }
+    | { kind: 'slot'; index: number; id: string; hold?: PoseHold }
+    | { kind: 'constraint'; index: number; id: string; hold?: PoseHold }
+    | { kind: 'drawOrder'; id: string; hold?: PoseHold }
     | { kind: 'event' };
 
 export interface RegionTextureInfo<Texture> {
