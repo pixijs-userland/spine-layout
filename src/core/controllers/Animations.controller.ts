@@ -418,7 +418,12 @@ export class AnimationsController<T extends EngineTypes = EngineTypes> {
         for (let index = 0; index < tracks.length; index++) {
             const running = tracks[index]?.animation?.name;
             if (!running) continue;
-            if (claimsCollide(claim, claims.get(running) ?? EMPTY_CLAIM)) colliding.push(index);
+            // an animation that only holds values would not collide with itself, and stack a
+            // fresh track on every replay
+            const collides =
+                running === animation ||
+                claimsCollide(claim, claims.get(running) ?? EMPTY_CLAIM);
+            if (collides) colliding.push(index);
         }
 
         const owner = colliding.pop();

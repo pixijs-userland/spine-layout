@@ -359,6 +359,56 @@ describe('AnimationsController – animations that hold the same value', () => {
 
         expect(running(spine)).toEqual(['show_tutorial']);
     });
+
+    /** One slot, `idle` holding its alpha at 1, and `pulse` keyed 1 to 1 over a bezier that dips. */
+    function glow() {
+        const data = new SkeletonData();
+        const root = new BoneData(0, 'root', null);
+        data.bones.push(root);
+        data.slots.push(new SlotData(0, 'glow', root));
+
+        const held = new AlphaTimeline(1, 0, 0);
+        held.setFrame(0, 0, 1);
+        data.animations.push(new Animation('idle', [held], 0.2));
+
+        const dips = new AlphaTimeline(2, 1, 0);
+        dips.setFrame(0, 0, 1);
+        dips.setFrame(1, 1, 1);
+        dips.setBezier(0, 0, 0, 0, 1, 0.3, 0, 0.7, 0, 1, 1);
+        data.animations.push(new Animation('pulse', [dips], 1));
+
+        const spine = {
+            skeleton: new Skeleton(data),
+            state: new AnimationState(new AnimationStateData(data)),
+        } as unknown as Spine;
+        const ctl = new AnimationsController(pixi8Engine, new Map([['glow', spine]]));
+        ctl.registerSpine('glow', spine);
+
+        return { spine, ctl };
+    }
+
+    it('replays an animation that only holds values on its own track', async () => {
+        vi.useFakeTimers();
+        const { spine, ctl } = glow();
+
+        for (let round = 0; round < 5; round++) {
+            void ctl.play('glow', 'idle');
+            spine.state.update(0.3);
+            await vi.advanceTimersByTimeAsync(300);
+        }
+        vi.useRealTimers();
+
+        expect(running(spine)).toEqual(['idle']);
+    });
+
+    it('does not take keys that are equal around a bezier for a held value', () => {
+        const { spine, ctl } = glow();
+
+        void ctl.play('glow', 'pulse');
+        void ctl.play('glow', 'idle');
+
+        expect(running(spine)).toEqual(['idle']);
+    });
 });
 
 describe('AnimationsController – never-applied entries', () => {

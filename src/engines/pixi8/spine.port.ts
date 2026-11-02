@@ -2,11 +2,13 @@ import {
     AtlasAttachmentLoader,
     AttachmentTimeline,
     BoundingBoxAttachment,
+    CurveTimeline,
     DrawOrderTimeline,
     MeshAttachment,
     Physics,
     Property,
     RegionAttachment,
+    SequenceTimeline,
     SkeletonBinary,
     SkeletonJson,
     Spine,
@@ -88,14 +90,26 @@ export function classifyPropertyId(id: string): PoseClaimEntry {
 }
 
 // Attachment and draw-order timelines keep their values beside `frames`, which holds only times.
-// A folder draw order and a deform are left without one: they compete as before.
+// A bezier keeps value control points in `curves`, so equal keys can still move between them;
+// a sequence's frame shown depends on track time. Those, a folder draw order and a deform are
+// left without a hold: they compete as before.
 function holdOf(timeline: Timeline): PoseHold | undefined {
     if (timeline instanceof AttachmentTimeline) return listHold(timeline.attachmentNames);
     if (timeline instanceof DrawOrderTimeline) {
         return listHold((timeline as unknown as { drawOrders: (number[] | null)[] }).drawOrders);
     }
+    if (timeline instanceof SequenceTimeline) return undefined;
+    if (timeline instanceof CurveTimeline && hasBezier(timeline)) return undefined;
 
     return framesHold(timeline.frames, timeline.getFrameEntries());
+}
+
+// `curves` opens with one type per frame and grows past that only for bezier segments
+function hasBezier(timeline: CurveTimeline): boolean {
+    return (
+        (timeline as unknown as { curves: ArrayLike<number> }).curves.length >
+        timeline.getFrameCount()
+    );
 }
 
 type SpineUpdateInternals = { _updateAndApplyState(time: number): void };
