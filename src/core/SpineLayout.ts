@@ -797,7 +797,7 @@ export class SpineLayoutCore<T extends EngineTypes = EngineTypes> extends Layout
                   ? (slotOrContainer as SlotOf<T>).data.name
                   : (slotOrContainer as string | T['Container']);
 
-        if (target !== undefined) this.engine.spine.detachSlotObject(spine, target);
+        if (target !== undefined) this.#scene.removeSlotChild(spine, target);
     }
 }
 

@@ -92,6 +92,11 @@ export class Sounds {
             fxLevel: 1,
             ...settings,
         };
+
+        // From construction, not `init`: the module-level `sounds` is built on import, and a tap
+        // that lands before the game calls `init` (a launcher's first click, a loading screen)
+        // must still count as the gesture that unlocks audio.
+        window.addEventListener('pointerdown', this.onFirstInteraction, { once: true });
     }
 
     init(pixiManifest?: ManifestLike, settings?: Partial<SoundSettings>) {
@@ -193,6 +198,7 @@ export class Sounds {
     }
 
     onUserInteraction() {
+        window.removeEventListener('pointerdown', this.onFirstInteraction);
         this.userInteraction = true;
         this.activated = true;
         this.onActivationCallbacks.forEach((callback) => callback());
@@ -567,17 +573,14 @@ export class Sounds {
      * Installed on the first `init` rather than at construction: the singleton is built when the
      * module is imported, and a page that imports the library is not yet a page that plays sound.
      * Muted from here too, for the same reason — nothing plays before `init`, and a layout built
-     * before the first interaction must start silent (see `_playFX`).
+     * before the first interaction must start silent (see `_playFX`). The activation listener is
+     * the exception — see the constructor — and outlives `dispose` until the first tap.
      */
     private listen() {
         if (this.listening) return;
 
         this.listening = true;
         window.addEventListener('visibilitychange', this.onVisibilityChange);
-        if (!this.userInteraction) {
-            window.addEventListener('pointerdown', this.onFirstInteraction, { once: true });
-        }
-
         this.mute();
     }
 
@@ -586,7 +589,6 @@ export class Sounds {
 
         this.listening = false;
         window.removeEventListener('visibilitychange', this.onVisibilityChange);
-        window.removeEventListener('pointerdown', this.onFirstInteraction);
     }
 
     private onFirstInteraction = () => this.onUserInteraction();

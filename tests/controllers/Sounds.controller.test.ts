@@ -81,23 +81,42 @@ afterEach(() => {
     vi.useRealTimers();
 });
 
+/** A window whose pointerdown listeners stay live until removed; returns what dispatches a tap. */
+function tappableWindow(): () => void {
+    const taps = new Set<() => void>();
+    Object.defineProperty(globalThis, 'window', {
+        value: {
+            addEventListener: (event: string, cb: () => void) => {
+                if (event === 'pointerdown') taps.add(cb);
+            },
+            removeEventListener: (event: string, cb: () => void) => {
+                if (event === 'pointerdown') taps.delete(cb);
+            },
+        },
+        configurable: true,
+        writable: true,
+    });
+    return () => [...taps].forEach((cb) => cb());
+}
+
 // ─── Construction ─────────────────────────────────────────────────────────────
 
 describe('Sounds – construction', () => {
-    it('touches neither the window nor Howler until it is initialized', () => {
+    it('listens for the first tap, but leaves visibility and Howler alone until it is initialized', () => {
         new Sounds();
-        expect(window.addEventListener).not.toHaveBeenCalled();
+        expect(window.addEventListener).toHaveBeenCalledWith('pointerdown', expect.any(Function), { once: true });
+        expect(window.addEventListener).toHaveBeenCalledTimes(1);
         expect(Howler.mute).not.toHaveBeenCalled();
     });
 
-    it('registers its window listeners and mutes on the first init only', () => {
+    it('registers the visibility listener and mutes on the first init only', () => {
         const s = new Sounds();
+        vi.mocked(window.addEventListener).mockClear();
         s.init(makeManifest([]));
         s.init(makeManifest([]));
 
         expect(window.addEventListener).toHaveBeenCalledWith('visibilitychange', expect.any(Function));
-        expect(window.addEventListener).toHaveBeenCalledWith('pointerdown', expect.any(Function), { once: true });
-        expect(window.addEventListener).toHaveBeenCalledTimes(2);
+        expect(window.addEventListener).toHaveBeenCalledTimes(1);
         expect(Howler.mute).toHaveBeenCalledWith(true);
         expect(Howler.mute).toHaveBeenCalledTimes(1);
     });
@@ -121,7 +140,6 @@ describe('Sounds – dispose', () => {
 
         expect(fakeHowl.unload).toHaveBeenCalledTimes(2);
         expect(window.removeEventListener).toHaveBeenCalledWith('visibilitychange', expect.any(Function));
-        expect(window.removeEventListener).toHaveBeenCalledWith('pointerdown', expect.any(Function));
 
         // nothing is cached or known any more: the same request creates nothing
         vi.mocked(Howl).mockClear();
@@ -239,6 +257,40 @@ describe('Sounds – activation', () => {
         s.onUserInteraction();
         expect(a).toHaveBeenCalledOnce();
         expect(b).toHaveBeenCalledOnce();
+    });
+
+    it('a tap before init still unlocks sound once init runs', () => {
+        const tap = tappableWindow();
+        const s = new Sounds();
+
+        tap();
+        expect(s.activated).toBe(true);
+
+        vi.mocked(Howler.mute).mockClear();
+        s.init(makeManifest([]));
+        expect(Howler.mute).toHaveBeenLastCalledWith(false);
+    });
+
+    it('a tap after dispose still unlocks sound for the next init', () => {
+        const tap = tappableWindow();
+        const s = new Sounds();
+        s.init(makeManifest([]));
+        s.dispose();
+
+        tap();
+        s.init(makeManifest([]));
+        expect(s.activated).toBe(true);
+    });
+
+    it('activates once, whether the tap or the game reports the interaction first', () => {
+        const tap = tappableWindow();
+        const s = new Sounds();
+        const cb = vi.fn();
+        s.onActivation(cb);
+
+        s.onUserInteraction();
+        tap();
+        expect(cb).toHaveBeenCalledOnce();
     });
 
     it('onActivation callback registered after onUserInteraction does not fire retroactively', () => {
