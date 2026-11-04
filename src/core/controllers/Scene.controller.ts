@@ -483,6 +483,8 @@ export class SceneController<T extends EngineTypes = EngineTypes> {
         }
 
         log.add(LOG.ADD_SLOT_CHILD, spineID, `${child} -> "${slotName}"`);
+        // Attaching replaces whatever hung on the slot, so stop tracking it.
+        this.forgetSlotChildren(spine, slot.name);
         this.engine.spine.attachSlotObject(spine, slot.name, child);
 
         if (!this.isRegisteredSpine(child)) {
@@ -508,6 +510,24 @@ export class SceneController<T extends EngineTypes = EngineTypes> {
         this.slotChildren.clear();
 
         return released;
+    }
+
+    /**
+     * Detaches what hangs off a spine's slot — or `slotOrChild` itself, wherever it hangs on that
+     * spine — without destroying it, and stops tracking it: a child taken back by hand is not held
+     * until the next clear.
+     */
+    removeSlotChild(spine: T['Spine'], slotOrChild: string | T['Container']) {
+        this.engine.spine.detachSlotObject(spine, slotOrChild);
+        this.forgetSlotChildren(spine, slotOrChild);
+    }
+
+    private forgetSlotChildren(spine: T['Spine'], slotOrChild: string | T['Container']) {
+        this.slotChildren.forEach((entry, child) => {
+            if (entry.spine === spine && (child === slotOrChild || entry.slotName === slotOrChild)) {
+                this.slotChildren.delete(child);
+            }
+        });
     }
 
     private isRegisteredSpine(object: T['Container']): boolean {

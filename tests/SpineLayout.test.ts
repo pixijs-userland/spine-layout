@@ -439,6 +439,45 @@ describe('SpineLayout — destroy', () => {
         expect(own.parent).toBeNull();
     });
 
+    it('forgets what the game took back off a slot, by object or by slot name', () => {
+        listeningWindow();
+        const layout = new SpineLayout();
+
+        layout.createInstancesFromDataArray([
+            { name: 'root', skeleton: furnished, atlasText: '', textures: {} },
+        ]);
+
+        const byObject = new Container();
+        layout.scene.addSlotChild('root', 'hook', byObject);
+        layout.removeSlotAttachments('root', byObject);
+
+        const bySlot = new Container();
+        layout.scene.addSlotChild('root', 'hook', bySlot);
+        layout.removeSlotAttachments('root', 'hook');
+
+        expect(byObject.parent).toBeNull();
+        expect(bySlot.parent).toBeNull();
+        expect(layout.scene.releaseSlotChildren()).toEqual([]);
+    });
+
+    it('forgets a slot child another one replaced', () => {
+        listeningWindow();
+        const layout = new SpineLayout();
+
+        layout.createInstancesFromDataArray([
+            { name: 'root', skeleton: furnished, atlasText: '', textures: {} },
+        ]);
+
+        const first = new Container();
+        const second = new Container();
+        layout.scene.addSlotChild('root', 'hook', first);
+        layout.scene.addSlotChild('root', 'hook', second);
+
+        expect(layout.scene.releaseSlotChildren()).toEqual([
+            { spineID: 'root', slotName: 'hook', child: second },
+        ]);
+    });
+
     it('reset keeps the game listeners across a rebuild only when told to', () => {
         listeningWindow();
         const layout = new SpineLayout();
