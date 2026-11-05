@@ -55,6 +55,8 @@ export class SpineLayoutCore<T extends EngineTypes = EngineTypes> extends Layout
     #sources: Map<SpineID, SpineSource<T>> = new Map();
     /** Ids of spines created as multiple instances (e.g. `counter_1`). */
     #multipleInstanceIDs: Set<string> = new Set();
+    /** The skeleton each instance was built from, by instance id (`symbol_0_reel_1` -> `symbol`). */
+    #instanceSources: Map<SpineID, SpineID> = new Map();
     #animations: AnimationsController<T>;
     #skins: SkinsController<T>;
     #texts: TextsController<T>;
@@ -82,6 +84,7 @@ export class SpineLayoutCore<T extends EngineTypes = EngineTypes> extends Layout
             this.#spines,
             this.#multipleInstanceIDs,
             this.#animations,
+            (spineID) => this.#instanceSources.get(spineID),
         );
         this.#particles = new ParticlesController(engine, this.#spines, this.#multipleInstanceIDs);
         this.#animations.particles = this.#particles;
@@ -373,6 +376,7 @@ export class SpineLayoutCore<T extends EngineTypes = EngineTypes> extends Layout
             const spine = source.create();
 
             this.addSpineInstance(spineID, spine);
+            if (baseID !== spineID) this.#instanceSources.set(spineID, baseID);
             source.registered?.(spineID, spine);
 
             return spine;
@@ -542,6 +546,7 @@ export class SpineLayoutCore<T extends EngineTypes = EngineTypes> extends Layout
         this.#spines.clear();
         this.#sources.clear();
         this.#multipleInstanceIDs.clear();
+        this.#instanceSources.clear();
 
         this.view.removeChildren();
         log.clear();
