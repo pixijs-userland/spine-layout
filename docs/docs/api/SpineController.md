@@ -57,6 +57,16 @@ Finds the first live slot with the given name across all registered spines.
 
 ---
 
+### idOf
+
+```ts
+idOf(spine: Spine): string | undefined
+```
+
+The id a spine is registered under — the same string the layout sets as the instance's `label` (`name` on PIXI v4) when it builds it — or `undefined` for a spine the layout does not hold.
+
+---
+
 ### getSpinesByNamePattern
 
 ```ts

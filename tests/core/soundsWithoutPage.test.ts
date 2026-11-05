@@ -40,15 +40,16 @@ describe('the sounds singleton', () => {
         sounds.init();
         sounds.init();
 
-        expect(events).toEqual(['visibilitychange', 'pointerdown']);
+        expect(events).toEqual(['pointerdown', 'visibilitychange']);
     });
 
-    it('listens as it is made where there is a page, as before', async () => {
+    it('waits for the first tap as it is made where there is a page, and the rest from init', async () => {
         const events = listeningWindow();
         const { sounds } = await import('../../src/core/controllers/Sounds.controller');
 
-        expect(events).toEqual(['visibilitychange', 'pointerdown']);
+        expect(events).toEqual(['pointerdown']);
         sounds.init();
-        expect(events).toHaveLength(2);
+        sounds.init();
+        expect(events).toEqual(['pointerdown', 'visibilitychange']);
     });
 });

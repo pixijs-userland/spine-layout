@@ -32,6 +32,33 @@ export type PlayOptions = {
     restart?: boolean;
 };
 
+/** What `layout.reset()` leaves standing across a rebuild. */
+export type ResetOptions = {
+    /**
+     * Keep the listeners the game registered with `animations.addEventListener` — a scene
+     * rebuilt in place (a live reload) fires its button clicks at the same subscribers.
+     * Off by default: a reset forgets them with everything else.
+     */
+    keepListeners?: boolean;
+};
+
+/** What `animations.activeStates()` lists. */
+export type ActiveStatesOptions = {
+    /**
+     * Also list the states the layout plays for itself — `init` on a build, `landscape` and
+     * `portrait` for the shape of the screen. Off by default, so the list is what the game
+     * asked for and a rebuild can play it again without doubling what the build already did.
+     */
+    builtIn?: boolean;
+};
+
+/** A game's object `scene.releaseSlotChildren()` handed back, and the slot it hung on. */
+export type ReleasedSlotChild<Container = unknown> = {
+    spineID: SpineID;
+    slotName: string;
+    child: Container;
+};
+
 export type SpineLayoutOptions = {
     debug?: boolean;
     manifest?: ManifestLike;

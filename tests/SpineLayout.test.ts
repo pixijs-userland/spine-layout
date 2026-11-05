@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as SP43 from '@esotericsoftware/spine-pixi-v8';
-import { Assets, type AssetsManifest } from 'pixi.js';
-import { pixi8Engine, SpineLayout } from '../src/index';
+import { Assets, Container, Ticker, type AssetsManifest } from 'pixi.js';
+import { pixi8Engine, SpineLayout, sounds } from '../src/index';
 import { createPixi8Engine } from '../src/pixi8';
 import { esotericRuntime } from '../src/runtimes';
 
@@ -33,7 +33,12 @@ describe('SpineLayout — options', () => {
         options.skipAttachingSpinesPatterns = ['bg'];
         layout.createInstancesFromDataArray([
             { name: 'root', skeleton: bonesOnly, atlasText: '', textures: {} },
-            { name: 'bg', skeleton: { ...bonesOnly, bones: [{ name: 'root' }], slots: [] }, atlasText: '', textures: {} },
+            {
+                name: 'bg',
+                skeleton: { ...bonesOnly, bones: [{ name: 'root' }], slots: [] },
+                atlasText: '',
+                textures: {},
+            },
         ]);
 
         expect(layout.spines.get('bg')?.parent).toBeFalsy();
@@ -63,7 +68,10 @@ describe('SpineLayout — a skeleton with no atlas', () => {
 
         const layout = new SpineLayout();
 
-        layout.createInstancesFromManifest(manifest(['spine/hero.atlas', 'spine/root.json']), 'spine');
+        layout.createInstancesFromManifest(
+            manifest(['spine/hero.atlas', 'spine/root.json']),
+            'spine',
+        );
 
         expect([...layout.spines.keys()]).toEqual(['root']);
         expect(errors).not.toHaveBeenCalled();
@@ -139,6 +147,23 @@ describe('SpineLayout — building the scene from its root', () => {
         ]);
     });
 
+    it('labels every instance with its id, a multiplied one with its own', () => {
+        const layout = new SpineLayout();
+
+        layout.createInstancesFromDataArray([
+            instance('root', ['spine_reel_1', 'spine_reel_2']),
+            instance('reel'),
+        ]);
+
+        expect(
+            [...layout.spines].map(([id, spine]) => [id, spine.label, layout.spine.idOf(spine)]),
+        ).toEqual([
+            ['root', 'root', 'root'],
+            ['reel_1', 'reel_1', 'reel_1'],
+            ['reel_2', 'reel_2', 'reel_2'],
+        ]);
+    });
+
     it('keeps a numbered pointer that names a real export as that export, not a copy of the base', () => {
         const layout = new SpineLayout();
 
@@ -190,7 +215,10 @@ describe('SpineLayout — building the scene from its root', () => {
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
         const layout = new SpineLayout();
 
-        layout.createInstancesFromDataArray([instance('menu', ['spine_button']), instance('button')]);
+        layout.createInstancesFromDataArray([
+            instance('menu', ['spine_button']),
+            instance('button'),
+        ]);
 
         expect([...layout.spines.keys()]).toEqual(['menu', 'button']);
         expect(layout.children).toEqual([layout.spines.get('menu')]);
@@ -491,5 +519,193 @@ describe('SpineLayout — a skeleton it cannot build', () => {
 
         expect(layout.spines.size).toBe(0);
         expect(error.mock.calls).toEqual([['[SpineLayout] Error loading spine "root":', broken]]);
+    });
+});
+
+/** A window that counts what is listening to it, whatever the event. */
+function listeningWindow(width = 1280, height = 720) {
+    const live = new Set<unknown>();
+    const win = {
+        innerWidth: width,
+        innerHeight: height,
+        addEventListener: (_type: string, fn: unknown) => live.add(fn),
+        removeEventListener: (_type: string, fn: unknown) => live.delete(fn),
+        live,
+    };
+
+    vi.stubGlobal('window', win);
+
+    return win;
+}
+
+/** The oriented root, plus a label the layout builds a text node for and a hook for the game's own object. */
+const furnished = {
+    ...oriented,
+    bones: [
+        ...oriented.bones,
+        { name: 'text_label', parent: 'root' },
+        { name: 'hook', parent: 'root' },
+    ],
+    slots: [
+        ...oriented.slots,
+        { name: 'text_label', bone: 'text_label' },
+        { name: 'hook', bone: 'hook' },
+    ],
+};
+
+describe('SpineLayout — destroy', () => {
+    afterEach(() => {
+        vi.restoreAllMocks();
+        vi.unstubAllGlobals();
+    });
+
+    it('takes the window listeners and ticker subscriptions down with it', () => {
+        const win = listeningWindow();
+        const ticking = Ticker.shared.count;
+        const layout = new SpineLayout();
+
+        layout.createInstancesFromDataArray([
+            { name: 'root', skeleton: furnished, atlasText: '', textures: {} },
+        ]);
+        void layout.animations.playState('landscape');
+
+        expect(win.live.size).toBeGreaterThan(0);
+        expect(Ticker.shared.count).toBeGreaterThan(ticking);
+
+        layout.destroy();
+
+        expect(win.live.size).toBe(0);
+        expect(Ticker.shared.count).toBe(ticking);
+        expect(layout.spines.size).toBe(0);
+        expect(layout.destroyed).toBe(true);
+    });
+
+    it('destroys the text nodes it built, and hands back what the game hung on a slot', () => {
+        listeningWindow();
+        const layout = new SpineLayout();
+
+        layout.createInstancesFromDataArray([
+            { name: 'root', skeleton: furnished, atlasText: '', textures: {} },
+        ]);
+
+        const label = layout.texts.getInstances().get('label')!;
+        const own = new Container();
+        layout.scene.addSlotChild('root', 'hook', own);
+        expect(own.parent).toBe(layout.spines.get('root'));
+
+        layout.destroy();
+
+        expect(label.destroyed).toBe(true);
+        expect(own.destroyed).toBe(false);
+        expect(own.parent).toBeNull();
+    });
+
+    it('forgets what the game took back off a slot, by object or by slot name', () => {
+        listeningWindow();
+        const layout = new SpineLayout();
+
+        layout.createInstancesFromDataArray([
+            { name: 'root', skeleton: furnished, atlasText: '', textures: {} },
+        ]);
+
+        const byObject = new Container();
+        layout.scene.addSlotChild('root', 'hook', byObject);
+        layout.removeSlotAttachments('root', byObject);
+
+        const bySlot = new Container();
+        layout.scene.addSlotChild('root', 'hook', bySlot);
+        layout.removeSlotAttachments('root', 'hook');
+
+        expect(byObject.parent).toBeNull();
+        expect(bySlot.parent).toBeNull();
+        expect(layout.scene.releaseSlotChildren()).toEqual([]);
+    });
+
+    it('forgets a slot child another one replaced', () => {
+        listeningWindow();
+        const layout = new SpineLayout();
+
+        layout.createInstancesFromDataArray([
+            { name: 'root', skeleton: furnished, atlasText: '', textures: {} },
+        ]);
+
+        const first = new Container();
+        const second = new Container();
+        layout.scene.addSlotChild('root', 'hook', first);
+        layout.scene.addSlotChild('root', 'hook', second);
+
+        expect(layout.scene.releaseSlotChildren()).toEqual([
+            { spineID: 'root', slotName: 'hook', child: second },
+        ]);
+    });
+
+    it('reset keeps the game listeners across a rebuild only when told to', () => {
+        listeningWindow();
+        const layout = new SpineLayout();
+        const build = () =>
+            layout.createInstancesFromDataArray([
+                { name: 'root', skeleton: furnished, atlasText: '', textures: {} },
+            ]);
+        const heard: string[] = [];
+
+        build();
+        layout.animations.addEventListener('hook_click', () => heard.push('click'));
+
+        layout.reset({ keepListeners: true });
+        build();
+        void layout.animations.playEvent('hook_click', 'root');
+        expect(heard).toEqual(['click']);
+
+        layout.reset();
+        build();
+        void layout.animations.playEvent('hook_click', 'root');
+        expect(heard).toEqual(['click']);
+
+        layout.destroy();
+    });
+
+    it('leaves listener, ticker and text counts flat over twenty mount → play → destroy cycles', () => {
+        const win = listeningWindow();
+        const ticking = Ticker.shared.count;
+        const labels: Container[] = [];
+
+        for (let cycle = 0; cycle < 20; cycle++) {
+            const layout = new SpineLayout();
+
+            layout.createInstancesFromDataArray([
+                { name: 'root', skeleton: furnished, atlasText: '', textures: {} },
+            ]);
+            void layout.animations.playState('landscape');
+            labels.push(layout.texts.getInstances().get('label')!);
+
+            layout.destroy();
+
+            expect(win.live.size).toBe(0);
+            expect(Ticker.shared.count).toBe(ticking);
+        }
+
+        expect(labels.every((label) => label.destroyed)).toBe(true);
+    });
+
+    it('disposes the sounds singleton only when it was the layout that initialized it', () => {
+        listeningWindow();
+        const init = vi.spyOn(sounds, 'init').mockImplementation(() => {});
+        const dispose = vi.spyOn(sounds, 'dispose').mockImplementation(() => {});
+
+        const fromData = new SpineLayout();
+        fromData.createInstancesFromDataArray([instance('root')]);
+        fromData.destroy();
+
+        expect(init).not.toHaveBeenCalled();
+        expect(dispose).not.toHaveBeenCalled();
+
+        Assets.cache.set('spine/root.json', bonesOnly);
+        const fromManifest = new SpineLayout();
+        fromManifest.createInstancesFromManifest(manifest(['spine/root.json']), 'spine');
+        fromManifest.destroy();
+        Assets.cache.remove('spine/root.json');
+
+        expect(init).toHaveBeenCalledTimes(1);
+        expect(dispose).toHaveBeenCalledTimes(1);
     });
 });

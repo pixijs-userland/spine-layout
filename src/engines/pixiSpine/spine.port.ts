@@ -2,9 +2,16 @@ import { skeletonVersion } from '../../core/utils/skeletonVersion';
 import { minorOf } from '../../core/versions/minorOf';
 import { applyPrePasses } from '../../core/versions/prePasses';
 import { pickRuntime, type RuntimePin } from '../../core/versions/pickRuntime';
-import type { BonePose, PointLike, SpinePort, SpineRuntimeInfo } from '../../engine/Engine';
+import type {
+    BonePose,
+    PointLike,
+    PoseHold,
+    SpinePort,
+    SpineRuntimeInfo,
+} from '../../engine/Engine';
 import { isBinarySkeleton, type SkeletonDataLike, type SkeletonSource } from '../../engine/runtime';
 import { createHookSet } from '../shared/hookSet';
+import { framesHold, listHold } from '../shared/poseHold';
 import { claimTimeline, constraintToSetup } from './cores';
 import { degreesOf } from './groupD8';
 import type { SlotHolderTransform } from './holder';
@@ -27,8 +34,30 @@ import {
     type PixiSpineTextureRegion,
     type PixiSpineTypes,
     type PixiSpineView,
+    type PixiSpineBoundingBoxAttachment,
+    type PixiSpineTimeline,
 } from './types';
 import { onSpineUpdate } from './updateHooks';
+
+// Attachment and draw-order timelines keep their values beside `frames`. 3.x stores a timeline's
+// stride as its class's `ENTRIES`, and its curves only ease time; from 4.0 a bezier keeps value
+// control points in `curves`, so equal keys can still move between them, and a sequence's frame
+// shown depends on track time. Those, a deform and an event are left without a hold.
+function holdOf(timeline: PixiSpineTimeline): PoseHold | undefined {
+    if (timeline.attachmentNames) return listHold(timeline.attachmentNames);
+    if (timeline.drawOrders) return listHold(timeline.drawOrders);
+    if (!timeline.frames) return undefined;
+
+    if (!timeline.getFrameEntries) {
+        const entries = (timeline.constructor as { ENTRIES?: number }).ENTRIES;
+        return entries ? framesHold(timeline.frames, entries) : undefined;
+    }
+
+    if (timeline.attachment) return undefined;
+    if ((timeline.curves?.length ?? 0) > (timeline.getFrameCount?.() ?? 0)) return undefined;
+
+    return framesHold(timeline.frames, timeline.getFrameEntries());
+}
 
 /** The engine's asset cache, as far as reading a skeleton from it goes. */
 export interface PixiSpineAssets<Texture> {
@@ -400,9 +429,13 @@ export function createPixiSpinePort<T extends PixiSpineTypes = PixiSpineTypes>({
             const data = target as PixiSpineSkeletonData;
             const { core } = ownerOf(data, 'SkeletonData');
 
-            return (animation as PixiSpineAnimation).timelines.flatMap((timeline) =>
-                claimTimeline(core, timeline, data),
-            );
+            return (animation as PixiSpineAnimation).timelines.flatMap((timeline) => {
+                const hold = holdOf(timeline);
+
+                return claimTimeline(core, timeline, data).map((entry) =>
+                    hold && entry.kind !== 'event' ? { ...entry, hold } : entry,
+                );
+            });
         },
 
         beforeWorldTransforms: (spine, hook) => beforeWorldTransforms(spine.state, hook),
@@ -417,6 +450,12 @@ export function createPixiSpinePort<T extends PixiSpineTypes = PixiSpineTypes>({
             } else if (kind === 'mesh') {
                 const mesh = attachment as PixiSpineMeshAttachment;
                 if (!mesh.bones) vertices = Array.from(mesh.vertices).slice(0, mesh.hullLength);
+            } else if (runtimes.some((runtime) => runtime.isBoundingBox(attachment))) {
+                // a bounding box is a polygon and nothing else: the shape of a button on a
+                // skeleton that draws no image
+                const box = attachment as PixiSpineBoundingBoxAttachment;
+                if (!box.bones)
+                    vertices = Array.from(box.vertices).slice(0, box.worldVerticesLength);
             }
             if (!vertices?.length) return undefined;
 

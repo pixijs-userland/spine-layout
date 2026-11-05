@@ -22,6 +22,7 @@ export interface PixiSpineRuntime {
     yDown(): boolean;
     /** What a drawn attachment is, or `undefined` for anything that draws nothing. */
     kindOf(attachment: unknown): AttachmentKind | undefined;
+    isBoundingBox(attachment: unknown): boolean;
 }
 
 export interface PixiSpineAdapterOptions {
@@ -66,6 +67,8 @@ export function pixiSpineLegacy(
             if (attachment instanceof classes.ClippingAttachment) return 'clipping';
             return undefined;
         },
+        isBoundingBox: (attachment) =>
+            !!classes.BoundingBoxAttachment && attachment instanceof classes.BoundingBoxAttachment,
     };
 }
 
@@ -91,6 +94,9 @@ export function pixiSpineModular(
         return undefined;
     };
 
+    const isBoundingBox = (attachment: unknown) =>
+        (attachment as { type?: unknown } | null)?.type === AttachmentType.BoundingBox;
+
     const modules = runtimes as Partial<Record<PixiSpineMinor, PixiSpineModularRuntime>>;
 
     return Object.entries(modules).map(([key, classes]) => {
@@ -115,6 +121,7 @@ export function pixiSpineModular(
             core: coreOf(minor),
             yDown: () => settings.yDown,
             kindOf,
+            isBoundingBox,
         };
     });
 }

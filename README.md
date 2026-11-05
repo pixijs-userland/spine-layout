@@ -95,7 +95,7 @@ tree; the layout container holds the root and nothing else. A skeleton that is l
 nowhere is not instanced at all — nothing points at it, so nothing would place it. `createInstance`
 builds one anyway, together with everything it embeds in turn.
 
-A skeleton that attaches no image needs no atlas and no page: Spine exports it as the JSON alone, and it is read with an empty atlas. It is picked up from the folder the atlases are in — a manifest cannot otherwise tell a skeleton from any other `.json`.
+A skeleton that attaches no image needs no atlas and no page: Spine exports it as the JSON alone, and it is read with an empty atlas. It is picked up by where it sits, since a manifest cannot otherwise tell a skeleton from any other `.json`: in a folder the atlases are in (`spines/root.json` beside `spines/bg.atlas`), or — when each atlas has a folder of its own name — in a folder of its own name beside those (`spine/root/root.json` beside `spine/bg/bg.atlas`).
 
 ### From raw data
 
@@ -320,7 +320,42 @@ const tex = layout.spine.getSlotTexture('character', 'portrait');
 
 // Clone a spine instance
 layout.spine.cloneBySpineID('enemy', 'enemy-2');
+
+// Every instance the layout builds carries its id as its `label`, and the registry answers it back
+const id = layout.spine.idOf(spine); // 'enemy-2', or undefined for a spine the layout does not hold
 ```
+
+---
+
+## Lifecycle
+
+`layout.destroy()` takes everything the layout built down with it: the spines and their text
+nodes, button overlays and particle emitters, the orientation and pointer listeners, the ticker
+subscriptions, and — for a layout built from a manifest, which is the one that ran
+`sounds.init` — the `sounds` singleton, through `sounds.dispose()`. `layout.reset()` does the same
+but leaves the layout standing, ready to build again.
+
+What the game hangs on a slot with `scene.addSlotChild()` stays the game's: both detach it intact
+rather than destroying it. `scene.releaseSlotChildren()` detaches those objects by hand and returns
+each with the spine and slot it hung on, and `removeSlotAttachments()` takes one back at any time.
+
+A scene rebuilt in place — a live reload of its skeletons — is a `reset` and a build again, with
+three things carried across:
+
+```typescript
+const states = layout.animations.activeStates(); // what the scene stands in, in play order
+const hung = layout.scene.releaseSlotChildren(); // the game's objects, with their slots
+
+layout.reset({ keepListeners: true }); // the game's addEventListener subscriptions survive
+layout.createInstancesFromManifest(manifest);
+
+hung.forEach(({ spineID, slotName, child }) => layout.scene.addSlotChild(spineID, slotName, child));
+states.forEach((state) => void layout.animations.playState(state));
+```
+
+`activeStates()` lists the states `playState` played and nothing has stopped since, oldest
+first; the ones the layout plays for itself (`init`, `landscape`, `portrait`) are left out unless
+`{ builtIn: true }` asks for them.
 
 ---
 

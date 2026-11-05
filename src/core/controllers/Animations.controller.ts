@@ -1,9 +1,11 @@
 import type { Engine, EngineTypes } from '../../engine/Engine';
 import type {
+    ActiveStatesOptions,
     AnimationName,
     AnimationsRegistry,
     AnimationTrackRegistry,
     PlayOptions,
+    ResetOptions,
     SpineID,
 } from '../config/types';
 import { LOG } from '../config/logs';
@@ -12,6 +14,13 @@ import { parcePointers } from '../config/parcePointers';
 import { claimsCollide, EMPTY_CLAIM, poseClaims, type AnimationClaim } from '../utils/poseClaims';
 import { sounds } from './Sounds.controller';
 import type { ParticlesController } from './Particles.controller';
+
+/** The states the layout plays for itself: `init` on a build, the orientation pair for the screen. */
+const BUILT_IN_STATES: ReadonlySet<string> = new Set([
+    'init',
+    parcePointers.orientation.portrait,
+    parcePointers.orientation.landscape,
+]);
 
 const isParticleEvent = (name: string) =>
     name.startsWith(parcePointers.slot.particles) &&
@@ -28,6 +37,8 @@ export class AnimationsController<T extends EngineTypes = EngineTypes> {
     private eventAnimations: Map<string, string[]> = new Map();
     private activeAnimations: Map<string, AnimationTrackRegistry> = new Map();
     private loopingAnimations: Map<string, AnimationTrackRegistry> = new Map();
+    /** The states played and not stopped since, oldest first — see {@link activeStates}. */
+    #playedStates: string[] = [];
     /**
      * FX started by a spine event, grouped by the animation whose timeline fired it
      * (`spineID -> animation -> fx names`), so stopping that animation can stop its FX.
@@ -46,6 +57,8 @@ export class AnimationsController<T extends EngineTypes = EngineTypes> {
      * the next animation.
      */
     #spineSpeeds: Map<SpineID, number> = new Map();
+    /** The `play()` calls still waiting on their animation's end — what {@link clear} settles. */
+    #pending: Set<{ timer: ReturnType<typeof setTimeout>; settle: () => void }> = new Set();
     /** Where `particles_<key>_start|_stop|_once` events go. */
     particles?: ParticlesController<T>;
 
@@ -207,6 +220,21 @@ export class AnimationsController<T extends EngineTypes = EngineTypes> {
     getLooping(): string[] {
         return Array.from(this.loopingAnimations.keys());
     }
+    /**
+     * The states the scene stands in: every registered state {@link playState} played and
+     * nothing has stopped since, oldest first, a replayed one moved to the end. What a scene
+     * rebuilt in place plays again. {@link stopState} and {@link stopAll} take a state off
+     * the list; a state whose one-shots merely finished stays on it, as it is still what the
+     * scene was last told to be in.
+     *
+     * The states the layout plays for itself — `init`, `landscape`, `portrait` — are left out
+     * unless `builtIn` is set.
+     */
+    activeStates(options?: ActiveStatesOptions): string[] {
+        return options?.builtIn
+            ? [...this.#playedStates]
+            : this.#playedStates.filter((state) => !BUILT_IN_STATES.has(state));
+    }
 
     // ─── Event listeners ─────────────────────────────────────────────────────────
 
@@ -242,6 +270,11 @@ export class AnimationsController<T extends EngineTypes = EngineTypes> {
 
         const promises: Promise<void>[] = [];
 
+        if (this.stateAnimations.has(stateName)) {
+            this.forgetState(stateName);
+            this.#playedStates.push(stateName);
+        }
+
         this.stateAnimations.get(stateName)?.forEach((animation) => {
             this.animations.get(animation)?.forEach((animations, spineID) => {
                 animations.forEach(async (animation) => {
@@ -268,6 +301,8 @@ export class AnimationsController<T extends EngineTypes = EngineTypes> {
         log.open(logName);
 
         const affectedSpineIDs = new Set<SpineID>();
+
+        this.forgetState(stateName);
 
         this.stateAnimations.get(stateName)?.forEach((animation) => {
             this.animations.get(animation)?.forEach((animations, spineID) => {
@@ -376,14 +411,19 @@ export class AnimationsController<T extends EngineTypes = EngineTypes> {
      */
     private allocateTrack(spineID: SpineID, spine: T['Spine'], animation: string): number {
         const claims = this.claimsOf(spine);
-        const claim = claims.get(animation)?.ids ?? EMPTY_CLAIM;
+        const claim = claims.get(animation) ?? EMPTY_CLAIM;
         const tracks = spine.state.tracks;
         const colliding: number[] = [];
 
         for (let index = 0; index < tracks.length; index++) {
             const running = tracks[index]?.animation?.name;
             if (!running) continue;
-            if (claimsCollide(claim, claims.get(running)?.ids ?? EMPTY_CLAIM)) colliding.push(index);
+            // an animation that only holds values would not collide with itself, and stack a
+            // fresh track on every replay
+            const collides =
+                running === animation ||
+                claimsCollide(claim, claims.get(running) ?? EMPTY_CLAIM);
+            if (collides) colliding.push(index);
         }
 
         const owner = colliding.pop();
@@ -533,12 +573,7 @@ export class AnimationsController<T extends EngineTypes = EngineTypes> {
         }
         // An already-running animation is not restarted from zero — unless the caller asks
         // for it (see `PlayOptions.restart`).
-        if (
-            !options?.restart &&
-            this.activeAnimations.get(spineID)?.get(animation) !== undefined
-        ) {
-            return;
-        }
+        if (!options?.restart && this.isRunning(spineID, spine, animation)) return;
 
         const loop = mod.includes(parcePointers.mod.loop);
 
@@ -570,17 +605,44 @@ export class AnimationsController<T extends EngineTypes = EngineTypes> {
         return new Promise<void>((resolve) => {
             if (animationData) {
                 const duration = animationData.duration / spine.state.timeScale;
+                const pending = {
+                    timer: setTimeout(() => {
+                        this.#pending.delete(pending);
+                        this.removeActiveAnimation(spineID, animation);
+                        resolve();
+                    }, duration * 1000),
+                    settle: resolve,
+                };
 
-                setTimeout(() => {
-                    this.removeActiveAnimation(spineID, animation);
-                    resolve();
-                }, duration * 1000);
+                this.#pending.add(pending);
             } else {
                 resolve();
             }
         }).then(() => {
             if (nextAnimation) this.playByName(nextAnimation, playSolo);
         });
+    }
+
+    /**
+     * Whether an animation is still going on the track it was given: registered as active or
+     * looping, and its entry still what that track holds, with time running.
+     *
+     * A one-shot leaves the registry when its timer fires, but a loop never leaves by itself,
+     * so the registry alone would call it running after Spine's own mixing or a bare
+     * `clearTracks` moved the track on. The check is what makes `playState` idempotent: a
+     * state the spine already sits in — a resumed game re-entering free spins — leaves its
+     * loops where they are instead of snapping each back to frame 0. A paused entry does not
+     * count: it holds its track, but replaying it is how a {@link pause}d loop gets going again.
+     */
+    private isRunning(spineID: SpineID, spine: T['Spine'], animation: string): boolean {
+        const track =
+            this.activeAnimations.get(spineID)?.get(animation) ??
+            this.loopingAnimations.get(spineID)?.get(animation);
+        if (track === undefined) return false;
+
+        const entry = spine.state.tracks[track];
+
+        return entry?.animation?.name === animation && entry.timeScale !== 0;
     }
 
     /** Plays an animation then immediately seeks to its last frame, effectively showing the end pose. */
@@ -617,8 +679,15 @@ export class AnimationsController<T extends EngineTypes = EngineTypes> {
 
     // ─── Stop / Pause ────────────────────────────────────────────────────────────
 
+    private forgetState(stateName: string) {
+        const at = this.#playedStates.indexOf(stateName);
+
+        if (at !== -1) this.#playedStates.splice(at, 1);
+    }
+
     /** Stops all animations on all spines and resets them to their setup pose. */
     stopAll() {
+        this.#playedStates.length = 0;
         this.spines.forEach((spine, spineID) => {
             if (spine?.state) {
                 spine.state.clearTracks();
@@ -913,16 +982,28 @@ export class AnimationsController<T extends EngineTypes = EngineTypes> {
 
     // ─── Cleanup ─────────────────────────────────────────────────────────────────
 
-    clear() {
+    /**
+     * Forgets everything registered and played. The game's own `addEventListener`
+     * subscriptions go too, unless `keepListeners` says a rebuilt scene should fire at them.
+     */
+    clear(options?: ResetOptions) {
         this.animations.clear();
         this.stateAnimations.clear();
         this.eventAnimations.clear();
         this.activeAnimations.clear();
         this.loopingAnimations.clear();
+        this.#playedStates.length = 0;
         // after the registries are cleared, so nothing counts as still holding its FX
         this.stopAllTriggeredFX();
-        this.#eventsListeners.clear();
+        if (!options?.keepListeners) this.#eventsListeners.clear();
         this.#speed = 1;
         this.#spineSpeeds.clear();
+        // Resolved rather than left hanging: a caller awaiting a `play()` on a layout that is
+        // gone should carry on, and the timer would otherwise hold this controller until it fires.
+        this.#pending.forEach(({ timer, settle }) => {
+            clearTimeout(timer);
+            settle();
+        });
+        this.#pending.clear();
     }
 }

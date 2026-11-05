@@ -55,12 +55,38 @@ describe('Log', () => {
         expect(console.groupCollapsed).not.toHaveBeenCalled();
     });
 
-    it('implicitly opens a label when add is called before open', () => {
+    it('writes a row for a label nothing opened straight through, instead of holding it', () => {
         log.enabled = true;
-        log.add('implicit', 'key', 'v');
-        log.close('implicit');
+        log.add('one-shot', 'key', 'v');
 
-        expect(console.table).toHaveBeenCalledWith({ key: ['v'] });
+        expect(console.log).toHaveBeenCalledWith('one-shot', 'key', 'v');
+
+        log.close('one-shot');
+        expect(console.table).not.toHaveBeenCalled();
+    });
+
+    it('keeps only the tail of what was logged while disabled', () => {
+        for (let i = 0; i < 1000; i++) log.log('entry', i);
+
+        log.enabled = true;
+
+        expect(console.log).toHaveBeenCalledTimes(500);
+        expect(console.log).toHaveBeenCalledWith('entry', 500);
+        expect(console.log).toHaveBeenCalledWith('entry', 999);
+        expect(console.log).not.toHaveBeenCalledWith('entry', 499);
+    });
+
+    it('clear drops open tables and everything pending', () => {
+        log.open('table');
+        log.add('table', 'row', 'a');
+        log.log('pending');
+
+        log.clear();
+        log.enabled = true;
+        log.close('table');
+
+        expect(console.log).not.toHaveBeenCalled();
+        expect(console.table).not.toHaveBeenCalled();
     });
 
     it('only flushes pending entries on the off→on transition', () => {

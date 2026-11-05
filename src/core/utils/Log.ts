@@ -1,3 +1,9 @@
+/**
+ * How many disabled-time entries are kept for a later `debug = true` to print. A game plays
+ * animations and fires skeleton events for hours; the buffer holds the tail of that, not all of it.
+ */
+const PENDING_LIMIT = 500;
+
 class Log {
     #logList: Map<string, Map<string, string[]>> = new Map();
     #pending: Array<() => void> = [];
@@ -21,9 +27,20 @@ class Log {
         this.table(label, data);
     }
 
+    /**
+     * A row for an open label's table — or, for a label nothing opened, one line written
+     * through at once. A label that is only ever added to (every animation played, every
+     * skeleton event) would otherwise collect rows for the page's lifetime with no close to
+     * print them.
+     */
     add(label: string, key: string, value: string) {
-        if (!this.#logList.has(label)) this.open(label);
-        const entries = this.#logList.get(label)!;
+        const entries = this.#logList.get(label);
+
+        if (!entries) {
+            this.log(label, key, value);
+            return;
+        }
+
         if (!entries.has(key)) entries.set(key, []);
         entries.get(key)!.push(value);
     }
@@ -53,9 +70,20 @@ class Log {
         return this.#enabled;
     }
 
+    /** Drops every open table and every entry waiting for `enabled`. */
+    clear() {
+        this.#logList.clear();
+        this.#pending = [];
+    }
+
     #emit(fn: () => void) {
-        if (this.#enabled) fn();
-        else this.#pending.push(fn);
+        if (this.#enabled) {
+            fn();
+            return;
+        }
+
+        if (this.#pending.length >= PENDING_LIMIT) this.#pending.shift();
+        this.#pending.push(fn);
     }
 }
 

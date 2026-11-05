@@ -130,6 +130,26 @@ describe('TextsController – multiple instances', () => {
         expect(ctl.getVal('counter_1_reward')).toBe('Y');
         expect(ctl.getVal('counter_2_reward')).toBe('Y');
     });
+
+    it('styles instances qualified by their parent from the section of their skeleton', () => {
+        const a = createFakeSpine({ slots: [{ name: 'text_multiplier' }] });
+        const b = createFakeSpine({ slots: [{ name: 'text_multiplier' }] });
+        const ids = ['symbol_0_reel_1', 'symbol_1_reel_2'];
+        const ctl = new TextsController(fakeEngine, asSpineMap({ [ids[0]]: a, [ids[1]]: b }),
+            new Set(ids), undefined, () => 'symbol',
+        );
+        ctl.settings = {
+            // one section for every symbol, whichever reel and row it was built for
+            symbol: { multiplier: { type: 'text', value: 'x2', fontSize: 26 } },
+            symbol_1_reel_2: { multiplier: { type: 'text', value: 'x5' } },
+        };
+        ctl.add({ name: 'text_multiplier' } as never, a as never, 'multiplier', ids[0]);
+        ctl.add({ name: 'text_multiplier' } as never, b as never, 'multiplier', ids[1]);
+
+        expect(ctl.getVal('symbol_0_reel_1_multiplier')).toBe('x2');
+        expect(ctl.getVal('symbol_1_reel_2_multiplier')).toBe('x5');
+        expect(ctl.getInstances().get('symbol_1_reel_2_multiplier')?.style).toMatchObject({ fontSize: 26 });
+    });
 });
 
 describe('TextsController – mutation', () => {

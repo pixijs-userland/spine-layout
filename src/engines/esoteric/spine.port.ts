@@ -2,7 +2,13 @@ import { skeletonVersion } from '../../core/utils/skeletonVersion';
 import { pickRuntime, type RuntimePin } from '../../core/versions/pickRuntime';
 import { applyPrePasses } from '../../core/versions/prePasses';
 import { RUNTIME_MATRIX } from '../../core/versions/runtimeMatrix';
-import type { BonePose, EngineTypes, SpinePort, SpineRuntimeInfo } from '../../engine/Engine';
+import type {
+    BonePose,
+    EngineTypes,
+    PoseHold,
+    SpinePort,
+    SpineRuntimeInfo,
+} from '../../engine/Engine';
 import {
     isBinarySkeleton,
     type BoneLike,
@@ -10,6 +16,7 @@ import {
     type SkeletonSource,
 } from '../../engine/runtime';
 import { createHookSet } from '../shared/hookSet';
+import { framesHold, listHold } from '../shared/poseHold';
 import { adoptAtlas, isAtlas } from './assets';
 import { esotericMinorOf, esotericPixiOf } from './core';
 import type {
@@ -36,12 +43,48 @@ export interface EsotericPortOptions {
 
 interface Timeline {
     propertyIds?: string[];
+    frames: ArrayLike<number>;
+    getFrameEntries(): number;
+    getFrameCount(): number;
 }
 
 interface MeshAttachment {
     bones: number[] | null;
     vertices: ArrayLike<number>;
     hullLength: number;
+}
+
+interface BoundingBoxAttachment {
+    bones: number[] | null;
+    vertices: ArrayLike<number>;
+    worldVerticesLength: number;
+}
+
+// Attachment and draw-order timelines keep their values beside `frames`, which holds only times.
+// A bezier keeps value control points in `curves`, so equal keys can still move between them;
+// a sequence's frame shown depends on track time. Those, a folder draw order and a deform are
+// left without a hold: they compete as before.
+function holdOf(classes: EsotericClasses, timeline: Timeline): PoseHold | undefined {
+    if (timeline instanceof classes.AttachmentTimeline) {
+        return listHold(
+            (timeline as unknown as { attachmentNames: (string | null)[] }).attachmentNames,
+        );
+    }
+    if (timeline instanceof classes.DrawOrderTimeline) {
+        return listHold((timeline as unknown as { drawOrders: (number[] | null)[] }).drawOrders);
+    }
+    if (timeline instanceof classes.SequenceTimeline) return undefined;
+    if (timeline instanceof classes.CurveTimeline && hasBezier(timeline)) return undefined;
+
+    return framesHold(timeline.frames, timeline.getFrameEntries());
+}
+
+// `curves` opens with one type per frame and grows past that only for bezier segments
+function hasBezier(timeline: Timeline): boolean {
+    return (
+        (timeline as unknown as { curves: ArrayLike<number> }).curves.length >
+        timeline.getFrameCount()
+    );
 }
 
 const isSkeletonExport = (value: unknown): value is SkeletonSource =>
@@ -224,9 +267,14 @@ export function createEsotericSpinePort<T extends EngineTypes = EsotericTypes>({
         drawOrder: (skeleton) => core.drawOrder(skeleton),
 
         claimOf: (animation, data) =>
-            (animation.timelines as Timeline[]).flatMap((timeline) =>
-                (timeline.propertyIds ?? []).map((id) => core.classify(id, data)),
-            ),
+            (animation.timelines as Timeline[]).flatMap((timeline) => {
+                const hold = holdOf(classes, timeline);
+
+                return (timeline.propertyIds ?? []).map((id) => {
+                    const entry = core.classify(id, data);
+                    return hold && entry.kind !== 'event' ? { ...entry, hold } : entry;
+                });
+            }),
 
         beforeWorldTransforms,
         onUpdate,
@@ -239,6 +287,12 @@ export function createEsotericSpinePort<T extends EngineTypes = EsotericTypes>({
             } else if (attachment instanceof classes.MeshAttachment) {
                 const mesh = attachment as MeshAttachment;
                 if (!mesh.bones) vertices = Array.from(mesh.vertices).slice(0, mesh.hullLength);
+            } else if (attachment instanceof classes.BoundingBoxAttachment) {
+                // a bounding box is a polygon and nothing else: the shape of a button on a skeleton
+                // that draws no image, whose atlas the attachment loader never consults for one
+                const box = attachment as BoundingBoxAttachment;
+                if (!box.bones)
+                    vertices = Array.from(box.vertices).slice(0, box.worldVerticesLength);
             }
             if (!vertices?.length) return undefined;
 

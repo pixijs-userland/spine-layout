@@ -21,7 +21,7 @@ export type SpineAssetData = {
 export class ManifestParser {
     static getSpineAssets(manifest: ManifestLike): SpineAssetData[] {
         const result: SpineAssetData[] = [];
-        const folders = ManifestParser.spineFolders(manifest);
+        const amongSpines = ManifestParser.spineFolders(manifest);
 
         manifest.bundles.forEach((bundle: Bundle) => {
             const skeletons = ManifestParser.getAssetByType(bundle, 'skel') ?? [];
@@ -49,14 +49,14 @@ export class ManifestParser {
 
             // The atlas-less skeletons, which a manifest cannot tell from any other file of the
             // same extension — a `texts.json` is not a skeleton. What separates them is where
-            // they sit: the folders the atlases are in are the folders the spines are in.
+            // they sit: where the atlases are.
             ManifestParser.aliasesByType(bundle, 'skel')
                 .concat(ManifestParser.aliasesByType(bundle, 'json'))
                 .forEach((alias) => {
                     const skel = basename(alias);
 
                     if (packed.has(trimExtension(skel))) return;
-                    if (!folders.has(directory(alias))) return;
+                    if (!amongSpines(alias)) return;
 
                     result.push({ skel });
                 });
@@ -107,17 +107,26 @@ export class ManifestParser {
         }
     }
 
-    /** Where the spines live: every folder an atlas was found in, across the whole manifest. */
-    private static spineFolders(manifest: ManifestLike): Set<string> {
-        const folders = new Set<string>();
+    /**
+     * Where the spines live, read off the atlases across the whole manifest: whether an alias is
+     * in a folder an atlas is in — or, when the atlases each have a folder of their own name
+     * (`spine/bg/bg.atlas`), in a folder of its own name beside those (`spine/root/root.json`).
+     * A `settings/settings.json` is beside no such folder.
+     */
+    private static spineFolders(manifest: ManifestLike): (alias: string) => boolean {
+        const withAtlas = new Set<string>();
+        const aroundOwnFolders = new Set<string>();
 
         manifest.bundles.forEach((bundle: Bundle) => {
-            ManifestParser.aliasesByType(bundle, 'atlas').forEach((alias) =>
-                folders.add(directory(alias)),
-            );
+            ManifestParser.aliasesByType(bundle, 'atlas').forEach((alias) => {
+                withAtlas.add(directory(alias));
+                if (inOwnFolder(alias)) aroundOwnFolders.add(directory(directory(alias)));
+            });
         });
 
-        return folders;
+        return (alias) =>
+            withAtlas.has(directory(alias)) ||
+            (inOwnFolder(alias) && aroundOwnFolders.has(directory(directory(alias))));
     }
 
     private static aliasesByType(bundle: Bundle, type: string): string[] {
@@ -133,6 +142,11 @@ function basename(alias: string): string {
 
 function directory(alias: string): string {
     return alias.includes('/') ? alias.slice(0, alias.lastIndexOf('/')) : '';
+}
+
+/** `spine/bg/bg.atlas`: the file sits in a folder named after it. */
+function inOwnFolder(alias: string): boolean {
+    return basename(directory(alias)) === trimExtension(basename(alias));
 }
 
 function skeletonExtension({ data }: LoaderResourceLike): string {

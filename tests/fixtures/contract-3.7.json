@@ -17,13 +17,36 @@
     "skins": {
         "default": {
             "slot_a": { "square": { "width": 40, "height": 20 } },
-            "slot_b": { "square": { "width": 40, "height": 20 } }
+            "slot_b": {
+                "square": { "width": 40, "height": 20 },
+                "hit": {
+                    "type": "boundingbox",
+                    "vertexCount": 4,
+                    "vertices": [10, 20, 110, 20, 110, 80, 10, 80]
+                }
+            }
         }
     },
-    "events": {
-        "hit": {}
-    },
+    "events": { "hit": {} },
     "animations": {
+        "hold": {
+            "slots": {
+                "slot_a": {
+                    "attachment": [
+                        { "time": 0, "name": "square" },
+                        { "time": 0.5, "name": "square" }
+                    ]
+                }
+            },
+            "bones": {
+                "bone_a": {
+                    "translate": [
+                        { "time": 0, "x": 5, "y": 0 },
+                        { "time": 1, "x": 5, "y": 0 }
+                    ]
+                }
+            }
+        },
         "move": {
             "slots": {
                 "slot_b": {

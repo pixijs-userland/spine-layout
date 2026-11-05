@@ -7,7 +7,7 @@ import type {
     RectLike,
     SpineLike,
 } from '../../src/engine/Engine';
-import type { SkeletonDataLike } from '../../src/engine/runtime';
+import type { SkeletonDataLike, SkinLike } from '../../src/engine/runtime';
 
 /**
  * What a runtime reads the contract fixtures from, by the export minor it reads — the same
@@ -201,6 +201,21 @@ export function engineContract(name: string, load: () => Promise<Engine>, minor?
             });
         });
 
+        it('reports the one value a timeline holds throughout, and none for one that changes', async () => {
+            await setUp();
+            const data = read();
+            const holds = (animation: string, kind: 'bone' | 'slot') =>
+                engine.spine
+                    .claimOf(data.findAnimation(animation)!, data)
+                    .flatMap((claim) => (claim.kind === kind ? [claim.hold] : []));
+
+            // 4.3 claims a translation's x and y apart, 3.8 as one property
+            expect(new Set(holds('hold', 'slot').map(String))).toEqual(new Set(['"square"']));
+            expect(new Set(holds('hold', 'bone').map(String))).toEqual(new Set(['5,0']));
+            expect(new Set(holds('move', 'slot'))).toEqual(new Set([undefined]));
+            expect(new Set(holds('move', 'bone'))).toEqual(new Set([undefined]));
+        });
+
         describe('poses', () => {
             it("puts a slot's attachment back with the slots' setup pose", async () => {
                 await setUp();
@@ -278,6 +293,20 @@ export function engineContract(name: string, load: () => Promise<Engine>, minor?
 
                 expect(polygon).toHaveLength(8);
                 polygon!.forEach((value) => expect(Number.isFinite(value)).toBe(true));
+            });
+
+            it('outlines a bounding box as the polygon drawn in its bone, y the way a slot object runs', async () => {
+                await setUp();
+                const spine = create();
+                const slot = spine.skeleton.findSlot('slot_b')!;
+                const skin = spine.skeleton.data.defaultSkin as SkinLike & {
+                    getAttachment(slotIndex: number, name: string): unknown;
+                };
+                const box = skin.getAttachment(slot.data.index, 'hit');
+
+                expect(engine.spine.hitPolygon(slot, box)).toEqual([
+                    10, -20, 110, -20, 110, -80, 10, -80,
+                ]);
             });
 
             it('finds the image of a region on its page', async () => {

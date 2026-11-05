@@ -110,6 +110,12 @@ export interface PixiSpineMeshAttachment {
     bones: number[] | null;
 }
 
+export interface PixiSpineBoundingBoxAttachment {
+    vertices: ArrayLike<number>;
+    worldVerticesLength: number;
+    bones: number[] | null;
+}
+
 export interface PixiSpineSlot extends SlotLike {
     bone: PixiSpineBone;
     attachment: unknown;
@@ -134,6 +140,14 @@ export interface PixiSpineTimeline {
     transformConstraintIndex?: number;
     pathConstraintIndex?: number;
     attachment?: { id: number | string } | null;
+    frames?: ArrayLike<number>;
+    curves?: ArrayLike<number>;
+    attachmentNames?: (string | null)[];
+    drawOrders?: (number[] | null)[];
+    /** spine-ts 4.0/4.1. */
+    getFrameEntries?(): number;
+    /** spine-ts 4.0/4.1. */
+    getFrameCount?(): number;
     /** spine-ts 3.7/3.8. */
     getPropertyId?(): number;
     /** spine-ts 4.0/4.1. */
@@ -237,6 +251,7 @@ export interface PixiSpineCore {
     AtlasAttachmentLoader: new (atlas: PixiSpineAtlas) => object;
     RegionAttachment: RuntimeClass;
     MeshAttachment: RuntimeClass;
+    BoundingBoxAttachment?: RuntimeClass;
     ClippingAttachment: RuntimeClass;
     /** A class from 4.0 on; spine-ts 3.x declares it as an interface only. */
     Timeline?: { prototype: object };
@@ -257,7 +272,7 @@ export interface PixiSpineLegacyNamespace {
 export interface PixiSpineModularBase {
     SpineBase: RuntimeClass;
     TextureAtlas: PixiSpineAtlasClass;
-    AttachmentType: { Region: number; Mesh: number; Clipping: number };
+    AttachmentType: { Region: number; BoundingBox: number; Mesh: number; Clipping: number };
     settings: { yDown: boolean };
 }
 

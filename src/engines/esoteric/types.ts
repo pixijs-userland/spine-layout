@@ -30,6 +30,11 @@ export interface EsotericModule {
     SkeletonBinary: AnyClass;
     RegionAttachment: AnyClass;
     MeshAttachment: AnyClass;
+    BoundingBoxAttachment: AnyClass;
+    AttachmentTimeline: AnyClass;
+    DrawOrderTimeline: AnyClass;
+    SequenceTimeline: AnyClass;
+    CurveTimeline: AnyClass;
     SpineTexture: object;
     Physics: object;
     Property?: object;
@@ -113,6 +118,11 @@ export interface EsotericClasses {
     SkeletonBinary: new (loader: object) => SkeletonReader<Uint8Array>;
     RegionAttachment: AnyClass;
     MeshAttachment: AnyClass;
+    BoundingBoxAttachment: AnyClass;
+    AttachmentTimeline: AnyClass;
+    DrawOrderTimeline: AnyClass;
+    SequenceTimeline: AnyClass;
+    CurveTimeline: AnyClass;
     SpineTexture: { from(texture: object): object };
     Physics: { update: unknown };
     Property?: Readonly<Record<string, number>>;

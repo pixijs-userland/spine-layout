@@ -20,6 +20,7 @@ export class SpineController<T extends EngineTypes = EngineTypes> {
         cloned.scale.copyFrom(spine.scale);
         cloned.rotation = spine.rotation;
         this.engine.display.shieldFromHitTesting(cloned);
+        this.engine.display.setLabel(cloned, newSpineID);
 
         if (this.spines.has(newSpineID)) {
             this.spines.get(newSpineID)?.destroy();
@@ -71,6 +72,14 @@ export class SpineController<T extends EngineTypes = EngineTypes> {
             const slot = spine.skeleton.findSlot(name);
             if (slot) return slot as SlotOf<T>;
         }
+    }
+
+    /** The id a spine is registered under, or `undefined` for one the layout does not hold. */
+    idOf(spine: T['Spine']): SpineID | undefined {
+        for (const [id, registered] of this.spines) {
+            if (registered === spine) return id;
+        }
+        return undefined;
     }
 
     /** Returns all registered spines whose IDs start with `pattern`. Pass `options.not` to exclude IDs containing those substrings. */

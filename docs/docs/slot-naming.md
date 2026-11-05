@@ -69,3 +69,8 @@ layout.animations.addEventListener('balance_change', (_spineID, _spine, event) =
 
 On multiple-instance spines the bare slot key is used, so `counter_1`'s `text_reward` fires
 `reward_change`, not `counter_1_reward_change`.
+
+In `texts.json` a multiple-instance spine's text is styled by up to three sections, merged in
+this order: the skeleton the instance was built from (`symbol` for `symbol_0_reel_1`), the id
+without its number (`counter` for `counter_1`), then the instance's own section. One `symbol`
+section therefore styles every symbol on every reel, and an instance section overrides it.

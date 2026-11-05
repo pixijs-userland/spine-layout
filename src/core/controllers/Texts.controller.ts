@@ -72,12 +72,15 @@ export class TextsController<T extends EngineTypes = EngineTypes> {
      * @param animations Used to fire the synthetic `<textKey>_change` event whenever a text
      *   value changes (see {@link emitChange}). Optional so the controller stays usable
      *   standalone.
+     * @param sourceOf The skeleton a multiple instance was built from (`symbol` for
+     *   `symbol_0_reel_1`), whose section styles every instance of it (see {@link mergedEntry}).
      */
     constructor(
         private engine: Engine<T>,
         private spines: Map<SpineID, T['Spine']>,
         private multipleInstanceIDs: Set<string> = new Set(),
         private animations?: AnimationsController<T>,
+        private sourceOf: (spineID: SpineID) => SpineID | undefined = () => undefined,
     ) { }
 
     /** Returns all active text instances (both `Text` and `BitmapText`) keyed by bone name. */
@@ -150,9 +153,12 @@ export class TextsController<T extends EngineTypes = EngineTypes> {
     /**
      * Resolves the effective settings for a `spineID`'s text slot from the nested config.
      *
-     * For a multiple-instance spine (`counter_1`) an optional base-spine section
-     * (`counter`) is used as a default and the instance section is merged on top, so a
-     * common style can be authored once on the base and overridden per instance.
+     * For a multiple-instance spine (`counter_1`) optional base sections are used as defaults
+     * and the instance section is merged on top, so a common style can be authored once and
+     * overridden per instance. The bases, most general first: the skeleton the instance was
+     * built from, then the id without its number (`counter`). The skeleton is what reaches an
+     * instance qualified by its parent: `symbol_0_reel_1` strips to `symbol_0_reel`, a section
+     * nobody would author, while `symbol` styles all of them.
      */
     private mergedEntry(spineID: string | undefined, textKey: string): TextsJsonEntry | undefined {
         if (!spineID) return undefined;
@@ -160,8 +166,11 @@ export class TextsController<T extends EngineTypes = EngineTypes> {
         const entries: TextsJsonEntry[] = [];
 
         if (this.multipleInstanceIDs.has(spineID)) {
-            const baseEntry = this.#textSettings?.[spineID.replace(/_\d+$/, '')]?.[textKey];
-            if (baseEntry) entries.push(baseEntry);
+            const bases = new Set([this.sourceOf(spineID), spineID.replace(/_\d+$/, '')]);
+            bases.forEach((base) => {
+                const baseEntry = base && base !== spineID ? this.#textSettings?.[base]?.[textKey] : undefined;
+                if (baseEntry) entries.push(baseEntry);
+            });
         }
 
         const ownEntry = this.#textSettings?.[spineID]?.[textKey];

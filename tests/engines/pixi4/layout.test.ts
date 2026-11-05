@@ -40,6 +40,8 @@ describe('SpineLayoutCore on the pixi4 engine', () => {
 
         const spine = layout.spines.get('root')!;
         expect(spine).toBeInstanceOf(PIXI.spine.Spine);
+        expect(spine.name).toBe('root');
+        expect(layout.spine.idOf(spine)).toBe('root');
 
         const events: string[] = [];
         spine.state.addListener({ event: (_, event) => events.push(event.data.name) });

@@ -3,6 +3,7 @@ import { UnsupportedSpineVersionError } from '../engine/errors';
 import { isBinarySkeleton, type SkeletonSource } from '../engine/runtime';
 import type {
     ManifestLike,
+    ResetOptions,
     SpineID,
     SpineLayoutOptions,
     SpineInstanceData,
@@ -58,6 +59,8 @@ export class SpineLayoutCore<T extends EngineTypes = EngineTypes> extends Layout
     #sources: Map<SpineID, SpineSource<T>> = new Map();
     /** Ids of spines created as multiple instances (e.g. `counter_1`). */
     #multipleInstanceIDs: Set<string> = new Set();
+    /** The skeleton each instance was built from, by instance id (`symbol_0_reel_1` -> `symbol`). */
+    #instanceSources: Map<SpineID, SpineID> = new Map();
     #animations: AnimationsController<T>;
     #skins: SkinsController<T>;
     #texts: TextsController<T>;
@@ -68,6 +71,8 @@ export class SpineLayoutCore<T extends EngineTypes = EngineTypes> extends Layout
     #orientation: OrientationController<T>;
     /** Bumped by every reset, so a build that waited on `prepare` sees the layout moved on. */
     #generation = 0;
+    /** Whether this layout ran `sounds.init` — then its `destroy` is what disposes the singleton. */
+    #ownsSounds = false;
     private options?: SpineLayoutOptions;
 
     constructor(options: SpineLayoutCoreOptions<T>) {
@@ -85,6 +90,7 @@ export class SpineLayoutCore<T extends EngineTypes = EngineTypes> extends Layout
             this.#spines,
             this.#multipleInstanceIDs,
             this.#animations,
+            (spineID) => this.#instanceSources.get(spineID),
         );
         this.#particles = new ParticlesController(engine, this.#spines, this.#multipleInstanceIDs);
         this.#animations.particles = this.#particles;
@@ -260,6 +266,7 @@ export class SpineLayoutCore<T extends EngineTypes = EngineTypes> extends Layout
         this.#mount(rootID);
 
         sounds.init(manifest);
+        this.#ownsSounds = true;
 
         this.#animations.playState('init');
         this.#animations.playByName('init');
@@ -437,6 +444,7 @@ export class SpineLayoutCore<T extends EngineTypes = EngineTypes> extends Layout
             const spine = source.create();
 
             this.addSpineInstance(spineID, spine);
+            if (baseID !== spineID) this.#instanceSources.set(spineID, baseID);
             source.registered?.(spineID, spine);
 
             return spine;
@@ -507,11 +515,14 @@ export class SpineLayoutCore<T extends EngineTypes = EngineTypes> extends Layout
     private addSpineInstance(spineID: string, spine: T['Spine']) {
         if (this.#spines.has(spineID)) {
             this.#particles.detachSpine(spineID);
-            this.#spines.get(spineID)?.destroy();
+            this.#spines.get(spineID)?.destroy({ children: true });
             this.#spines.delete(spineID);
         }
 
         this.#spines.set(spineID, spine);
+        // the instance carries its id (pixi's `label`, v4's `name`), so a spine handed on
+        // without it — a slot child, a debugger's tree — still says which one it is
+        this.engine.display.setLabel(spine, spineID);
         this.#animations.registerSpine(spineID, spine);
         this.onSpineRegistered(spineID, spine);
     }
@@ -521,7 +532,7 @@ export class SpineLayoutCore<T extends EngineTypes = EngineTypes> extends Layout
         if (!spine) return;
 
         this.#particles.detachSpine(spineID);
-        spine.destroy();
+        spine.destroy({ children: true });
         this.#spines.delete(spineID);
         this.#animations.unregisterSpine(spineID);
     }
@@ -577,26 +588,57 @@ export class SpineLayoutCore<T extends EngineTypes = EngineTypes> extends Layout
 
     // ─── Lifecycle ───────────────────────────────────────────────────────────────
 
-    reset() {
+    /**
+     * Takes the scene down and leaves the layout empty, ready to build again.
+     *
+     * Everything the layout made goes with the spines — text nodes and their textures, button
+     * overlays, particle containers, the listeners on all of them — which is why the spines are
+     * destroyed *with* their children. What the game hung on them through `addSlotChild` is
+     * handed back first, detached and intact (see `SceneController.addSlotChild`).
+     *
+     * The game's `animations.addEventListener` subscriptions go with the rest unless
+     * `keepListeners` is set — a scene rebuilt in place keeps firing at the same subscribers.
+     */
+    reset(options?: ResetOptions) {
         this.#generation++;
-        this.#texts.clear();
-        this.#particles.clear();
-        this.#animations.clear();
-        this.#skins.clear();
+
+        // the game's own slot children come off whole, and the emitters detach their containers,
+        // while the spines they hang off still exist
         this.#scene.clear();
+        this.#particles.clear();
         this.#pointer.clear();
+        this.#texts.clear();
+        this.#animations.clear(options);
+        this.#skins.clear();
         this.#orientation.clear();
 
-        this.#spines.forEach((spine) => spine.destroy());
+        // A nested spine is a child of the spine embedding it, and a destroyed `Spine` cannot be
+        // destroyed again: every spine is lifted out of its parent first, so each is destroyed
+        // exactly once, as a tree of only what it owns.
+        this.#spines.forEach((spine) => this.engine.display.removeFromParent(spine));
+        this.#spines.forEach((spine) => spine.destroy({ children: true }));
         this.#spines.clear();
         this.#sources.clear();
         this.#multipleInstanceIDs.clear();
+        this.#instanceSources.clear();
 
         this.view.removeChildren();
+        log.clear();
     }
 
+    /**
+     * {@link reset}, then the layout itself. The `sounds` singleton goes too when this layout
+     * was the one to `init` it — a layout built from a manifest — so a page that mounts and
+     * unmounts a layout does not keep every `Howl` it ever played.
+     */
     destroy() {
         this.reset();
+
+        if (this.#ownsSounds) {
+            sounds.dispose();
+            this.#ownsSounds = false;
+        }
+
         this.destroyHost();
     }
 
@@ -809,7 +851,10 @@ export class SpineLayoutCore<T extends EngineTypes = EngineTypes> extends Layout
         return this.#spine.clone(spine, newSpineID);
     }
 
-    /** Removes attached children from a spine slot (or all slots if a container is given). */
+    /**
+     * Detaches what hangs off a spine slot — or the given container, wherever it hangs — without
+     * destroying it: the way a game takes an `addSlotChild` object back by hand.
+     */
     removeSlotAttachments(
         spineID: string,
         slotOrContainer: number | string | SlotOf<T> | T['Container'],
@@ -828,7 +873,7 @@ export class SpineLayoutCore<T extends EngineTypes = EngineTypes> extends Layout
                   ? (slotOrContainer as SlotOf<T>).data.name
                   : (slotOrContainer as string | T['Container']);
 
-        if (target !== undefined) this.engine.spine.detachSlotObject(spine, target);
+        if (target !== undefined) this.#scene.removeSlotChild(spine, target);
     }
 }
 

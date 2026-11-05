@@ -16,6 +16,7 @@ type FakeHowl = {
     volume: ReturnType<typeof vi.fn>;
     playing: ReturnType<typeof vi.fn>;
     on: ReturnType<typeof vi.fn>;
+    unload: ReturnType<typeof vi.fn>;
 };
 
 function makeFakeHowl(): FakeHowl {
@@ -28,6 +29,7 @@ function makeFakeHowl(): FakeHowl {
         on: vi.fn((event: string, cb: () => void) => {
             if (event === 'end') cb();
         }),
+        unload: vi.fn(),
     };
 }
 
@@ -79,22 +81,108 @@ afterEach(() => {
     vi.useRealTimers();
 });
 
+/** A window whose pointerdown listeners stay live until removed; returns what dispatches a tap. */
+function tappableWindow(): () => void {
+    const taps = new Set<() => void>();
+    Object.defineProperty(globalThis, 'window', {
+        value: {
+            addEventListener: (event: string, cb: () => void) => {
+                if (event === 'pointerdown') taps.add(cb);
+            },
+            removeEventListener: (event: string, cb: () => void) => {
+                if (event === 'pointerdown') taps.delete(cb);
+            },
+        },
+        configurable: true,
+        writable: true,
+    });
+    return () => [...taps].forEach((cb) => cb());
+}
+
 // ─── Construction ─────────────────────────────────────────────────────────────
 
 describe('Sounds – construction', () => {
-    it('registers a visibilitychange listener on window', () => {
+    it('listens for the first tap, but leaves visibility and Howler alone until it is initialized', () => {
         new Sounds();
-        expect(window.addEventListener).toHaveBeenCalledWith('visibilitychange', expect.any(Function));
+        expect(window.addEventListener).toHaveBeenCalledWith('pointerdown', expect.any(Function), { once: true });
+        expect(window.addEventListener).toHaveBeenCalledTimes(1);
+        expect(Howler.mute).not.toHaveBeenCalled();
     });
 
-    it('calls Howler.mute(true) on startup', () => {
-        new Sounds();
+    it('registers the visibility listener and mutes on the first init only', () => {
+        const s = new Sounds();
+        vi.mocked(window.addEventListener).mockClear();
+        s.init(makeManifest([]));
+        s.init(makeManifest([]));
+
+        expect(window.addEventListener).toHaveBeenCalledWith('visibilitychange', expect.any(Function));
+        expect(window.addEventListener).toHaveBeenCalledTimes(1);
         expect(Howler.mute).toHaveBeenCalledWith(true);
+        expect(Howler.mute).toHaveBeenCalledTimes(1);
     });
 
     it('activated is false before user interaction', () => {
         const s = new Sounds();
         expect(s.activated).toBe(false);
+    });
+});
+
+describe('Sounds – dispose', () => {
+    it('unloads every Howl, empties the caches and takes the window listeners off', async () => {
+        const s = new Sounds();
+        s.init(makeManifest(['coin', 'theme_music']));
+        s.onUserInteraction();
+        s.playFX('coin');
+        s.playMusic('theme_music');
+        expect(Howl).toHaveBeenCalledTimes(2);
+
+        s.dispose();
+
+        expect(fakeHowl.unload).toHaveBeenCalledTimes(2);
+        expect(window.removeEventListener).toHaveBeenCalledWith('visibilitychange', expect.any(Function));
+
+        // nothing is cached or known any more: the same request creates nothing
+        vi.mocked(Howl).mockClear();
+        s.playFX('coin');
+        expect(Howl).not.toHaveBeenCalled();
+    });
+
+    it('is ready for another init, which installs the listeners again', () => {
+        const s = new Sounds();
+        s.init(makeManifest(['coin']));
+        s.dispose();
+        vi.mocked(window.addEventListener).mockClear();
+
+        s.init(makeManifest(['coin']));
+        s.playFX('coin');
+
+        expect(window.addEventListener).toHaveBeenCalledWith('visibilitychange', expect.any(Function));
+        expect(Howl).toHaveBeenCalledTimes(1);
+    });
+
+    it('holds Howl and listener counts flat across repeated init/play/dispose cycles', () => {
+        const live = new Set<() => void>();
+        Object.defineProperty(globalThis, 'window', {
+            value: {
+                addEventListener: (_event: string, cb: () => void) => live.add(cb),
+                removeEventListener: (_event: string, cb: () => void) => live.delete(cb),
+            },
+            configurable: true,
+            writable: true,
+        });
+        const s = new Sounds();
+
+        for (let i = 0; i < 20; i++) {
+            s.init(makeManifest(['coin']));
+            s.onUserInteraction();
+            s.playFX('coin');
+            passDuplicateWindow();
+            s.dispose();
+            expect(live.size).toBe(0);
+        }
+
+        expect(Howl).toHaveBeenCalledTimes(20);
+        expect(fakeHowl.unload).toHaveBeenCalledTimes(20);
     });
 });
 
@@ -169,6 +257,40 @@ describe('Sounds – activation', () => {
         s.onUserInteraction();
         expect(a).toHaveBeenCalledOnce();
         expect(b).toHaveBeenCalledOnce();
+    });
+
+    it('a tap before init still unlocks sound once init runs', () => {
+        const tap = tappableWindow();
+        const s = new Sounds();
+
+        tap();
+        expect(s.activated).toBe(true);
+
+        vi.mocked(Howler.mute).mockClear();
+        s.init(makeManifest([]));
+        expect(Howler.mute).toHaveBeenLastCalledWith(false);
+    });
+
+    it('a tap after dispose still unlocks sound for the next init', () => {
+        const tap = tappableWindow();
+        const s = new Sounds();
+        s.init(makeManifest([]));
+        s.dispose();
+
+        tap();
+        s.init(makeManifest([]));
+        expect(s.activated).toBe(true);
+    });
+
+    it('activates once, whether the tap or the game reports the interaction first', () => {
+        const tap = tappableWindow();
+        const s = new Sounds();
+        const cb = vi.fn();
+        s.onActivation(cb);
+
+        s.onUserInteraction();
+        tap();
+        expect(cb).toHaveBeenCalledOnce();
     });
 
     it('onActivation callback registered after onUserInteraction does not fire retroactively', () => {
@@ -707,7 +829,7 @@ describe('Sounds – volume levels', () => {
 
 describe('Sounds – visibility change', () => {
     it('mutes when the page becomes hidden', () => {
-        new Sounds();
+        new Sounds().init(makeManifest([]));
         vi.mocked(Howler.mute).mockClear();
         Object.defineProperty(globalThis.document, 'hidden', { value: true, configurable: true });
         visibilityHandler?.();

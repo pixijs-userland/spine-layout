@@ -156,6 +156,69 @@ describe('ManifestParser.getSpineAssets — skeletons with no atlas', () => {
 
         expect(result).toEqual([]);
     });
+
+    // AssetPack's `nameStyle` names the bundles; an asset's first alias is its path from the
+    // entry under both, and `createShortcuts` appends the bare file name.
+    it.each([
+        ['short', 'default', (alias: string) => [alias, alias.split('/').pop()!]],
+        ['relative', 'spine', (alias: string) => [alias]],
+    ])(
+        "takes a lone skeleton in a folder of its own name beside the atlases' own folders (%s)",
+        (_style, name, aliases) => {
+            const result = ManifestParser.getSpineAssets(
+                manifest({
+                    name,
+                    assets: [
+                        { alias: aliases('spine/bg/bg.atlas') },
+                        { alias: aliases('spine/bg/bg.json') },
+                        { alias: aliases('spine/bg/bg.png') },
+                        { alias: aliases('spine/symbols/H1/H1.atlas') },
+                        { alias: aliases('spine/symbols/H1/H1.json') },
+                        { alias: aliases('spine/symbols/H1/H1.png') },
+                        { alias: ['spine/root/root.json', 'spine/root/root', 'root.json', 'root'] },
+                        { alias: aliases('settings/settings.json') },
+                        { alias: aliases('settings/texts.json') },
+                    ],
+                }),
+            );
+
+            expect(result).toEqual([
+                { atlas: 'bg.atlas', skel: 'bg.json', texture: 'bg.png' },
+                { atlas: 'H1.atlas', skel: 'H1.json', texture: 'H1.png' },
+                { skel: 'root.json' },
+            ]);
+        },
+    );
+
+    it('leaves a json in a folder of its own name alone when the atlases are not laid out so', () => {
+        const result = ManifestParser.getSpineAssets(
+            manifest(
+                bundle([
+                    { alias: ['spines/hero.atlas'] },
+                    { alias: ['spines/hero.json'] },
+                    { alias: ['spines/hero.png'] },
+                    { alias: ['settings/settings.json'] },
+                ]),
+            ),
+        );
+
+        expect(result).toEqual([{ atlas: 'hero.atlas', skel: 'hero.json', texture: 'hero.png' }]);
+    });
+
+    it("leaves a lone json beside the atlases' own folders alone when its folder is not its own", () => {
+        const result = ManifestParser.getSpineAssets(
+            manifest(
+                bundle([
+                    { alias: ['spine/bg/bg.atlas'] },
+                    { alias: ['spine/bg/bg.json'] },
+                    { alias: ['spine/bg/bg.png'] },
+                    { alias: ['spine/data/texts.json'] },
+                ]),
+            ),
+        );
+
+        expect(result).toEqual([{ atlas: 'bg.atlas', skel: 'bg.json', texture: 'bg.png' }]);
+    });
 });
 
 describe('ManifestParser.fromLoaderResources', () => {

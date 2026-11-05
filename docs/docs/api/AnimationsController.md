@@ -77,6 +77,16 @@ Returns the names of all currently looping animations.
 
 ---
 
+### activeStates
+
+```ts
+activeStates(options?: { builtIn?: boolean }): string[]
+```
+
+The states the scene stands in: every registered state `playState` played and nothing has stopped since, oldest first, a replayed one moved to the end. `stopState` and `stopAll` take a state off the list; a state whose one-shots merely finished stays on it. The states the layout plays for itself — `init`, `landscape`, `portrait` — are left out unless `builtIn` is set.
+
+---
+
 ### addEventListener
 
 ```ts
@@ -94,6 +104,8 @@ playState(stateName: string): Promise<void>
 ```
 
 Plays all animations grouped under the given state name (e.g. `"idle"` triggers every animation in `state_idle/`).
+
+Playing a state the spine already sits in changes nothing: an animation still running on its track — a loop, or a one-shot that has not finished — is left where it is rather than restarted from frame 0. Pass `{ restart: true }` to start them over.
 
 ---
 

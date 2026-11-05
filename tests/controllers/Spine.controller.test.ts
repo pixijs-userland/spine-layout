@@ -359,6 +359,15 @@ describe('SpineController', () => {
         expect(ctl.getSlotTexture('hero', 'icon')).toBeNull();
     });
 
+    it('idOf answers the id a spine is registered under, and nothing for a stranger', () => {
+        const hero = createFakeSpine();
+        const spines = asSpineMap({ hero });
+        const ctl = new SpineController(fakeEngine, spines, new AnimationsController(fakeEngine, spines));
+
+        expect(ctl.idOf(hero as never)).toBe('hero');
+        expect(ctl.idOf(createFakeSpine() as never)).toBeUndefined();
+    });
+
     it('cloneBySpineID warns and returns null when source is unknown', () => {
         const ctl = new SpineController(
             fakeEngine,
@@ -390,6 +399,8 @@ describe('SpineController', () => {
         expect(cloned.scale.y).toBe(3);
         expect(cloned.rotation).toBe(0.5);
         expect(spines.get('clone_target')).toBe(cloned);
+        expect(cloned.label).toBe('clone_target');
+        expect(ctl.idOf(cloned)).toBe('clone_target');
         expect(existing.__destroyed).toBe(true);
         expect(registerSpy).toHaveBeenCalledWith('clone_target', cloned);
     });
