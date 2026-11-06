@@ -1705,3 +1705,126 @@ describe('AnimationsController – playLastFrame', () => {
         expect(hero.state.tracks[0]?.trackTime).toBe(5);
     });
 });
+
+describe('AnimationsController – onSound', () => {
+    function makeSpine(): FakeSpine {
+        return createFakeSpine({
+            animations: [
+                { name: 'a', duration: 1 },
+                { name: 'b', duration: 1 },
+            ],
+        });
+    }
+
+    beforeEach(() => {
+        soundsMock.playFX.mockClear();
+        soundsMock.stopFX.mockClear();
+        soundsMock.playMusic.mockClear();
+        vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+        vi.useRealTimers();
+    });
+
+    it('reports every sound play and stop to its listeners, alongside the built-in player', async () => {
+        const hero = makeSpine();
+        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero }));
+        ctl.registerSpine('hero', hero as never);
+        const listener = vi.fn();
+        ctl.onSound(listener);
+
+        void ctl.play('hero', 'a');
+        hero.triggerEvent('music_loop', 'a');
+        hero.triggerEvent('spin_loop', 'a');
+        hero.triggerEvent('whoosh', 'a');
+        ctl.stop('hero', 'a');
+
+        expect(listener.mock.calls.map(([event]) => event)).toEqual([
+            { action: 'play', kind: 'music', name: 'music', loop: true, spineID: 'hero', animation: 'a' },
+            { action: 'play', kind: 'fx', name: 'spin', loop: true, spineID: 'hero', animation: 'a' },
+            { action: 'play', kind: 'fx', name: 'whoosh', loop: false, spineID: 'hero', animation: 'a' },
+            { action: 'stop', kind: 'fx', name: 'spin', loop: false, spineID: 'hero', animation: 'a' },
+            { action: 'stop', kind: 'fx', name: 'whoosh', loop: false, spineID: 'hero', animation: 'a' },
+        ]);
+        expect(soundsMock.playMusic).toHaveBeenCalledWith('music');
+        expect(soundsMock.playFX).toHaveBeenCalledTimes(2);
+        expect(soundsMock.stopFX).toHaveBeenCalledTimes(2);
+        await vi.runAllTimersAsync();
+    });
+
+    it('with builtInSounds off, plays nothing itself and only reports the sounds', async () => {
+        const hero = makeSpine();
+        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero }));
+        ctl.builtInSounds = false;
+        ctl.registerSpine('hero', hero as never);
+        const listener = vi.fn();
+        ctl.onSound(listener);
+
+        void ctl.play('hero', 'a');
+        hero.triggerEvent('music', 'a');
+        hero.triggerEvent('whoosh', 'a');
+        ctl.stop('hero', 'a');
+
+        expect(soundsMock.playMusic).not.toHaveBeenCalled();
+        expect(soundsMock.playFX).not.toHaveBeenCalled();
+        expect(soundsMock.stopFX).not.toHaveBeenCalled();
+        expect(listener).toHaveBeenCalledTimes(3);
+        await vi.runAllTimersAsync();
+    });
+
+    it('reports no stop for an FX the stopped animation did not play', async () => {
+        const hero = makeSpine();
+        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero }));
+        ctl.registerSpine('hero', hero as never);
+        const listener = vi.fn();
+        ctl.onSound(listener);
+
+        void ctl.play('hero', 'a');
+        void ctl.play('hero', 'b');
+        hero.triggerEvent('whoosh', 'a');
+        ctl.stop('hero', 'b');
+
+        expect(listener.mock.calls.filter(([event]) => event.action === 'stop')).toEqual([]);
+        await vi.runAllTimersAsync();
+    });
+
+    it('unsubscribes, and keeps going when a listener throws', () => {
+        const hero = makeSpine();
+        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero }));
+        ctl.registerSpine('hero', hero as never);
+        const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+        const throwing = vi.fn(() => {
+            throw new Error('boom');
+        });
+        const listener = vi.fn();
+        ctl.onSound(throwing);
+        const off = ctl.onSound(listener);
+
+        hero.triggerEvent('whoosh');
+        off();
+        hero.triggerEvent('whoosh');
+
+        expect(throwing).toHaveBeenCalledTimes(2);
+        expect(listener).toHaveBeenCalledTimes(1);
+        expect(error.mock.calls.filter(([message]) => message === '[spine-layout] sound listener failed')).toHaveLength(2);
+        error.mockRestore();
+    });
+
+    it('forgets its listeners on clear unless keepListeners is set', () => {
+        const hero = makeSpine();
+        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero }));
+        const listener = vi.fn();
+        ctl.onSound(listener);
+
+        ctl.clear({ keepListeners: true });
+        ctl.registerSpine('hero', hero as never);
+        hero.triggerEvent('whoosh');
+        expect(listener).toHaveBeenCalledTimes(1);
+
+        ctl.clear();
+        ctl.registerSpine('hero', hero as never);
+        hero.triggerEvent('whoosh');
+        expect(listener).toHaveBeenCalledTimes(1);
+    });
+});
