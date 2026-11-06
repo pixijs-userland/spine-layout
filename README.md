@@ -45,6 +45,10 @@ const engine = createPixi4Engine(PIXI, { renderer: app.renderer });
 const layout = new SpineLayoutCore({ engine });
 ```
 
+A game whose own loader already reads its skeletons (unicore reads binary Spine 3.8 into
+`SkeletonData` with its atlas) hands them over as they are: `engine.assets.set('spine/bg.json',
+skeletonData)`. The engine takes a `SkeletonData` under a skeleton alias as read, with no atlas.
+
 A project is one Spine version; `skeletonVersion(skeleton)` reads it from a `.json` or `.skel`.
 One engine family is live per page. See the [Engines guide](https://userland.pixijs.io/spine-layout/engines)
 for loading, the differences between the engines and how to write another.
