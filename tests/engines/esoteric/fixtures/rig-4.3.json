@@ -1,0 +1,94 @@
+{
+    "skeleton": { "hash": "rig", "spine": "4.3.23" },
+    "bones": [
+        { "name": "root" },
+        { "name": "arm", "parent": "root", "length": 100 },
+        { "name": "hand", "parent": "arm", "x": 100 },
+        { "name": "target", "parent": "root", "y": 100 },
+        { "name": "follower", "parent": "root", "x": 50 },
+        { "name": "flag", "parent": "follower", "x": 10 },
+        { "name": "tail", "parent": "root", "x": -50 }
+    ],
+    "slots": [
+        { "name": "body", "bone": "root", "attachment": "square" },
+        { "name": "seq", "bone": "hand", "attachment": "seq" },
+        { "name": "mesh", "bone": "follower", "attachment": "quad" },
+        { "name": "turned", "bone": "root", "attachment": "turned" }
+    ],
+    "constraints": [
+        { "type": "ik", "name": "aim", "bones": ["arm"], "target": "target" },
+        {
+            "type": "transform",
+            "name": "follow",
+            "bones": ["follower"],
+            "source": "arm",
+            "properties": { "rotate": { "to": { "rotate": {} } } },
+            "mixRotate": 1
+        },
+        { "type": "physics", "name": "sway", "bone": "tail", "x": 1 }
+    ],
+    "skins": [
+        {
+            "name": "default",
+            "attachments": {
+                "body": { "square": { "width": 40, "height": 20 } },
+                "seq": {
+                    "seq": {
+                        "width": 30,
+                        "height": 40,
+                        "sequence": { "count": 2, "start": 1, "digits": 1 }
+                    }
+                },
+                "mesh": {
+                    "quad": {
+                        "type": "mesh",
+                        "uvs": [0, 1, 0, 0, 1, 0, 1, 1],
+                        "triangles": [0, 1, 2, 2, 3, 0],
+                        "vertices": [-10, -10, -10, 10, 10, 10, 10, -10],
+                        "hull": 4,
+                        "width": 20,
+                        "height": 20
+                    }
+                },
+                "turned": { "turned": { "width": 20, "height": 10 } }
+            }
+        }
+    ],
+    "events": { "hit": {} },
+    "animations": {
+        "relax": {
+            "ik": { "aim": [{ "mix": 0 }] }
+        },
+        "loosen": {
+            "transform": { "follow": [{ "mixRotate": 0 }] }
+        },
+        "flip": {
+            "attachments": {
+                "default": { "seq": { "seq": { "sequence": [{ "mode": "hold", "index": 1 }] } } }
+            }
+        },
+        "pose": {
+            "bones": {
+                "arm": { "rotate": [{ "value": 10 }] },
+                "hand": { "translate": [{ "x": 1, "y": 2 }] }
+            },
+            "slots": {
+                "body": {
+                    "rgba": [{ "color": "ff000080" }],
+                    "attachment": [{ "name": null }]
+                }
+            },
+            "ik": { "aim": [{ "mix": 0.5 }] },
+            "transform": { "follow": [{ "mixRotate": 0.5 }] },
+            "physics": { "sway": { "inertia": [{ "value": 0.5 }] }, "": { "reset": [{}] } },
+            "attachments": {
+                "default": {
+                    "mesh": { "quad": { "deform": [{ "vertices": [1, 1] }] } },
+                    "seq": { "seq": { "sequence": [{ "mode": "loop", "delay": 0.1 }] } }
+                }
+            },
+            "drawOrder": [{ "offsets": [{ "slot": "body", "offset": 2 }] }],
+            "events": [{ "name": "hit" }]
+        }
+    }
+}

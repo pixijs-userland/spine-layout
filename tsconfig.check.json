@@ -4,5 +4,18 @@
         "composite": false,
         "noEmit": true
     },
-    "include": ["src/engines/pixi8", "src/index.ts", "src/engines/pixi4", "src/pixi4.ts"]
+    "include": [
+        "src/engines/pixi8",
+        "src/index.ts",
+        "src/engines/pixi4",
+        "src/pixi4.ts",
+        "src/engines/esoteric",
+        "src/engines/pixiSpine",
+        "src/engines/legacy",
+        "src/runtimes",
+        "src/pixi5.ts",
+        "src/pixi6.ts",
+        "src/pixi7.ts",
+        "src/pixi8.ts"
+    ]
 }

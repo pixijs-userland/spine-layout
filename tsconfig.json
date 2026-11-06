@@ -3,6 +3,11 @@
     "references": [
         { "path": "./tsconfig.core.json" },
         { "path": "./tsconfig.pixi8.json" },
-        { "path": "./tsconfig.pixi4.json" }
+        { "path": "./tsconfig.pixi4.json" },
+        { "path": "./tsconfig.esoteric.json" },
+        { "path": "./tsconfig.pixiSpine.json" },
+        { "path": "./tsconfig.legacy.json" },
+        { "path": "./tsconfig.runtimes.json" },
+        { "path": "./tsconfig.entries.json" }
     ]
 }

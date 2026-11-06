@@ -1,0 +1,9 @@
+{
+    "extends": "./tsconfig.base.json",
+    "compilerOptions": {
+        "types": [],
+        "tsBuildInfoFile": "dist/.tsbuildinfo/legacy.tsbuildinfo"
+    },
+    "include": ["src/engines/legacy"],
+    "references": [{ "path": "./tsconfig.core.json" }]
+}

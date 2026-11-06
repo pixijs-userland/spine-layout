@@ -4,5 +4,5 @@
         "tsBuildInfoFile": "dist/.tsbuildinfo/pixi8.tsbuildinfo"
     },
     "include": ["src/engines/pixi8", "src/index.ts"],
-    "references": [{ "path": "./tsconfig.core.json" }]
+    "references": [{ "path": "./tsconfig.core.json" }, { "path": "./tsconfig.esoteric.json" }]
 }
