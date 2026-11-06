@@ -143,11 +143,15 @@ const updateHooks = createHookSet<Spine, [number]>((spine, run) => {
     };
 });
 
-const rootPoses = new WeakMap<Bone, BonePose>();
+const poses = new WeakMap<Bone, BonePose>();
 
-/** A root bone is posed in skeleton space: offset and scaled by the skeleton, yDown flip included. */
-function rootPose(bone: Bone): BonePose {
-    let pose = rootPoses.get(bone);
+/**
+ * Animations write `pose`; constraints and the renderer read `appliedPose`, so world values come
+ * from there. A root bone is posed in skeleton space: offset and scaled by the skeleton, yDown
+ * flip included.
+ */
+function bonePose(bone: Bone): BonePose {
+    let pose = poses.get(bone);
     if (pose) return pose;
 
     const local = bone.pose;
@@ -166,19 +170,21 @@ function rootPose(bone: Bone): BonePose {
             local.y = value;
         },
         get worldX() {
-            return local.worldX;
+            return bone.appliedPose.worldX;
         },
         get worldY() {
-            return local.worldY;
+            return bone.appliedPose.worldY;
         },
         worldToParent(point, skeleton) {
+            if (bone.parent) return bone.parent.appliedPose.worldToLocal(point as never) as never;
+
             const { x, y, scaleX, scaleY } = skeleton;
             point.x = scaleX ? (point.x - x) / scaleX : 0;
             point.y = scaleY ? (point.y - y) / scaleY : 0;
             return point;
         },
     };
-    rootPoses.set(bone, pose);
+    poses.set(bone, pose);
 
     return pose;
 }
@@ -212,13 +218,10 @@ export const spinePort: SpinePort<Pixi8Types> = {
     create: (data) => new Spine(data as unknown as SkeletonData),
     update: (spine, dt) => spine.update(dt),
 
-    bonePose(target) {
-        const bone = boneOf(target);
-        return bone.parent ? (bone.pose as unknown as BonePose) : rootPose(bone);
-    },
+    bonePose: (bone) => bonePose(boneOf(bone)),
     boneSetup: (bone) => boneOf(bone).data.setupPose,
-    slotAttachment: (slot) => slotOf(slot).pose.attachment,
-    slotAlpha: (slot) => slotOf(slot).pose.color.a,
+    slotAttachment: (slot) => slotOf(slot).appliedPose.attachment,
+    slotAlpha: (slot) => slotOf(slot).appliedPose.color.a,
 
     setupPose(skeleton, scope) {
         const target = skeletonOf(skeleton);
@@ -251,7 +254,7 @@ export const spinePort: SpinePort<Pixi8Types> = {
         let vertices: ArrayLike<number> | undefined;
 
         if (attachment instanceof RegionAttachment) {
-            vertices = attachment.getOffsets(slotOf(slot).pose);
+            vertices = attachment.getOffsets(slotOf(slot).appliedPose);
         } else if (attachment instanceof MeshAttachment && !attachment.bones) {
             vertices = Array.from(attachment.vertices).slice(0, attachment.hullLength);
         } else if (attachment instanceof BoundingBoxAttachment && !attachment.bones) {

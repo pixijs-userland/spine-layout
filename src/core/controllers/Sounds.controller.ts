@@ -78,6 +78,7 @@ export class Sounds {
     private onReadyCallbacks: (() => void)[] = [];
     private settings: SoundSettings;
     private listening = false;
+    private awaitingTap = false;
     activated = false;
 
     constructor(settings: Partial<SoundSettings> = {}) {
@@ -95,8 +96,9 @@ export class Sounds {
 
         // From construction, not `init`: the module-level `sounds` is built on import, and a tap
         // that lands before the game calls `init` (a launcher's first click, a loading screen)
-        // must still count as the gesture that unlocks audio.
-        window.addEventListener('pointerdown', this.onFirstInteraction, { once: true });
+        // must still count as the gesture that unlocks audio. Where there is no page yet, as in a
+        // test or a tool, the first `init` installs it instead.
+        this.awaitTap();
     }
 
     init(pixiManifest?: ManifestLike, settings?: Partial<SoundSettings>) {
@@ -190,7 +192,9 @@ export class Sounds {
 
                     this.soundNames.set(
                         alias,
-                        (asset.src as []).map((src) => `${this.settings.assetBase ?? 'assets'}/${src}`),
+                        (asset.src as []).map(
+                            (src) => `${this.settings.assetBase ?? 'assets'}/${src}`,
+                        ),
                     );
                 });
             }
@@ -198,7 +202,8 @@ export class Sounds {
     }
 
     onUserInteraction() {
-        window.removeEventListener('pointerdown', this.onFirstInteraction);
+        if (this.awaitingTap) window.removeEventListener('pointerdown', this.onFirstInteraction);
+        this.awaitingTap = false;
         this.userInteraction = true;
         this.activated = true;
         this.onActivationCallbacks.forEach((callback) => callback());
@@ -577,11 +582,19 @@ export class Sounds {
      * the exception — see the constructor — and outlives `dispose` until the first tap.
      */
     private listen() {
-        if (this.listening) return;
+        if (this.listening || typeof window === 'undefined') return;
 
         this.listening = true;
+        this.awaitTap();
         window.addEventListener('visibilitychange', this.onVisibilityChange);
         this.mute();
+    }
+
+    private awaitTap() {
+        if (this.awaitingTap || this.userInteraction || typeof window === 'undefined') return;
+
+        this.awaitingTap = true;
+        window.addEventListener('pointerdown', this.onFirstInteraction, { once: true });
     }
 
     private unlisten() {
@@ -619,7 +632,9 @@ export class Sounds {
     private resolveSoundKey(soundName: string): string | null {
         const bundle = this.settings.prefix || 'sounds';
 
-        return [`${bundle}/${soundName}`, soundName].find((key) => this.soundNames.has(key)) ?? null;
+        return (
+            [`${bundle}/${soundName}`, soundName].find((key) => this.soundNames.has(key)) ?? null
+        );
     }
 
     /** The files a request may play: its variants resolved, minus anything the manifest lacks. */
