@@ -377,6 +377,7 @@ export interface Spine38Core {
     AtlasAttachmentLoader: new (atlas: Spine38TextureAtlas) => object;
     SkeletonJson: new (attachmentLoader: object) => Spine38SkeletonReader<unknown>;
     SkeletonBinary: new (attachmentLoader: object) => Spine38SkeletonReader<Uint8Array>;
+    SkeletonData: RuntimeClass;
     RegionAttachment: RuntimeClass;
     MeshAttachment: RuntimeClass;
     BoundingBoxAttachment: RuntimeClass;
