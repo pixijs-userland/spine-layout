@@ -3,6 +3,7 @@ import { UnsupportedSpineVersionError } from '../../../src/engine/errors';
 import type { ContainerLike } from '../../../src/engine/Engine';
 import {
     createPixi7Engine,
+    MixedSpineVersionsError,
     SpineLayoutCore,
     type Pixi7Engine,
     type Pixi7EngineOptions,
@@ -49,14 +50,16 @@ function parsedAtlas(atlasText: string) {
     return atlas;
 }
 
-afterEach(() => {
+function uncache() {
     const { Assets, Texture, BaseTexture } = stack.PIXI;
     cached.splice(0).forEach((alias) => {
         Assets.cache.remove(alias);
         Texture.removeFromCache(alias);
         BaseTexture.removeFromCache(alias);
     });
-});
+}
+
+afterEach(uncache);
 
 const engineWith = (options: Pixi7EngineOptions = {}) =>
     createPixi7Engine(stack.PIXI, { warn: (message) => warnings.push(message), ...options });
@@ -600,9 +603,9 @@ describe('the rest of the engine', () => {
 });
 
 describe('SpineLayoutCore on it', () => {
-    /** A 4.3 root whose slots embed a 3.8, a 4.1 and a 4.2 skeleton. */
-    function scene() {
-        const root = exportOf('4.3.23');
+    /** A root of `version` whose slots embed three skeletons of it, in the format of `like`. */
+    function scene(version: string, like = version) {
+        const root = exportOf(version, like);
         const slots = (root.skeleton as unknown as { slots: object[] }).slots;
         slots.push(
             ...['alpha', 'beta', 'gamma'].map((id) => ({ name: `spine_${id}`, bone: 'root' })),
@@ -610,21 +613,28 @@ describe('SpineLayoutCore on it', () => {
 
         return [
             { name: 'root', ...root },
-            { name: 'alpha', ...exportOf('3.8.99') },
-            { name: 'beta', ...exportOf('4.1.24', '3.8') },
-            { name: 'gamma', ...exportOf('4.2.43', '4.3') },
+            ...['alpha', 'beta', 'gamma'].map((name) => ({ name, ...exportOf(version, like) })),
         ];
     }
 
-    type Layout = SpineLayoutCore<Pixi7Types>;
+    const FAMILIES = [
+        ['3.8.99', '3.8'],
+        ['4.1.24', '3.8'],
+        ['4.2.43', '4.3'],
+        ['4.3.23', '4.3'],
+    ] as const;
 
-    const fromData = (layout: Layout) =>
+    type Layout = SpineLayoutCore<Pixi7Types>;
+    type Scene = ReturnType<typeof scene>;
+
+    const fromData = (layout: Layout, spines: Scene) =>
         layout.loadInstancesFromDataArray(
-            scene().map((item) => ({ ...item, textures: { 'contract.png': page } })),
+            spines.map((item) => ({ ...item, textures: { 'contract.png': page } })),
         );
 
-    function fromManifest(layout: Layout) {
-        const files = scene().flatMap(({ name, ...item }) => cacheExport(name, item));
+    function fromManifest(layout: Layout, spines: Scene) {
+        uncache();
+        const files = spines.flatMap(({ name, ...item }) => cacheExport(name, item));
         const assets = files.map((file) => ({ alias: [file], src: file }));
 
         return layout.loadInstancesFromManifest({ bundles: [{ name: 'spines', assets }] });
@@ -647,37 +657,62 @@ describe('SpineLayoutCore on it', () => {
                     Object.assign(async () => stack.esoteric['4.3'], stack.esoteric['4.3'].info),
                 ],
             ],
-        ])('holds a scene of every family, %s', async (_, runtimes) => {
+        ])('holds a scene of each family as a layout of its own, %s', async (_, runtimes) => {
             const engine = engineWith({ runtimes: runtimes() });
-            const layout = new SpineLayoutCore<Pixi7Types>({ engine });
-            const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-            await build(layout);
-            const logged = errors.mock.calls.slice();
-            errors.mockRestore();
+            for (const [version, like] of FAMILIES) {
+                const minor = version.slice(0, 3);
+                const layout = new SpineLayoutCore<Pixi7Types>({ engine });
+                const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-            const minors = Object.fromEntries(
-                [...layout.spines].map(([id, spine]) => [id, engine.spine.runtimeOf(spine)?.minor]),
-            );
-            const ancestors = (view: ContainerLike) => {
-                const chain: ContainerLike[] = [];
-                for (let at = view.parent; at; at = at.parent) chain.push(at);
-                return chain;
-            };
-            const root = layout.spines.get('root')!;
+                await build(layout, scene(version, like));
+                const logged = errors.mock.calls.slice();
+                errors.mockRestore();
 
-            expect(logged).toEqual([]);
-            expect(layout).toBeInstanceOf(stack.PIXI.Container);
-            expect(minors).toEqual({ root: '4.3', alpha: '3.8', beta: '4.1', gamma: '4.2' });
-            ['alpha', 'beta', 'gamma'].forEach((id) =>
-                expect(ancestors(layout.spines.get(id)!)).toContain(root),
-            );
+                const minors = Object.fromEntries(
+                    [...layout.spines].map(([id, spine]) => [
+                        id,
+                        engine.spine.runtimeOf(spine)?.minor,
+                    ]),
+                );
+                const ancestors = (view: ContainerLike) => {
+                    const chain: ContainerLike[] = [];
+                    for (let at = view.parent; at; at = at.parent) chain.push(at);
+                    return chain;
+                };
+                const root = layout.spines.get('root')!;
+
+                expect(logged).toEqual([]);
+                expect(layout).toBeInstanceOf(stack.PIXI.Container);
+                expect(minors).toEqual({ root: minor, alpha: minor, beta: minor, gamma: minor });
+                ['alpha', 'beta', 'gamma'].forEach((id) =>
+                    expect(ancestors(layout.spines.get(id)!)).toContain(root),
+                );
+                layout.reset();
+            }
+
             expect(warnings).toEqual([]);
-            layout.reset();
         });
     });
 
-    it('loads its lazy runtimes, builds what they read, and skips an export none reads', async () => {
+    it('refuses a scene that mixes the families, and builds nothing', () => {
+        const engine = engineWith({ runtimes: pixi7Runtimes() });
+        const layout = new SpineLayoutCore<Pixi7Types>({ engine });
+        const [root] = scene('4.3.23');
+        const textures = { 'contract.png': page };
+
+        expect(() =>
+            layout.createInstancesFromDataArray([
+                { ...root, textures },
+                { name: 'alpha', ...exportOf('3.8.99'), textures },
+                { name: 'beta', ...exportOf('4.1.24', '3.8'), textures },
+                { name: 'gamma', ...exportOf('4.2.43', '4.3'), textures },
+            ]),
+        ).toThrow(MixedSpineVersionsError);
+        expect(layout.spines.size).toBe(0);
+    });
+
+    it('loads its lazy runtimes, builds what they read, and skips a layout of an export none reads', async () => {
         const engine = engineWith({
             runtimes: [
                 stack.pixiSpine['3.8'],
@@ -685,19 +720,25 @@ describe('SpineLayoutCore on it', () => {
             ],
         });
         const layout = new SpineLayoutCore<Pixi7Types>({ engine });
+        const old = new SpineLayoutCore<Pixi7Types>({ engine });
         const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
         const root = exportOf('4.3.23');
-        (root.skeleton as unknown as { slots: object[] }).slots.push(
-            ...['alpha', 'beta'].map((id) => ({ name: `spine_${id}`, bone: 'root' })),
-        );
+        (root.skeleton as unknown as { slots: object[] }).slots.push({
+            name: 'spine_alpha',
+            bone: 'root',
+        });
         const textures = { 'contract.png': page };
 
         await expect(
             layout.loadInstancesFromDataArray([
                 { name: 'root', ...root, textures },
-                { name: 'alpha', ...exportOf('3.8.99'), textures },
-                { name: 'beta', ...exportOf('3.6.53', '3.8'), textures },
+                { name: 'alpha', ...exportOf('4.3.23'), textures },
+            ]),
+        ).resolves.toBeUndefined();
+        await expect(
+            old.loadInstancesFromDataArray([
+                { name: 'root', ...exportOf('3.6.53', '3.8'), textures },
             ]),
         ).resolves.toBeUndefined();
         const logged = errors.mock.calls.slice();
@@ -706,20 +747,23 @@ describe('SpineLayoutCore on it', () => {
         warn.mockRestore();
 
         expect([...layout.spines.keys()]).toEqual(['root', 'alpha']);
+        expect(engine.spine.runtimeOf(layout.spines.get('alpha')!)?.minor).toBe('4.3');
+        expect(old.spines.size).toBe(0);
         expect(logged).toEqual([]);
         expect(warned).toEqual([
             [
-                '[SpineLayout] Skipped spine "beta": beta: Spine 3.6.53 — registered runtimes: 3.8, 4.3; ' +
+                '[SpineLayout] Skipped spine "root": root: Spine 3.6.53 — registered runtimes: 3.8, 4.3; ' +
                     'no Pixi has a runtime for it',
             ],
         ]);
         layout.reset();
+        old.reset();
     });
 
     it('is drawn with its spines when the stage renders', async () => {
         const engine = engineWith({ runtimes: pixi7Runtimes() });
         const layout = new SpineLayoutCore<Pixi7Types>({ engine });
-        await fromData(layout);
+        await fromData(layout, scene('4.3.23'));
 
         const stage = new stack.PIXI.Container();
         const renderer = {};

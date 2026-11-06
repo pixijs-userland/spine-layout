@@ -460,21 +460,16 @@ export function describePixi5Engine(minor: Pixi5Minor) {
                 expect(drawn.map((sprite) => regions.indexOf(sprite as never))).toEqual([0, 1]);
             });
 
-            it(`builds the root, and warns once of the ${other} skeleton it cannot read`, () => {
-                const root = contractSkeleton(minor);
-                (root.slots as object[]).push({ name: 'spine_child', bone: 'root' });
-
+            it(`skips a ${other} skeleton it cannot read, with a single warning line`, () => {
                 const { layout, logged, warned } = layoutOf([
-                    { name: 'root', skeleton: root },
-                    { name: 'child', skeleton: contractSkeleton(other) },
+                    { name: 'root', skeleton: contractSkeleton(other) },
                 ]);
 
-                expect(layout.spines.get('root')).toBeInstanceOf(PIXI.spine.Spine);
-                expect(layout.spines.has('child')).toBe(false);
+                expect(layout.spines.size).toBe(0);
                 expect(logged).toEqual([]);
                 expect(warned).toEqual([
                     [
-                        `[SpineLayout] Skipped spine "child": child: Spine ${EXPORTED[other]} — ` +
+                        `[SpineLayout] Skipped spine "root": root: Spine ${EXPORTED[other]} — ` +
                             `registered runtimes: ${minor}; Pixi 4, 5, 6, 7 can render it`,
                     ],
                 ]);

@@ -17,6 +17,7 @@ import { log } from './utils/Log';
 import { ManifestParser, type SpineAssetData } from './utils/ManifestParser';
 import { skeletonVersion } from './utils/skeletonVersion';
 import { minorOf } from './versions/minorOf';
+import { oneSpineVersion } from './versions/oneSpineVersion';
 import { UNVERSIONED } from './versions/pickRuntime';
 import { planMultipleInstances, spinePointerBases } from './utils/multiInstance';
 import { AnimationsController } from './controllers/Animations.controller';
@@ -206,11 +207,13 @@ export class SpineLayoutCore<T extends EngineTypes = EngineTypes> extends Layout
      */
     createInstancesFromManifest(manifest: ManifestLike, folderName?: string): void | Promise<void> {
         const assets = ManifestParser.getSpineAssets(manifest);
-        const skeletons = () =>
-            assets.map((asset) => {
-                const key = alias(asset.skel, folderName);
-                return this.engine.assets.has(key) ? this.engine.assets.get(key) : undefined;
-            });
+        const skeletons = assets.map((asset) => {
+            const key = alias(asset.skel, folderName);
+            return {
+                file: asset.skel,
+                skeleton: this.engine.assets.has(key) ? this.engine.assets.get(key) : undefined,
+            };
+        });
 
         return this.afterPrepare(skeletons, () =>
             this.buildFromManifest(manifest, assets, folderName),
@@ -224,7 +227,7 @@ export class SpineLayoutCore<T extends EngineTypes = EngineTypes> extends Layout
     /** {@link createInstancesFromManifest}, from skeletons the caller read itself. */
     createInstancesFromDataArray(data: SpineInstanceData<T>[]): void | Promise<void> {
         return this.afterPrepare(
-            () => data.map((item) => item.skeleton),
+            data.map((item) => ({ file: item.name, skeleton: item.skeleton })),
             () => this.buildFromDataArray(data),
         );
     }
@@ -233,13 +236,27 @@ export class SpineLayoutCore<T extends EngineTypes = EngineTypes> extends Layout
         await this.createInstancesFromDataArray(data);
     }
 
-    private afterPrepare(skeletons: () => unknown[], build: () => void): void | Promise<void> {
+    /** Builds nothing, and throws `MixedSpineVersionsError`, where the skeletons name two Spine versions. */
+    private afterPrepare(
+        skeletons: { file: string; skeleton: unknown }[],
+        build: () => void,
+    ): void | Promise<void> {
+        const versions = skeletons
+            .filter(({ skeleton }) => skeleton && typeof skeleton === 'object')
+            .map(({ file, skeleton }) => ({
+                file,
+                version: skeletonVersion(skeleton as SkeletonSource),
+            }));
+        const minor = oneSpineVersion(versions);
+
         const { spine } = this.engine;
         if (!spine.prepare) return build();
 
+        const unversioned = versions.some(({ version }) => !minorOf(version));
+        const minors = [...(minor ? [minor] : []), ...(unversioned ? [UNVERSIONED] : [])];
         const generation = this.#generation;
 
-        return spine.prepare(exportMinors(skeletons())).then(() => {
+        return spine.prepare(minors).then(() => {
             if (generation === this.#generation) build();
         });
     }
@@ -880,17 +897,6 @@ export class SpineLayoutCore<T extends EngineTypes = EngineTypes> extends Layout
 /** The layout as it is held: the core and the engine's container in one. */
 export type SpineLayoutView<T extends EngineTypes = EngineTypes> = SpineLayoutCore<T> &
     T['Container'];
-
-/** Each export minor among `skeletons`, once, and {@link UNVERSIONED} for those that name none. */
-function exportMinors(skeletons: unknown[]): string[] {
-    const minors = skeletons.map((skeleton) =>
-        skeleton && typeof skeleton === 'object'
-            ? (minorOf(skeletonVersion(skeleton as SkeletonSource)) ?? UNVERSIONED)
-            : undefined,
-    );
-
-    return [...new Set(minors.filter((minor) => minor !== undefined))];
-}
 
 /** The skins a skeleton exported. A skeleton that attaches no image carries no `skins` key. */
 function skinsOf(skeleton: SkeletonSource): { name: string }[] {

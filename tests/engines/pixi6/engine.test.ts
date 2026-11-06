@@ -11,6 +11,7 @@ import {
 } from 'vitest';
 import {
     createPixi6Engine,
+    MixedSpineVersionsError,
     SpineLayoutCore,
     type Pixi6Engine,
     type Pixi6LazyRuntime,
@@ -387,23 +388,28 @@ describe('createPixi6Engine', () => {
     });
 });
 
-/** A 4.1 root that nests the 3.7, 3.8 and 4.0 skeletons in `spine_<id>` slots, 100 apart. */
-const CHILDREN = { alpha: '3.7', bravo: '3.8', charlie: '4.0' } as const;
+const CHILDREN = ['alpha', 'bravo', 'charlie'] as const;
 
-function layoutData() {
-    const root = contractSkeleton('4.1');
+type Child = (typeof CHILDREN)[number];
+
+/**
+ * A root of `minor` that nests three skeletons in `spine_<id>` slots, 100 apart, each of `minor`
+ * unless `childMinors` names another.
+ */
+function layoutData(minor: Minor, childMinors: Partial<Record<Child, Minor>> = {}) {
+    const root = contractSkeleton(minor);
     const { bones, slots } = root as { bones: object[]; slots: object[] };
 
-    Object.keys(CHILDREN).forEach((id, i) => {
+    CHILDREN.forEach((id, i) => {
         bones.push({ name: `bone_${id}`, parent: 'root', x: 100 * (i - 1), y: 100 });
         slots.push({ name: `spine_${id}`, bone: `bone_${id}` });
     });
 
     return [
         { name: 'root', skeleton: root, atlasText: ATLAS, textures: textures() },
-        ...Object.entries(CHILDREN).map(([id, minor]) => ({
+        ...CHILDREN.map((id) => ({
             name: id,
-            skeleton: contractSkeleton(minor),
+            skeleton: contractSkeleton(childMinors[id] ?? minor),
             atlasText: ATLAS,
             textures: textures(),
         })),
@@ -415,7 +421,7 @@ const MANIFEST = {
     bundles: [
         {
             name: 'main',
-            assets: ['root', ...Object.keys(CHILDREN)].flatMap((id) =>
+            assets: ['root', ...CHILDREN].flatMap((id) =>
                 ['json', 'atlas', 'png'].map((ext) => ({
                     alias: [`spine/${id}.${ext}`],
                     src: `${id}.${ext}`,
@@ -426,8 +432,8 @@ const MANIFEST = {
 };
 
 /** What loading {@link MANIFEST} leaves in the engine's asset cache: every atlas names `contract.png`. */
-function intoAssets(engine: Pixi6Engine) {
-    layoutData().forEach(({ name, skeleton }) => {
+function intoAssets(engine: Pixi6Engine, minor: Minor) {
+    layoutData(minor).forEach(({ name, skeleton }) => {
         engine.assets.set(`spine/${name}.json`, skeleton);
         engine.assets.set(`spine/${name}.atlas`, ATLAS);
     });
@@ -442,40 +448,56 @@ describe('SpineLayoutCore on the pixi6 engine', () => {
     });
     afterEach(() => errors.mockRestore());
 
-    it('nests a skeleton of every export minor into a tree, each on its runtime, and plays each', () => {
+    it('builds a tree of each export minor as a layout of its own, each on its runtime, and plays each', () => {
         const engine = createPixi6Engine(PIXI);
-        const layout = new SpineLayoutCore<Pixi6Types>({ engine });
 
-        layout.createInstancesFromDataArray(layoutData());
+        MINORS.forEach((minor) => {
+            const layout = new SpineLayoutCore<Pixi6Types>({ engine });
 
-        const root = layout.spines.get('root')!;
-        expect(layout).toBeInstanceOf(PIXI.Container);
-        expect(root.parent).toBe(layout);
-        expect(engine.spine.runtimeOf(root)?.minor).toBe('4.1');
+            layout.createInstancesFromDataArray(layoutData(minor));
 
-        Object.entries(CHILDREN).forEach(([id, minor], i) => {
-            const child = layout.spines.get(id)!;
+            const root = layout.spines.get('root')!;
+            expect(layout).toBeInstanceOf(PIXI.Container);
+            expect(root.parent).toBe(layout);
+            expect(engine.spine.runtimeOf(root)?.minor).toBe(minor);
 
-            expect(engine.spine.runtimeOf(child)?.minor).toBe(minor);
-            expect(engine.spine.getSlotObject(root, `spine_${id}`)).toBe(child);
-            const origin = root.toLocal(child.toGlobal(new PIXI.Point(0, 0)));
-            expect(origin.x).toBeCloseTo(100 * (i - 1), 4);
-            expect(origin.y).toBeCloseTo(-100, 4);
-        });
+            CHILDREN.forEach((id, i) => {
+                const child = layout.spines.get(id)!;
 
-        [root, ...Object.keys(CHILDREN).map((id) => layout.spines.get(id)!)].forEach((spine) => {
-            const events: string[] = [];
+                expect(engine.spine.runtimeOf(child)?.minor).toBe(minor);
+                expect(engine.spine.getSlotObject(root, `spine_${id}`)).toBe(child);
+                const origin = root.toLocal(child.toGlobal(new PIXI.Point(0, 0)));
+                expect(origin.x).toBeCloseTo(100 * (i - 1), 4);
+                expect(origin.y).toBeCloseTo(-100, 4);
+            });
 
-            spine.state.addListener({ event: (_, event) => events.push(event.data.name) });
-            spine.state.setAnimation(0, 'move', false);
-            engine.spine.update(spine, 0.75);
+            [root, ...CHILDREN.map((id) => layout.spines.get(id)!)].forEach((spine) => {
+                const events: string[] = [];
 
-            expect(events).toEqual(['hit']);
-            expect(engine.spine.bonePose(spine.skeleton.findBone('bone_a')!).x).toBeCloseTo(32.5);
+                spine.state.addListener({ event: (_, event) => events.push(event.data.name) });
+                spine.state.setAnimation(0, 'move', false);
+                engine.spine.update(spine, 0.75);
+
+                expect(events).toEqual(['hit']);
+                expect(engine.spine.bonePose(spine.skeleton.findBone('bone_a')!).x).toBeCloseTo(
+                    32.5,
+                );
+            });
         });
     });
 
-    it('awaits the lazy runtimes a tree needs before it builds it', async () => {
+    it('refuses a tree that nests skeletons of other export minors, and builds nothing', () => {
+        const layout = new SpineLayoutCore<Pixi6Types>({ engine: createPixi6Engine(PIXI) });
+
+        expect(() =>
+            layout.createInstancesFromDataArray(
+                layoutData('4.1', { alpha: '3.7', bravo: '3.8', charlie: '4.0' }),
+            ),
+        ).toThrow(MixedSpineVersionsError);
+        expect(layout.spines.size).toBe(0);
+    });
+
+    it('awaits the lazy runtime of a tree before it builds it, and loads no other', async () => {
         const loaded: string[] = [];
         const engine = createPixi6Engine(PIXI, {
             runtimes: MINORS.map((minor) =>
@@ -485,36 +507,42 @@ describe('SpineLayoutCore on the pixi6 engine', () => {
                 }),
             ),
         });
-        const layout = new SpineLayoutCore<Pixi6Types>({ engine });
 
-        await layout.loadInstancesFromDataArray(layoutData());
+        for (const [i, minor] of MINORS.entries()) {
+            const layout = new SpineLayoutCore<Pixi6Types>({ engine });
 
-        expect(loaded.sort()).toEqual(['3.7', '3.8', '4.0', '4.1']);
-        expect(
-            ['root', ...Object.keys(CHILDREN)].map(
-                (id) => engine.spine.runtimeOf(layout.spines.get(id)!)?.minor,
-            ),
-        ).toEqual(['4.1', '3.7', '3.8', '4.0']);
+            await layout.loadInstancesFromDataArray(layoutData(minor));
+
+            expect(loaded).toEqual(MINORS.slice(0, i + 1));
+            expect(
+                ['root', ...CHILDREN].map(
+                    (id) => engine.spine.runtimeOf(layout.spines.get(id)!)?.minor,
+                ),
+            ).toEqual([minor, minor, minor, minor]);
+        }
     });
 
-    it("builds a manifest from the asset cache, each skeleton on its export's runtime", async () => {
+    it("builds a manifest of each export minor from the asset cache, on that export's runtime", async () => {
         const engine = createPixi6Engine(PIXI);
-        intoAssets(engine);
-        const layout = new SpineLayoutCore<Pixi6Types>({ engine });
 
-        await layout.loadInstancesFromManifest(MANIFEST, 'spine');
+        for (const minor of MINORS) {
+            intoAssets(engine, minor);
+            const layout = new SpineLayoutCore<Pixi6Types>({ engine });
 
-        const root = layout.spines.get('root')!;
-        expect(errors).not.toHaveBeenCalled();
-        expect(layout.spines.size).toBe(4);
-        expect(engine.spine.runtimeOf(root)?.minor).toBe('4.1');
-        Object.entries(CHILDREN).forEach(([id, minor]) => {
-            expect(engine.spine.runtimeOf(layout.spines.get(id)!)?.minor).toBe(minor);
-            expect(engine.spine.getSlotObject(root, `spine_${id}`)).toBe(layout.spines.get(id));
-        });
+            await layout.loadInstancesFromManifest(MANIFEST, 'spine');
+
+            const root = layout.spines.get('root')!;
+            expect(errors).not.toHaveBeenCalled();
+            expect(layout.spines.size).toBe(4);
+            expect(engine.spine.runtimeOf(root)?.minor).toBe(minor);
+            CHILDREN.forEach((id) => {
+                expect(engine.spine.runtimeOf(layout.spines.get(id)!)?.minor).toBe(minor);
+                expect(engine.spine.getSlotObject(root, `spine_${id}`)).toBe(layout.spines.get(id));
+            });
+        }
     });
 
-    it('loads the lazy runtimes a manifest needs before it builds it', async () => {
+    it('loads the lazy runtime a manifest needs before it builds it, and no other', async () => {
         const loaded: string[] = [];
         const engine = createPixi6Engine(PIXI, {
             runtimes: MINORS.map((minor) =>
@@ -524,23 +552,26 @@ describe('SpineLayoutCore on the pixi6 engine', () => {
                 }),
             ),
         });
-        intoAssets(engine);
-        const layout = new SpineLayoutCore<Pixi6Types>({ engine });
 
-        await layout.loadInstancesFromManifest(MANIFEST, 'spine');
+        for (const [i, minor] of MINORS.entries()) {
+            intoAssets(engine, minor);
+            const layout = new SpineLayoutCore<Pixi6Types>({ engine });
 
-        expect(loaded.sort()).toEqual(['3.7', '3.8', '4.0', '4.1']);
-        expect(errors).not.toHaveBeenCalled();
-        expect(
-            ['root', ...Object.keys(CHILDREN)].map(
-                (id) => engine.spine.runtimeOf(layout.spines.get(id)!)?.minor,
-            ),
-        ).toEqual(['4.1', '3.7', '3.8', '4.0']);
+            await layout.loadInstancesFromManifest(MANIFEST, 'spine');
+
+            expect(loaded).toEqual(MINORS.slice(0, i + 1));
+            expect(errors).not.toHaveBeenCalled();
+            expect(
+                ['root', ...CHILDREN].map(
+                    (id) => engine.spine.runtimeOf(layout.spines.get(id)!)?.minor,
+                ),
+            ).toEqual([minor, minor, minor, minor]);
+        }
     });
 
     it('builds a 3.7 export from data without an error, its skins kept by name', () => {
         const layout = new SpineLayoutCore<Pixi6Types>({ engine: createPixi6Engine(PIXI) });
-        layout.createInstancesFromDataArray(layoutData());
+        layout.createInstancesFromDataArray(layoutData('3.7'));
 
         expect(errors).not.toHaveBeenCalled();
         expect(layout.skins.getList().get('alpha')).toEqual(['default']);
@@ -548,7 +579,7 @@ describe('SpineLayoutCore on the pixi6 engine', () => {
 
     it('is drawn by Pixi 6, whose renderer calls Container#render on every display object', () => {
         const layout = new SpineLayoutCore<Pixi6Types>({ engine: createPixi6Engine(PIXI) });
-        layout.createInstancesFromDataArray(layoutData());
+        layout.createInstancesFromDataArray(layoutData('4.1'));
         const root = layout.spines.get('root') as unknown as { render(): void };
         const drawn = vi
             .spyOn(root, 'render')
@@ -565,7 +596,7 @@ describe('SpineLayoutCore on the pixi6 engine', () => {
     it("destroys its texts on a reset, and Pixi 6's caches with them", () => {
         const cached = () => Object.keys(PIXI.utils.TextureCache).length;
         const layout = new SpineLayoutCore<Pixi6Types>({ engine: createPixi6Engine(PIXI) });
-        const data = layoutData();
+        const data = layoutData('4.1');
         const root = data[0].skeleton as { bones: object[]; slots: object[] };
         const before = cached();
 
