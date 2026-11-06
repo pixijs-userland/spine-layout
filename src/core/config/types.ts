@@ -73,19 +73,51 @@ export type SpineLayoutOptions = {
      */
     root?: SpineID;
     /**
-     * Plays the skeletons' sound events through the built-in `sounds` player (Howler). On by
-     * default.
+     * What plays the skeletons' sound events (see {@link SoundAdapter}).
      *
-     * Off, the layout plays no sound and never `init`s the `sounds` singleton: a game with an
-     * audio system of its own listens to `animations.onSound` and plays the events there, so the
-     * sounds load, mix and pause with the rest of its audio.
+     * - pixi8 `SpineLayout` (`.`): the built-in Howler player, `sounds`, unless another adapter is
+     *   given; `false` plays nothing.
+     * - `SpineLayoutCore` (`./core`, `./pixi4`): nothing unless an adapter is given. These entries
+     *   never import Howler, so a game with an audio system of its own does not ship it; the
+     *   Howler player is `import { sounds } from '@pixijs-userland/spine-layout/howler'`.
+     *
+     * `animations.onSound` reports the same events either way.
+     */
+    sounds?: SoundAdapter | false;
+    /**
+     * @deprecated `false` is `sounds: false`. `SpineLayoutCore` has no built-in player any more:
+     * give it an adapter (the Howler one is in `./howler`).
      */
     builtInSounds?: boolean;
 };
 
 /**
- * A sound a skeleton asked for — what `animations.onSound` reports, whether or not the
- * built-in player plays it.
+ * Plays the sounds the skeletons ask for — the layout keeps deciding *which* sound a spine event
+ * is and when an animation's FX stop (see {@link SoundEvent}); the adapter is the audio system
+ * that plays them. The built-in Howler player (`sounds`) is one; a game passes its own to play
+ * the scene's sounds with the rest of its audio (its loader, channels, volumes, pause).
+ *
+ * Each call also gets the whole {@link SoundEvent}: which spine and animation asked.
+ */
+export interface SoundAdapter {
+    /**
+     * A layout was built from this manifest (`createInstancesFromManifest`): the sounds it lists
+     * may be preloaded. The layout that called it calls {@link dispose} when it is destroyed.
+     */
+    init?(manifest: ManifestLike): void;
+    /** A `music` event: loop this track until another one replaces it. */
+    playMusic(name: string, event: SoundEvent): void;
+    /** Any other sound event; `loop` for a `_loop` one (play it once otherwise). */
+    playFX(name: string, loop: boolean, event: SoundEvent): void;
+    /** The animation that played this FX stopped, and no running animation still holds it. */
+    stopFX(name: string, event: SoundEvent): void;
+    /** The layout that {@link init}ed the adapter is destroyed. */
+    dispose?(): void;
+}
+
+/**
+ * A sound a skeleton asked for — what the {@link SoundAdapter} plays and `animations.onSound`
+ * reports.
  *
  * - `play` / `music`: a spine event with `music` in its name. One track at a time: it loops
  *   until another `music` play replaces it, and no animation stops it.

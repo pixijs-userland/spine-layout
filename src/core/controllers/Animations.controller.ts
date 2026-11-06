@@ -6,6 +6,7 @@ import type {
     AnimationTrackRegistry,
     PlayOptions,
     ResetOptions,
+    SoundAdapter,
     SoundEvent,
     SoundListener,
     SpineID,
@@ -14,7 +15,6 @@ import { LOG } from '../config/logs';
 import { log } from '../utils/Log';
 import { parcePointers } from '../config/parcePointers';
 import { claimsCollide, EMPTY_CLAIM, poseClaims, type AnimationClaim } from '../utils/poseClaims';
-import { sounds } from './Sounds.controller';
 import type { ParticlesController } from './Particles.controller';
 
 /** The states the layout plays for itself: `init` on a build, the orientation pair for the screen. */
@@ -51,11 +51,8 @@ export class AnimationsController<T extends EngineTypes = EngineTypes> {
     private triggeredFX: Map<SpineID, Map<AnimationName, Set<string>>> = new Map();
     #eventsListeners: EventsListeners<T> = new Map();
     #soundListeners: Set<SoundListener> = new Set();
-    /**
-     * Whether sound events go to the built-in `sounds` player (Howler) as well as to
-     * {@link onSound}'s listeners — `SpineLayoutOptions.builtInSounds`.
-     */
-    builtInSounds = true;
+    /** What plays the sound events (`SpineLayoutOptions.sounds`); none, they are only reported. */
+    soundAdapter: SoundAdapter | null = null;
     #speed = 1;
     /**
      * How fast single spines run compared with the rest of the layout — a multiplier on
@@ -115,10 +112,8 @@ export class AnimationsController<T extends EngineTypes = EngineTypes> {
                 if (isParticleEvent(event.data.name)) {
                     this.particles?.handleEvent(event.data.name, spineID);
                 } else if (sound.includes(parcePointers.sound.music)) {
-                    if (this.builtInSounds) sounds.playMusic(sound);
                     this.emitSound({ action: 'play', kind: 'music', name: sound, loop: true, spineID, animation });
                 } else {
-                    if (this.builtInSounds) sounds.playFX(sound, looping);
                     this.emitSound({ action: 'play', kind: 'fx', name: sound, loop: looping, spineID, animation });
                     // remember which animation owns this FX so `stop`/`reset` can cut it short
                     this.rememberTriggeredFX(spineID, animation, sound);
@@ -258,9 +253,9 @@ export class AnimationsController<T extends EngineTypes = EngineTypes> {
 
     /**
      * Subscribes to the sounds the skeletons ask for — every sound event played, and every FX an
-     * animation's stop cuts short (see {@link SoundEvent}). Reported whether or not the built-in
-     * player plays them; with `builtInSounds: false` this is the only place they go. Returns the
-     * function that unsubscribes.
+     * animation's stop cuts short (see {@link SoundEvent}) — after the {@link SoundAdapter} has
+     * played them, or with none set. For watching them (logs, tests, a debug panel); playing them
+     * is the adapter's job. Returns the function that unsubscribes.
      *
      * Like `addEventListener`'s, these go on a `reset` unless `keepListeners` is set.
      */
@@ -271,7 +266,19 @@ export class AnimationsController<T extends EngineTypes = EngineTypes> {
         };
     }
 
+    /** Hands a sound to the adapter, then to the {@link onSound} listeners. */
     private emitSound(event: SoundEvent) {
+        const adapter = this.soundAdapter;
+        if (adapter) {
+            try {
+                if (event.action === 'stop') adapter.stopFX(event.name, event);
+                else if (event.kind === 'music') adapter.playMusic(event.name, event);
+                else adapter.playFX(event.name, event.loop, event);
+            } catch (error) {
+                // an adapter that throws must not stop the spine's event dispatch with it
+                console.error('[spine-layout] sound adapter failed', error);
+            }
+        }
         this.#soundListeners.forEach((listener) => {
             try {
                 listener(event);
@@ -972,7 +979,6 @@ export class AnimationsController<T extends EngineTypes = EngineTypes> {
 
         fxNames.forEach((fx) => {
             if (this.isFXHeldByRunningAnimation(fx)) return;
-            if (this.builtInSounds) sounds.stopFX(fx);
             this.emitSound({ action: 'stop', kind: 'fx', name: fx, loop: false, spineID, animation });
         });
     }
