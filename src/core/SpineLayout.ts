@@ -23,7 +23,6 @@ import { SceneController } from './controllers/Scene.controller';
 import { SpineController } from './controllers/Spine.controller';
 import { PointerController } from './controllers/Pointer.controller';
 import { OrientationController } from './controllers/Orientation.controller';
-import { sounds } from './controllers/Sounds.controller';
 import { LayoutHost } from './LayoutHost';
 
 export type SpineLayoutCoreOptions<T extends EngineTypes> = SpineLayoutOptions & {
@@ -65,7 +64,7 @@ export class SpineLayoutCore<T extends EngineTypes = EngineTypes> extends Layout
     #scene: SceneController<T>;
     #pointer: PointerController<T>;
     #orientation: OrientationController<T>;
-    /** Whether this layout ran `sounds.init` — then its `destroy` is what disposes the singleton. */
+    /** Whether this layout `init`ed its sound adapter — then its `destroy` disposes it. */
     #ownsSounds = false;
     private options?: SpineLayoutOptions;
 
@@ -78,7 +77,7 @@ export class SpineLayoutCore<T extends EngineTypes = EngineTypes> extends Layout
 
         log.enabled = !!options.debug;
         this.#animations = new AnimationsController(engine, this.#spines);
-        this.#animations.builtInSounds = options.builtInSounds !== false;
+        this.#animations.soundAdapter = options.sounds || null;
         this.#skins = new SkinsController(engine, this.#spines);
         this.#texts = new TextsController(
             engine,
@@ -205,8 +204,9 @@ export class SpineLayoutCore<T extends EngineTypes = EngineTypes> extends Layout
 
         this.render(rootID);
 
-        if (this.#animations.builtInSounds) {
-            sounds.init(manifest);
+        const adapter = this.#animations.soundAdapter;
+        if (adapter?.init) {
+            adapter.init(manifest);
             this.#ownsSounds = true;
         }
 
@@ -556,15 +556,16 @@ export class SpineLayoutCore<T extends EngineTypes = EngineTypes> extends Layout
     }
 
     /**
-     * {@link reset}, then the layout itself. The `sounds` singleton goes too when this layout
+     * {@link reset}, then the layout itself. The sound adapter is disposed too when this layout
      * was the one to `init` it — a layout built from a manifest — so a page that mounts and
-     * unmounts a layout does not keep every `Howl` it ever played.
+     * unmounts a layout does not keep every sound it ever played (every `Howl`, for the
+     * built-in player).
      */
     destroy() {
         this.reset();
 
         if (this.#ownsSounds) {
-            sounds.dispose();
+            this.#animations.soundAdapter?.dispose?.();
             this.#ownsSounds = false;
         }
 
