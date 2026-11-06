@@ -17,7 +17,11 @@ export { OrientationController } from './core/controllers/Orientation.controller
 export { ManifestParser, type SpineAssetData } from './core/utils/ManifestParser';
 export { skeletonVersion } from './core/utils/skeletonVersion';
 export * from './core/versions';
-export { UnsupportedSpineVersionError, type UnsupportedSpineVersion } from './engine/errors';
+export {
+    MixedSpineVersionsError,
+    UnsupportedSpineVersionError,
+    type UnsupportedSpineVersion,
+} from './engine/errors';
 export type * from './engine/Engine';
 export type * from './engine/runtime';
 export { isBinarySkeleton } from './engine/runtime';

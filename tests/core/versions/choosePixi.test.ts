@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { choosePixi, type ExportVersion } from '../../../src/core/versions/choosePixi';
+import { MixedSpineVersionsError } from '../../../src/engine/errors';
 
 /** One `{ file, version }` per copy, as a folder scan reports them. */
 const folder = (versions: Record<string, number>): ExportVersion[] =>
@@ -24,75 +25,71 @@ describe('choosePixi', () => {
 
     // version sets of real mixed folders on this machine (spikes/editor-default-pixi/aggregate.txt)
     it.each([
-        ['4.2 and 4.3 (slot skins)', { '4.3.23': 1, '4.2.43': 2, '4.3.08': 1 }, 8, ['4.2', '4.3']],
-        ['4.2 and 4.3 (assetpack output)', { '4.2.43': 5, '4.3.17': 3 }, 8, ['4.2', '4.3']],
+        ['4.2 and 4.3 (slot skins)', { '4.3.23': 1, '4.2.43': 2, '4.3.08': 1 }, ['4.3', '4.2']],
         [
             '4.1, 4.2 and 4.3 (f2p)',
             { '4.3.17': 2, '4.2.43': 2, '4.1-from-4.2.43': 1 },
-            8,
-            ['4.2', '4.3'],
+            ['4.3', '4.2', '4.1'],
         ],
-        [
-            '4.1 and 4.3 (f2p)',
-            { '4.3.13': 2, '4.3.15': 2, '4.1-from-4.2.43': 1 },
-            8,
-            ['4.2', '4.3'],
-        ],
-        ['4.1 and 4.2 (web-sdk)', { '4.1-from-4.2.38': 175, '4.2.43': 6 }, 8, ['4.2']],
-        [
-            '4.0 and 4.1 (slot)',
-            { '4.0.64': 19, '4.0.61': 2, '4.1.23': 7, '4.1-from-4.2.37': 15, '4.0.63': 2 },
-            7,
-            ['4.1'],
-        ],
-        [
-            '3.8 downgraded from 4.3',
-            { '3.8-from-4.0-from-4.1-from-4.2-from-4.3.26': 5 },
-            4,
-            ['3.8'],
-        ],
-    ])("opens %s on the newest minor's default Pixi", (_, versions, pixi, runtimes) => {
-        const choice = choosePixi(folder(versions));
+        ['4.1 and 4.2 (web-sdk)', { '4.1-from-4.2.38': 175, '4.2.43': 6 }, ['4.1', '4.2']],
+        ['4.0 and 4.1 (slot)', { '4.0.64': 19, '4.1.23': 7 }, ['4.0', '4.1']],
+        ['3.7 and 3.8', { '3.7.94': 1, '3.8.99': 1 }, ['3.7', '3.8']],
+        ['an unreadable 3.3 beside 4.1', { '3.3.07': 1, '4.1.24': 2 }, ['3.3', '4.1']],
+    ])('refuses %s: one layout is of one Spine version', (_, versions, minors) => {
+        const refusal = (pin = {}) => {
+            try {
+                choosePixi(folder(versions), pin);
+            } catch (error) {
+                return error;
+            }
+        };
 
-        expect(choice).toMatchObject({ pixi, reason: 'default' });
-        expect(runtimesOf(choice)).toEqual(runtimes);
-        choice.perFile.forEach((file) => expect(file).not.toHaveProperty('error'));
+        expect(refusal()).toBeInstanceOf(MixedSpineVersionsError);
+        expect(Object.keys((refusal({ pixi: 7 }) as MixedSpineVersionsError).filesByMinor)).toEqual(
+            minors,
+        );
+    });
+
+    it('names each minor and its files in the error', () => {
+        expect(() =>
+            choosePixi([
+                { file: 'coin.json', version: '4.3.17' },
+                { file: 'prize.json', version: '4.1-from-4.2.43' },
+                { file: 'popup.json', version: '4.3.23' },
+            ]),
+        ).toThrow(
+            'The Spine exports of one layout must be of one Spine version, and these are not: 4.3 (coin.json, popup.json); 4.1 (prize.json)',
+        );
+    });
+
+    it('takes patch versions of one minor, and exports that name none, as one version', () => {
+        const choice = choosePixi([
+            { file: 'a.json', version: '4.3.08' },
+            { file: 'b.json', version: '4.3.23' },
+            { file: 'c.json', version: undefined },
+        ]);
+
+        expect(choice).toMatchObject({ pixi: 8, reason: 'default' });
+        expect(runtimesOf(choice)).toEqual(['4.3']);
+    });
+
+    it("opens a downgraded export on its target minor's default Pixi", () => {
+        const choice = choosePixi(folder({ '3.8-from-4.0-from-4.1-from-4.2-from-4.3.26': 5 }));
+
+        expect(choice).toMatchObject({ pixi: 4, reason: 'default' });
+        expect(runtimesOf(choice)).toEqual(['3.8']);
     });
 
     it('pre-passes a 4.1 export it opens on Pixi 8, and says so', () => {
-        const choice = choosePixi([
-            { file: 'prize.json', version: '4.1-from-4.2.43' },
-            { file: 'coin.json', version: '4.3.17' },
-        ]);
+        const choice = choosePixi([{ file: 'prize.json', version: '4.1-from-4.2.43' }], {
+            pixi: 8,
+        });
 
         expect(choice.perFile[0]).toMatchObject({
             file: 'prize.json',
             runtimeMinor: '4.2',
             prePasses: ['4.1->4.2'],
             warning: expect.stringContaining('prize.json'),
-        });
-        expect(choice.perFile[1]).toEqual({
-            file: 'coin.json',
-            version: '4.3.17',
-            runtimeMinor: '4.3',
-            prePasses: [],
-        });
-    });
-
-    it('takes the newest Pixi that reads every export when the default does not', () => {
-        const choice = choosePixi(folder({ '4.3.23': 1, '3.8.99': 1 }));
-
-        expect(choice).toMatchObject({ pixi: 7, reason: 'covering' });
-        expect(runtimesOf(choice)).toEqual(['3.8', '4.3']);
-        expect(choice.message).toBe(
-            'Pixi 7, the newest that reads every export; Pixi 8, the default for 4.3, does not',
-        );
-    });
-
-    it('opens 3.7 and 3.8 together past Pixi 4 and 5, which load one runtime a page', () => {
-        expect(choosePixi(folder({ '3.7.94': 1, '3.8.99': 1 }))).toMatchObject({
-            pixi: 7,
-            reason: 'covering',
         });
     });
 
@@ -102,17 +99,15 @@ describe('choosePixi', () => {
             reason: 'covering',
         });
 
-        const mixed = choosePixi([
-            { file: 'a.skel', version: '4.0.64', binary: true },
-            { file: 'b.json', version: '4.3.23' },
-        ]);
+        const pinned = choosePixi([{ file: 'a.skel', version: '4.0.64', binary: true }], {
+            pixi: 7,
+        });
 
-        expect(mixed).toMatchObject({ pixi: 8, reason: 'uncovered' });
-        expect(mixed.perFile.find((entry) => entry.file === 'a.skel')).toHaveProperty('error');
+        expect(pinned.perFile[0]).toHaveProperty('error');
     });
 
     it('keeps the pinned Pixi, and skips what it cannot read', () => {
-        const choice = choosePixi(folder({ '4.3.23': 1, '3.8.99': 1 }), { pixi: 4 });
+        const choice = choosePixi(folder({ '4.3.23': 1 }), { pixi: 4 });
 
         expect(choice).toMatchObject({
             pixi: 4,
@@ -123,11 +118,9 @@ describe('choosePixi', () => {
             version: '4.3.23',
             error: {
                 name: 'UnsupportedSpineVersionError',
-                registered: ['3.8'],
                 pixiMajors: [7, 8],
             },
         });
-        expect(choice.perFile[1]).toMatchObject({ runtimeMinor: '3.8' });
     });
 
     it('cross-reads with the pinned runtime wherever the Pixi has it', () => {
@@ -142,9 +135,7 @@ describe('choosePixi', () => {
 
         const own = choosePixi(folder({ '4.2.43': 1 }), { pixi: 7, spine: { '4.2': '4.1' } });
         const prePassed = choosePixi(folder({ '4.1.24': 1 }), { pixi: 8, spine: { '4.1': '4.3' } });
-        const goosicorn = choosePixi(folder({ '4.2.43': 2, '4.3.23': 1 }), {
-            spine: { '4.2': '4.3' },
-        });
+        const goosicorn = choosePixi(folder({ '4.2.43': 2 }), { spine: { '4.2': '4.3' } });
 
         expect(own.perFile[0]).toMatchObject({ runtimeMinor: '4.1', prePasses: [] });
         expect(prePassed.perFile[0]).toMatchObject({ runtimeMinor: '4.3', prePasses: [] });
@@ -185,9 +176,8 @@ describe('choosePixi', () => {
         });
     });
 
-    it('names the newest export minor it starts from', () => {
-        expect(choosePixi(folder({ '4.1-from-4.2.43': 1, '4.2.43': 1 })).newest).toBe('4.2');
-        expect(choosePixi(folder({ '3.3.07': 1, '4.1.24': 1 })).newest).toBe('4.1');
+    it('names the export minor it starts from', () => {
+        expect(choosePixi(folder({ '4.1-from-4.2.43': 1 })).newest).toBe('4.1');
         expect(choosePixi(folder({ '4.3.23': 1 }), { pixi: 7 }).newest).toBe('4.3');
         expect(choosePixi(folder({ '3.3.07': 1 }))).not.toHaveProperty('newest');
         expect(choosePixi([])).not.toHaveProperty('newest');
@@ -207,14 +197,8 @@ describe('choosePixi', () => {
         expect(choice.perFile[0]).toMatchObject({ error: { version: '3.3.07', pixiMajors: [] } });
     });
 
-    it('decides by the newest readable minor, leaving unreadable ones out of it', () => {
-        const choice = choosePixi(folder({ '3.3.07': 1, '4.1.24': 2 }));
-
-        expect(choice).toMatchObject({ pixi: 7, reason: 'default' });
-        expect(choice.perFile.filter((file) => 'error' in file)).toHaveLength(1);
-    });
-
     it('takes bare version strings too', () => {
-        expect(choosePixi(['4.3.23', '4.2.43'])).toMatchObject({ pixi: 8, reason: 'default' });
+        expect(choosePixi(['4.3.23', '4.3.08'])).toMatchObject({ pixi: 8, reason: 'default' });
+        expect(() => choosePixi(['4.3.23', '4.2.43'])).toThrow(MixedSpineVersionsError);
     });
 });

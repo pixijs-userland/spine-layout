@@ -98,11 +98,10 @@ describe('a layout over a lazy 4.2, its folder holding an export no runtime read
     const asData = (name: string, from: ExportName, version?: string) => {
         const { skeleton, atlasText } = spineExport(from);
         if (version) skeleton.skeleton.spine = version;
-        if (name === 'root') skeleton.slots.push({ name: 'spine_settings', bone: 'okButton' });
         return { name, skeleton, atlasText, textures: pagesOf(atlasText) };
     };
 
-    it('loads 4.2, builds what its runtimes read, and skips the 3.8 export alone', async () => {
+    it('loads 4.2 for a layout of 4.2 exports, and skips a layout of 3.8 exports alone', async () => {
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
         const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
         const engine = createPixi8Engine({
@@ -112,20 +111,17 @@ describe('a layout over a lazy 4.2, its folder holding an export no runtime read
             ],
         });
         const layout = new SpineLayout({ engine });
+        const old = new SpineLayout({ engine, root: 'old' });
 
         await expect(
-            layout.loadInstancesFromDataArray([
-                asData('root', 'okButton-4.3'),
-                asData('settings', 'settingsButton-4.2'),
-                asData('old', 'settingsButton-4.2', '3.8.99'),
-            ]),
+            layout.loadInstancesFromDataArray([asData('root', 'settingsButton-4.2')]),
+        ).resolves.toBeUndefined();
+        await expect(
+            old.loadInstancesFromDataArray([asData('old', 'settingsButton-4.2', '3.8.99')]),
         ).resolves.toBeUndefined();
 
-        expect([...layout.getSpines().keys()]).toEqual(['root', 'settings']);
-        expect(engine.spine.runtimeOf(layout.getSpineByID('settings')!)?.minor).toBe('4.2');
-
-        layout.createInstance('old');
-
+        expect([...layout.getSpines().keys()]).toEqual(['root']);
+        expect(engine.spine.runtimeOf(layout.getSpineByID('root')!)?.minor).toBe('4.2');
         expect(warn.mock.calls).toEqual([
             [
                 '[SpineLayout] Skipped spine "old": old: Spine 3.8.99 — registered runtimes: 4.3, 4.2; ' +
@@ -133,9 +129,10 @@ describe('a layout over a lazy 4.2, its folder holding an export no runtime read
             ],
         ]);
         expect(errors).not.toHaveBeenCalled();
-        expect(layout.getSpineByID('old')).toBeUndefined();
+        expect(old.getSpines().size).toBe(0);
 
         layout.destroy();
+        old.destroy();
     });
 
     it('skips the exports of a runtime that fails to load alone, and builds them once it loads', async () => {
@@ -146,16 +143,16 @@ describe('a layout over a lazy 4.2, its folder holding an export no runtime read
         const engine = createPixi8Engine({
             runtimes: [esotericRuntime(SP43), { minor: '4.2', load }],
         });
-        const layout = new SpineLayout({ engine });
+        const settings = new SpineLayout({ engine, root: 'settings' });
+        const ok = new SpineLayout({ engine });
 
         await expect(
-            layout.loadInstancesFromDataArray([
-                asData('root', 'okButton-4.3'),
-                asData('settings', 'settingsButton-4.2'),
-            ]),
+            settings.loadInstancesFromDataArray([asData('settings', 'settingsButton-4.2')]),
         ).resolves.toBeUndefined();
+        await ok.loadInstancesFromDataArray([asData('root', 'okButton-4.3')]);
 
-        expect([...layout.getSpines().keys()]).toEqual(['root']);
+        expect(settings.getSpines().size).toBe(0);
+        expect([...ok.getSpines().keys()]).toEqual(['root']);
         expect(errors).toHaveBeenCalledWith(
             '[SpineLayout] Error loading spine "settings":',
             expect.objectContaining({
@@ -166,9 +163,10 @@ describe('a layout over a lazy 4.2, its folder holding an export no runtime read
         await engine.spine.prepare!(['4.2']);
 
         expect(load).toHaveBeenCalledTimes(2);
-        expect(engine.spine.runtimeOf(layout.createInstance('settings')!)?.minor).toBe('4.2');
+        expect(engine.spine.runtimeOf(settings.createInstance('settings')!)?.minor).toBe('4.2');
 
-        layout.destroy();
+        settings.destroy();
+        ok.destroy();
     });
 
     it('names the failed load, not a missing prepare, when the asset cache holds an export of that runtime', async () => {

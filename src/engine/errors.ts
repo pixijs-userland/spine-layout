@@ -42,3 +42,20 @@ export class UnsupportedSpineVersionError extends Error implements UnsupportedSp
         this.pixiMajors = pixiMajors;
     }
 }
+
+/** The skeletons of one layout name more than one Spine version, by export minor. */
+export class MixedSpineVersionsError extends Error {
+    readonly filesByMinor: Readonly<Record<string, readonly string[]>>;
+
+    constructor(filesByMinor: Record<string, string[]>) {
+        const listed = Object.entries(filesByMinor)
+            .map(([minor, files]) => `${minor} (${files.join(', ')})`)
+            .join('; ');
+
+        super(
+            `The Spine exports of one layout must be of one Spine version, and these are not: ${listed}`,
+        );
+        this.name = 'MixedSpineVersionsError';
+        this.filesByMinor = filesByMinor;
+    }
+}

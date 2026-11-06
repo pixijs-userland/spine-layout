@@ -1,4 +1,5 @@
 export { compareMinors, minorOf } from './minorOf';
+export { oneSpineVersion, type VersionedFile } from './oneSpineVersion';
 export {
     DEFAULT_PIXI,
     JSON_ONLY_MINORS,

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as SP43 from '@esotericsoftware/spine-pixi-v8';
 import { Assets, Container, Ticker, type AssetsManifest } from 'pixi.js';
-import { pixi8Engine, SpineLayout, sounds } from '../src/index';
+import { MixedSpineVersionsError, pixi8Engine, SpineLayout, sounds } from '../src/index';
 import { createPixi8Engine } from '../src/pixi8';
 import { esotericRuntime } from '../src/runtimes';
 
@@ -402,24 +402,82 @@ describe('SpineLayout — an engine that loads its runtimes lazily', () => {
         expect([...layout.spines.keys()]).toEqual(['root']);
     });
 
-    it('prepares the export minors of every skeleton before it reads any', async () => {
+    it('prepares the one export minor of its skeletons before it reads any', async () => {
         const { engine, prepare, load } = lazyEngine();
         const layout = new SpineLayout({ engine });
+        const patched = { ...bonesOnly, skeleton: { hash: 'patched', spine: '4.3.08' } };
 
         const building = layout.createInstancesFromDataArray([
             { name: 'root', skeleton: bonesOnly, atlasText: '', textures: {} },
-            { name: 'popup', skeleton: downgraded, atlasText: '', textures: {} },
+            { name: 'popup', skeleton: patched, atlasText: '', textures: {} },
             { name: 'again', skeleton: bonesOnly, atlasText: '', textures: {} },
         ]);
 
         expect(building).toBeInstanceOf(Promise);
-        expect(prepare).toHaveBeenCalledWith(['4.3', '4.1']);
+        expect(prepare).toHaveBeenCalledWith(['4.3']);
         expect(layout.spines.size).toBe(0);
 
         load();
         await building;
 
         expect([...layout.spines.keys()]).toEqual(['root']);
+    });
+
+    it('refuses skeletons of two export minors, naming each file, and prepares and builds nothing', () => {
+        const { engine, prepare } = lazyEngine();
+        const layout = new SpineLayout({ engine });
+
+        const building = () =>
+            layout.createInstancesFromDataArray([
+                { name: 'root', skeleton: bonesOnly, atlasText: '', textures: {} },
+                { name: 'popup', skeleton: downgraded, atlasText: '', textures: {} },
+                { name: 'again', skeleton: bonesOnly, atlasText: '', textures: {} },
+            ]);
+
+        expect(building).toThrow(MixedSpineVersionsError);
+        expect(building).toThrow(
+            expect.objectContaining({
+                filesByMinor: { '4.3': ['root', 'again'], '4.1': ['popup'] },
+            }),
+        );
+        expect(prepare).not.toHaveBeenCalled();
+        expect(layout.spines.size).toBe(0);
+    });
+
+    it('refuses a manifest whose cached skeletons are of two export minors', () => {
+        const { engine, prepare } = lazyEngine();
+        Assets.cache.set('spine/root.json', bonesOnly);
+        Assets.cache.set('spine/popup.json', downgraded);
+        const layout = new SpineLayout({ engine });
+
+        const building = () =>
+            layout.createInstancesFromManifest(
+                manifest(['spine/hero.atlas', 'spine/root.json', 'spine/popup.json']),
+                'spine',
+            );
+
+        expect(building).toThrow(MixedSpineVersionsError);
+        expect(building).toThrow(
+            expect.objectContaining({
+                filesByMinor: { '4.3': ['root.json'], '4.1': ['popup.json'] },
+            }),
+        );
+        expect(prepare).not.toHaveBeenCalled();
+        expect(layout.spines.size).toBe(0);
+        Assets.cache.remove('spine/root.json');
+        Assets.cache.remove('spine/popup.json');
+    });
+
+    it('builds skeletons of two patches of one minor beside one that names no version', () => {
+        const root = instance('root', ['spine_patched', 'spine_odd']);
+        const patched = instance('patched');
+        patched.skeleton.skeleton.spine = '4.3.08';
+        const odd = { ...instance('odd'), skeleton: { ...skeleton(), skeleton: { hash: 'odd' } } };
+        const layout = new SpineLayout();
+
+        layout.createInstancesFromDataArray([root, patched, odd]);
+
+        expect([...layout.spines.keys()].sort()).toEqual(['odd', 'patched', 'root']);
     });
 
     it('prepares the runtime pinned under "*" for a skeleton that names no version', async () => {
@@ -485,20 +543,20 @@ describe('SpineLayout — an engine that loads its runtimes lazily', () => {
 describe('SpineLayout — a skeleton it cannot build', () => {
     afterEach(() => vi.restoreAllMocks());
 
-    it('skips one no runtime of the engine reads with a single warning line, and builds the rest', () => {
+    it('skips a skeleton no runtime of the engine reads with a single warning line', () => {
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
         const error = vi.spyOn(console, 'error').mockImplementation(() => {});
         const engine = createPixi8Engine({ runtimes: [esotericRuntime(SP43)] });
-        const old = instance('old');
+        const old = instance('root');
         old.skeleton.skeleton.spine = '3.8.99';
         const layout = new SpineLayout({ engine });
 
-        layout.createInstancesFromDataArray([instance('root', ['spine_old']), old]);
+        layout.createInstancesFromDataArray([old]);
 
-        expect([...layout.spines.keys()]).toEqual(['root']);
+        expect(layout.spines.size).toBe(0);
         expect(warn.mock.calls).toEqual([
             [
-                '[SpineLayout] Skipped spine "old": old: Spine 3.8.99 — registered runtimes: 4.3; ' +
+                '[SpineLayout] Skipped spine "root": root: Spine 3.8.99 — registered runtimes: 4.3; ' +
                     'Pixi 4, 5, 6, 7 can render it',
             ],
         ]);

@@ -23,7 +23,11 @@ export {
 } from './core/SpineLayout';
 export { skeletonVersion } from './core/utils/skeletonVersion';
 export * from './core/versions';
-export { UnsupportedSpineVersionError, type UnsupportedSpineVersion } from './engine/errors';
+export {
+    MixedSpineVersionsError,
+    UnsupportedSpineVersionError,
+    type UnsupportedSpineVersion,
+} from './engine/errors';
 export type * from './engine/Engine';
 export type * from './engine/runtime';
 export { isBinarySkeleton } from './engine/runtime';

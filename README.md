@@ -28,8 +28,9 @@ All spines are stored in a central `Map<SpineID, Spine>` registry and each contr
 ## Engines
 
 The core renders through an `Engine`, so one scene runs on every Pixi from 4 to 8. A game picks its
-Pixi when it creates the engine; the Spine runtime is then picked per skeleton from that
-skeleton's export version, among the runtimes registered for that Pixi:
+Pixi when it creates the engine; the Spine runtime is then picked from the export version, among
+the runtimes registered for that Pixi. The exports of one layout must all be of one Spine version:
+a layout that mixes them throws `MixedSpineVersionsError` and builds nothing.
 
 | Entry                                 | Pixi                        | Spine runtimes                                                                  |
 | ------------------------------------- | --------------------------- | ------------------------------------------------------------------------------- |

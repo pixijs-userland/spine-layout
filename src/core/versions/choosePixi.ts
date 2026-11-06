@@ -1,6 +1,7 @@
 import type { PixiMajor, SpineRuntimeInfo } from '../../engine/Engine';
 import { UnsupportedSpineVersionError } from '../../engine/errors';
 import { compareMinors, minorOf } from './minorOf';
+import { oneSpineVersion } from './oneSpineVersion';
 import { pickRuntime, pixiMajorsFor, type PickOptions, type RuntimePin } from './pickRuntime';
 import { DEFAULT_PIXI, ONE_RUNTIME_PER_PAGE, PIXI_MAJORS, runtimesOf } from './runtimeMatrix';
 
@@ -117,6 +118,7 @@ function describe(pixi: PixiMajor, reason: PixiChoiceReason, newest?: string): s
  * Decision 4): the pinned Pixi; else the default Pixi of the newest export minor when it reads
  * every export (by its own runtime or through pre-passes); else the newest Pixi that does; else
  * that default, the exports it cannot read reported as errors. Pure: games and the editor share it.
+ * Throws `MixedSpineVersionsError` where the exports name more than one Spine version.
  */
 export function choosePixi(
     exportVersions: readonly (ExportVersion | string)[],
@@ -125,6 +127,7 @@ export function choosePixi(
     const entries = exportVersions.map((entry) =>
         typeof entry === 'string' ? { file: '', version: entry } : entry,
     );
+    oneSpineVersion(entries);
     const newest = entries
         .map((entry) => minorOf(entry.version))
         .filter(

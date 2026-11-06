@@ -4,8 +4,10 @@ sidebar_position: 8
 ---
 
 spine-layout is one core behind a narrow `Engine` interface, with an engine for every Pixi major
-from 4 to 8. A game picks its Pixi when it creates the engine; the engine then reads each skeleton
-with the Spine runtime its export version picks, among the runtimes registered for that Pixi:
+from 4 to 8. A game picks its Pixi when it creates the engine; the engine then reads a layout's
+skeletons with the Spine runtime their export version picks, among the runtimes registered for that
+Pixi. All the skeletons of one layout must be of one Spine version (see
+[One Spine version per layout](#one-spine-version-per-layout)):
 
 | Engine  | Pixi         | Spine runtimes                                                                              | Entry                                                                  |
 | ------- | ------------ | ------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
@@ -323,6 +325,22 @@ One Pixi major is live per page. The layout's prototype chain is linked to the c
 the engine built last, and the Pixi 4–7 scripts all write `window.PIXI`, so a page cannot run
 layouts on two Pixi majors at once. Several runtimes on one Pixi are fine.
 
+## One Spine version per layout
+
+The exports of one layout must all be of one Spine major.minor. Patch versions of that minor mix
+freely, and so do exports that name no version. A layout given skeletons of two minors builds
+nothing: `createInstancesFromManifest`, `createInstancesFromDataArray` and their `load*` forms throw
+`MixedSpineVersionsError`, whose `filesByMinor` lists each minor's files, as its message does.
+`choosePixi` throws the same error for a folder that mixes them, so a tool can show it before it
+builds anything. Re-export the odd skeletons from the Spine editor of the layout's version.
+
+`oneSpineVersion(files)` is the check on its own: it returns the one minor, or `undefined` when no
+file names a version.
+
+Different layouts on one page may each be of a different version, where the engine has both
+runtimes (Pixi 8 with 4.2 and 4.3, Pixi 7 with 3.8 and 4.3): each skeleton is still read by its
+own runtime.
+
 ## Choosing a runtime per skeleton
 
 Every engine reads a skeleton with the runtime `pickRuntime` gives its export version, in this
@@ -385,9 +403,10 @@ would read, each logged and skipped; the next `prepare` that needs it tries agai
 ### Choosing the Pixi
 
 A game picks its Pixi. `choosePixi(exportVersions, pin?)` is the choice for a folder of exports,
-as the editor makes it: the pinned Pixi; else `DEFAULT_PIXI` of the newest export minor, if that
-Pixi reads every export; else the newest Pixi that does; else that default, the exports it cannot
-read skipped. It returns the `pixi`, the `reason`, a one-line `message`, the `runtimes` the exports
+as the editor makes it. It throws `MixedSpineVersionsError` where the exports are of more than one
+minor; else it takes the pinned Pixi; else `DEFAULT_PIXI` of the exports' minor, if that Pixi reads
+every export; else the newest Pixi that does (a `.skel` of a JSON-only minor); else that default,
+the exports it cannot read skipped. It returns the `pixi`, the `reason`, a one-line `message`, the `runtimes` the exports
 need and the runtime of each file (`perFile`).
 
 ## Several runtimes on one engine
@@ -403,7 +422,7 @@ An engine's `spine` port is a composite over one `SpineRuntimeAdapter` per runti
   that read a skeleton or built a spine.
 - Two runtimes of one minor throw.
 
-`readSkeleton`, from source, atlas text and page textures, is the read that works over any mix of
+`readSkeleton`, from source, atlas text and page textures, is the read that works over several
 runtimes, and `createInstancesFromDataArray` reads that way: on Pixi 7, pixi-spine's and
 spine-pixi-v7's `Assets` loaders claim each other's files. The Pixi 6, 7 and 8 engines still serve
 `readSkeletonFromAssets` across their runtimes, by the runtime the export picks.
