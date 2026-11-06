@@ -36,6 +36,11 @@
             "source": "./src/pixi4.ts",
             "import": "./dist/pixi4.js",
             "types": "./dist/pixi4.d.ts"
+        },
+        "./howler": {
+            "source": "./src/howler.ts",
+            "import": "./dist/howler.js",
+            "types": "./dist/howler.d.ts"
         }
     },
     "files": [
