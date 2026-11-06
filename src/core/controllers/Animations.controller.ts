@@ -6,6 +6,8 @@ import type {
     AnimationTrackRegistry,
     PlayOptions,
     ResetOptions,
+    SoundEvent,
+    SoundListener,
     SpineID,
 } from '../config/types';
 import { LOG } from '../config/logs';
@@ -48,6 +50,12 @@ export class AnimationsController<T extends EngineTypes = EngineTypes> {
      */
     private triggeredFX: Map<SpineID, Map<AnimationName, Set<string>>> = new Map();
     #eventsListeners: EventsListeners<T> = new Map();
+    #soundListeners: Set<SoundListener> = new Set();
+    /**
+     * Whether sound events go to the built-in `sounds` player (Howler) as well as to
+     * {@link onSound}'s listeners — `SpineLayoutOptions.builtInSounds`.
+     */
+    builtInSounds = true;
     #speed = 1;
     /**
      * How fast single spines run compared with the rest of the layout — a multiplier on
@@ -102,14 +110,18 @@ export class AnimationsController<T extends EngineTypes = EngineTypes> {
                     ? event.data.name.slice(0, -parcePointers.mod.loop.length)
                     : event.data.name;
 
+                const animation = entry?.animation?.name;
+
                 if (isParticleEvent(event.data.name)) {
                     this.particles?.handleEvent(event.data.name, spineID);
                 } else if (sound.includes(parcePointers.sound.music)) {
-                    sounds.playMusic(sound);
+                    if (this.builtInSounds) sounds.playMusic(sound);
+                    this.emitSound({ action: 'play', kind: 'music', name: sound, loop: true, spineID, animation });
                 } else {
-                    sounds.playFX(sound, looping);
+                    if (this.builtInSounds) sounds.playFX(sound, looping);
+                    this.emitSound({ action: 'play', kind: 'fx', name: sound, loop: looping, spineID, animation });
                     // remember which animation owns this FX so `stop`/`reset` can cut it short
-                    this.rememberTriggeredFX(spineID, entry?.animation?.name, sound);
+                    this.rememberTriggeredFX(spineID, animation, sound);
                 }
 
                 // playEvent already notifies the named listeners — dispatching
@@ -242,6 +254,32 @@ export class AnimationsController<T extends EngineTypes = EngineTypes> {
     addEventListener(event: string, fn: (event: unknown) => void) {
         if (!this.#eventsListeners.has(event)) this.#eventsListeners.set(event, []);
         this.#eventsListeners.get(event)!.push(fn);
+    }
+
+    /**
+     * Subscribes to the sounds the skeletons ask for — every sound event played, and every FX an
+     * animation's stop cuts short (see {@link SoundEvent}). Reported whether or not the built-in
+     * player plays them; with `builtInSounds: false` this is the only place they go. Returns the
+     * function that unsubscribes.
+     *
+     * Like `addEventListener`'s, these go on a `reset` unless `keepListeners` is set.
+     */
+    onSound(listener: SoundListener): () => void {
+        this.#soundListeners.add(listener);
+        return () => {
+            this.#soundListeners.delete(listener);
+        };
+    }
+
+    private emitSound(event: SoundEvent) {
+        this.#soundListeners.forEach((listener) => {
+            try {
+                listener(event);
+            } catch (error) {
+                // a listener that throws must not stop the spine's event dispatch with it
+                console.error('[spine-layout] sound listener failed', error);
+            }
+        });
     }
 
     /** Removes a previously registered event listener. */
@@ -934,7 +972,8 @@ export class AnimationsController<T extends EngineTypes = EngineTypes> {
 
         fxNames.forEach((fx) => {
             if (this.isFXHeldByRunningAnimation(fx)) return;
-            sounds.stopFX(fx);
+            if (this.builtInSounds) sounds.stopFX(fx);
+            this.emitSound({ action: 'stop', kind: 'fx', name: fx, loop: false, spineID, animation });
         });
     }
 
@@ -995,7 +1034,10 @@ export class AnimationsController<T extends EngineTypes = EngineTypes> {
         this.#playedStates.length = 0;
         // after the registries are cleared, so nothing counts as still holding its FX
         this.stopAllTriggeredFX();
-        if (!options?.keepListeners) this.#eventsListeners.clear();
+        if (!options?.keepListeners) {
+            this.#eventsListeners.clear();
+            this.#soundListeners.clear();
+        }
         this.#speed = 1;
         this.#spineSpeeds.clear();
         // Resolved rather than left hanging: a caller awaiting a `play()` on a layout that is

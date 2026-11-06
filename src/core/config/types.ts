@@ -72,7 +72,40 @@ export type SpineLayoutOptions = {
      * {@link SpineLayout.createInstance} for building one anyway.
      */
     root?: SpineID;
+    /**
+     * Plays the skeletons' sound events through the built-in `sounds` player (Howler). On by
+     * default.
+     *
+     * Off, the layout plays no sound and never `init`s the `sounds` singleton: a game with an
+     * audio system of its own listens to `animations.onSound` and plays the events there, so the
+     * sounds load, mix and pause with the rest of its audio.
+     */
+    builtInSounds?: boolean;
 };
+
+/**
+ * A sound a skeleton asked for — what `animations.onSound` reports, whether or not the
+ * built-in player plays it.
+ *
+ * - `play` / `music`: a spine event with `music` in its name. One track at a time: it loops
+ *   until another `music` play replaces it, and no animation stops it.
+ * - `play` / `fx`: any other sound event. `loop` is set for an event ending in `_loop`, whose
+ *   suffix is already stripped from `name`.
+ * - `stop` / `fx`: the animation that played this FX stopped or was reset, and no other running
+ *   animation played it too — the FX should be cut short (a looping one, stopped).
+ */
+export type SoundEvent = {
+    action: 'play' | 'stop';
+    kind: 'music' | 'fx';
+    /** The sound's name: the spine event's, without its `_loop` suffix. */
+    name: string;
+    loop: boolean;
+    spineID: SpineID;
+    /** The animation whose timeline fired the event (or, for `stop`, that stopped). */
+    animation?: AnimationName;
+};
+
+export type SoundListener = (event: SoundEvent) => void;
 
 export type SpineInstanceData<T extends EngineTypes = EngineTypes> = {
     name: string;

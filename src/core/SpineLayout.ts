@@ -78,6 +78,7 @@ export class SpineLayoutCore<T extends EngineTypes = EngineTypes> extends Layout
 
         log.enabled = !!options.debug;
         this.#animations = new AnimationsController(engine, this.#spines);
+        this.#animations.builtInSounds = options.builtInSounds !== false;
         this.#skins = new SkinsController(engine, this.#spines);
         this.#texts = new TextsController(
             engine,
@@ -204,8 +205,10 @@ export class SpineLayoutCore<T extends EngineTypes = EngineTypes> extends Layout
 
         this.render(rootID);
 
-        sounds.init(manifest);
-        this.#ownsSounds = true;
+        if (this.#animations.builtInSounds) {
+            sounds.init(manifest);
+            this.#ownsSounds = true;
+        }
 
         this.#animations.playState('init');
         this.#animations.playByName('init');

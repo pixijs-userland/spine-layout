@@ -268,6 +268,21 @@ Spine skeleton events can trigger sounds and vibration automatically:
 - Event name `vibration_*` → calls `navigator.vibrate()`
 - Event data `audioPath` → plays the sound via the built-in `sounds` system
 
+Every sound the skeletons ask for is also reported to `animations.onSound` — a `play` per sound
+event (`kind: 'music'` for an event with `music` in its name, `'fx'` otherwise, `loop` for a
+`_loop` event) and a `stop` per FX an animation's stop cuts short. A game with its own audio
+system turns the built-in player off and plays them there:
+
+```typescript
+const layout = new SpineLayoutCore({ engine, builtInSounds: false });
+const off = layout.animations.onSound(({ action, kind, name, loop }) => {
+    // play / stop `name` through the game's own audio
+});
+```
+
+With `builtInSounds: false` the layout never `init`s the `sounds` singleton and plays nothing
+through Howler.
+
 You can also register custom listeners:
 
 ```typescript

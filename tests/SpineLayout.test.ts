@@ -547,4 +547,19 @@ describe('SpineLayout — destroy', () => {
         expect(init).toHaveBeenCalledTimes(1);
         expect(dispose).toHaveBeenCalledTimes(1);
     });
+
+    it('leaves the sounds singleton alone with builtInSounds off', () => {
+        listeningWindow();
+        const init = vi.spyOn(sounds, 'init').mockImplementation(() => {});
+        const dispose = vi.spyOn(sounds, 'dispose').mockImplementation(() => {});
+
+        Assets.cache.set('spine/root.json', bonesOnly);
+        const layout = new SpineLayout({ builtInSounds: false });
+        layout.createInstancesFromManifest(manifest(['spine/root.json']), 'spine');
+        layout.destroy();
+        Assets.cache.remove('spine/root.json');
+
+        expect(init).not.toHaveBeenCalled();
+        expect(dispose).not.toHaveBeenCalled();
+    });
 });
