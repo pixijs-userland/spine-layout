@@ -55,9 +55,13 @@ const engine = createPixi4Engine(PIXI, { renderer: app.renderer });
 const layout = new SpineLayoutCore({ engine });
 ```
 
-`skeletonVersion(skeleton)` reads an export's version from a `.json` or `.skel`. One Pixi major is
-live per page. See the [Engines guide](https://userland.pixijs.io/spine-layout/engines) for
-loading, the differences between the engines and how to write another.
+A game whose own loader already reads its skeletons (unicore reads binary Spine 3.8 into
+`SkeletonData` with its atlas) hands them over as they are: `engine.assets.set('spine/bg.json',
+skeletonData)`. The engine takes a `SkeletonData` under a skeleton alias as read, with no atlas.
+
+A project is one Spine version; `skeletonVersion(skeleton)` reads it from a `.json` or `.skel`.
+One Pixi major is live per page. See the [Engines guide](https://userland.pixijs.io/spine-layout/engines)
+for loading, the differences between the engines and how to write another.
 
 ---
 
@@ -294,7 +298,43 @@ layout.skins.getAll(); // Set<string> of all available skins
 Spine skeleton events can trigger sounds and vibration automatically:
 
 - Event name `vibration_*` → calls `navigator.vibrate()`
-- Event data `audioPath` → plays the sound via the built-in `sounds` system
+- Any other event → a sound, played by the layout's sound adapter (see below)
+
+### Sounds
+
+The layout decides which sound a spine event is: `kind: 'music'` for an event with `music` in its
+name (one track, looped until another replaces it), an FX otherwise (looped for a `_loop` event,
+whose suffix is stripped from the name), and when an animation's stop cuts its FX short. What
+plays them is the `sounds` option, a `SoundAdapter`:
+
+```typescript
+interface SoundAdapter {
+    init?(manifest: ManifestLike): void; // the layout was built from this manifest: preload
+    playMusic(name: string, event: SoundEvent): void;
+    playFX(name: string, loop: boolean, event: SoundEvent): void;
+    stopFX(name: string, event: SoundEvent): void;
+    dispose?(): void; // the layout that init-ed it is destroyed
+}
+```
+
+- The pixi8 `SpineLayout` plays them through the built-in Howler player, `sounds`, unless it is
+  given another adapter; `sounds: false` plays nothing.
+- `SpineLayoutCore` (`./core`, `./pixi4`) plays nothing unless it is given one. These entries
+  never import Howler, so it stays out of a game that plays the sounds through its own audio
+  system. The Howler player is in `./howler`:
+
+```typescript
+// the game's own audio system
+const layout = new SpineLayoutCore({ engine, sounds: new MyAudioAdapter() });
+
+// the built-in Howler player, on PIXI 4
+import { sounds } from '@pixijs-userland/spine-layout/howler';
+const layout = new SpineLayoutCore({ engine, sounds });
+```
+
+Each call also gets the whole `SoundEvent` (`spineID`, `animation`). To watch the sounds without
+playing them (logs, a debug panel), `layout.animations.onSound(listener)` reports every play and
+stop, adapter or not, and returns the function that unsubscribes.
 
 You can also register custom listeners:
 
@@ -332,8 +372,9 @@ const id = layout.spine.idOf(spine); // 'enemy-2', or undefined for a spine the 
 
 `layout.destroy()` takes everything the layout built down with it: the spines and their text
 nodes, button overlays and particle emitters, the orientation and pointer listeners, the ticker
-subscriptions, and — for a layout built from a manifest, which is the one that ran
-`sounds.init` — the `sounds` singleton, through `sounds.dispose()`. `layout.reset()` does the same
+subscriptions, and — for a layout built from a manifest, which is the one that ran the sound
+adapter's `init` — the adapter, through its `dispose()` (for the built-in `sounds` player, every
+`Howl` it made). `layout.reset()` does the same
 but leaves the layout standing, ready to build again.
 
 What the game hangs on a slot with `scene.addSlotChild()` stays the game's: both detach it intact
@@ -384,6 +425,6 @@ When `debug: true`, every major operation is logged to the console via grouped `
 ```typescript
 export { SpineLayout }; // main class
 export * from './config/types'; // SpineID, SpineLayoutOptions, SpineInstanceData, ...
-export { sounds }; // Howler.js sound manager singleton
+export { sounds }; // the built-in Howler player (pixi8 entry and ./howler only)
 export { log }; // debug logger singleton
 ```

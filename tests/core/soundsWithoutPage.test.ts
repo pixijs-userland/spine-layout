@@ -26,11 +26,12 @@ describe('the sounds singleton', () => {
         define('document', page.document);
     });
 
-    it('lets the core be imported where there is no window or document', async () => {
+    it('lets the core and the player be imported where there is no window or document', async () => {
         const core = await import('../../src/core');
+        const howler = await import('../../src/howler');
 
-        expect(core.sounds).toBeInstanceOf(core.Sounds);
         expect(typeof core.choosePixi).toBe('function');
+        expect(howler.sounds).toBeInstanceOf(howler.Sounds);
     });
 
     it('listens to the page from the first init once there is one, and only once', async () => {

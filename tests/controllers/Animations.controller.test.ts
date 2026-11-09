@@ -1,9 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('../../src/core/controllers/Sounds.controller', () => ({
-    sounds: { playFX: vi.fn(), stopFX: vi.fn(), playMusic: vi.fn() },
-}));
-
 import {
     AlphaTimeline,
     Animation,
@@ -20,15 +16,16 @@ import {
 } from '@esotericsoftware/spine-pixi-v8';
 import { AnimationsController } from '../../src/core/controllers/Animations.controller';
 import { pixi8Engine } from '../../src/engines/pixi8';
-import { sounds } from '../../src/core/controllers/Sounds.controller';
 import { asSpineMap, createFakeSpine, fakeEngine, type FakeSpine } from '../helpers/fakeEngine';
 import { log } from '../../src/core/utils/Log';
 
-const soundsMock = sounds as unknown as {
-    playFX: ReturnType<typeof vi.fn>;
-    stopFX: ReturnType<typeof vi.fn>;
-    playMusic: ReturnType<typeof vi.fn>;
-};
+/** The sound adapter the FX tests hand the controller (`SpineLayoutOptions.sounds`). */
+const soundsMock = { playFX: vi.fn(), stopFX: vi.fn(), playMusic: vi.fn() };
+
+function withSounds<C extends { soundAdapter: unknown }>(ctl: C): C {
+    ctl.soundAdapter = soundsMock;
+    return ctl;
+}
 
 function makeHero(extra: Parameters<typeof createFakeSpine>[0] = {}): FakeSpine {
     return createFakeSpine({
@@ -1303,22 +1300,22 @@ describe('AnimationsController – animation-triggered FX', () => {
 
     it('stop stops the FX the animation triggered', async () => {
         const hero = makeSpineWithFX();
-        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero }));
+        const ctl = withSounds(new AnimationsController(fakeEngine, asSpineMap({ hero })));
         ctl.registerSpine('hero', hero as never);
 
         void ctl.play('hero', 'a');
         hero.triggerEvent('whoosh', 'a');
-        expect(soundsMock.playFX).toHaveBeenCalledWith('whoosh', false);
+        expect(soundsMock.playFX).toHaveBeenCalledWith('whoosh', false, expect.anything());
 
         ctl.stop('hero', 'a');
 
-        expect(soundsMock.stopFX).toHaveBeenCalledWith('whoosh');
+        expect(soundsMock.stopFX).toHaveBeenCalledWith('whoosh', expect.anything());
         await vi.runAllTimersAsync();
     });
 
     it('hands only particles_<key>_start|_stop|_once to the particles, and plays any other particles_ event', () => {
         const hero = makeSpineWithFX();
-        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero }));
+        const ctl = withSounds(new AnimationsController(fakeEngine, asSpineMap({ hero })));
         const handleEvent = vi.fn();
         ctl.particles = { handleEvent } as never;
         ctl.registerSpine('hero', hero as never);
@@ -1328,30 +1325,30 @@ describe('AnimationsController – animation-triggered FX', () => {
 
         expect(handleEvent).toHaveBeenCalledTimes(1);
         expect(handleEvent).toHaveBeenCalledWith('particles_sparks_once', 'hero');
-        expect(soundsMock.playFX).toHaveBeenCalledWith('particles_whoosh', false);
+        expect(soundsMock.playFX).toHaveBeenCalledWith('particles_whoosh', false, expect.anything());
         expect(soundsMock.playFX).toHaveBeenCalledTimes(1);
     });
 
     it('treats a *_loop event as a looping FX, not music, and stops it with the animation', async () => {
         const hero = makeSpineWithFX();
-        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero }));
+        const ctl = withSounds(new AnimationsController(fakeEngine, asSpineMap({ hero })));
         ctl.registerSpine('hero', hero as never);
 
         void ctl.play('hero', 'a');
         hero.triggerEvent('spin_loop', 'a');
 
-        expect(soundsMock.playFX).toHaveBeenCalledWith('spin', true);
+        expect(soundsMock.playFX).toHaveBeenCalledWith('spin', true, expect.anything());
         expect(soundsMock.playMusic).not.toHaveBeenCalled();
 
         ctl.stop('hero', 'a');
 
-        expect(soundsMock.stopFX).toHaveBeenCalledWith('spin');
+        expect(soundsMock.stopFX).toHaveBeenCalledWith('spin', expect.anything());
         await vi.runAllTimersAsync();
     });
 
     it('stop leaves FX triggered by a different animation playing', async () => {
         const hero = makeSpineWithFX();
-        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero }));
+        const ctl = withSounds(new AnimationsController(fakeEngine, asSpineMap({ hero })));
         ctl.registerSpine('hero', hero as never);
 
         void ctl.play('hero', 'a');
@@ -1366,12 +1363,12 @@ describe('AnimationsController – animation-triggered FX', () => {
 
     it('leaves music alone — a music_* event is not stopped with its animation', async () => {
         const hero = makeSpineWithFX();
-        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero }));
+        const ctl = withSounds(new AnimationsController(fakeEngine, asSpineMap({ hero })));
         ctl.registerSpine('hero', hero as never);
 
         void ctl.play('hero', 'a');
         hero.triggerEvent('music_loop', 'a');
-        expect(soundsMock.playMusic).toHaveBeenCalledWith('music');
+        expect(soundsMock.playMusic).toHaveBeenCalledWith('music', expect.anything());
         expect(soundsMock.playFX).not.toHaveBeenCalled();
 
         ctl.stop('hero', 'a');
@@ -1382,26 +1379,26 @@ describe('AnimationsController – animation-triggered FX', () => {
 
     it('routes a music track without the _loop suffix to the music channel too', async () => {
         const hero = makeSpineWithFX();
-        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero }));
+        const ctl = withSounds(new AnimationsController(fakeEngine, asSpineMap({ hero })));
         ctl.registerSpine('hero', hero as never);
 
         void ctl.play('hero', 'a');
         hero.triggerEvent('music2', 'a');
 
-        expect(soundsMock.playMusic).toHaveBeenCalledWith('music2');
+        expect(soundsMock.playMusic).toHaveBeenCalledWith('music2', expect.anything());
         expect(soundsMock.playFX).not.toHaveBeenCalled();
         await vi.runAllTimersAsync();
     });
 
     it('routes an event with music anywhere in its name to the music channel', async () => {
         const hero = makeSpineWithFX();
-        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero }));
+        const ctl = withSounds(new AnimationsController(fakeEngine, asSpineMap({ hero })));
         ctl.registerSpine('hero', hero as never);
 
         void ctl.play('hero', 'a');
         hero.triggerEvent('fs_music_loop', 'a');
 
-        expect(soundsMock.playMusic).toHaveBeenCalledWith('fs_music');
+        expect(soundsMock.playMusic).toHaveBeenCalledWith('fs_music', expect.anything());
         expect(soundsMock.playFX).not.toHaveBeenCalled();
 
         ctl.stop('hero', 'a');
@@ -1412,7 +1409,7 @@ describe('AnimationsController – animation-triggered FX', () => {
 
     it('keeps an FX playing while another running animation also triggered it', async () => {
         const hero = makeSpineWithFX();
-        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero }));
+        const ctl = withSounds(new AnimationsController(fakeEngine, asSpineMap({ hero })));
         ctl.registerSpine('hero', hero as never);
 
         void ctl.play('hero', 'a');
@@ -1426,14 +1423,14 @@ describe('AnimationsController – animation-triggered FX', () => {
 
         // ...once it stops too, nothing holds it any more
         ctl.stop('hero', 'b');
-        expect(soundsMock.stopFX).toHaveBeenCalledWith('whoosh');
+        expect(soundsMock.stopFX).toHaveBeenCalledWith('whoosh', expect.anything());
 
         await vi.runAllTimersAsync();
     });
 
     it('reset stops the FX the animation triggered', async () => {
         const hero = makeSpineWithFX();
-        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero }));
+        const ctl = withSounds(new AnimationsController(fakeEngine, asSpineMap({ hero })));
         ctl.registerSpine('hero', hero as never);
 
         void ctl.play('hero', 'a');
@@ -1441,13 +1438,13 @@ describe('AnimationsController – animation-triggered FX', () => {
 
         ctl.reset('hero', 'a');
 
-        expect(soundsMock.stopFX).toHaveBeenCalledWith('whoosh');
+        expect(soundsMock.stopFX).toHaveBeenCalledWith('whoosh', expect.anything());
         await vi.runAllTimersAsync();
     });
 
     it('stopState stops the FX triggered by the state animations', async () => {
         const hero = makeHero();
-        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero }));
+        const ctl = withSounds(new AnimationsController(fakeEngine, asSpineMap({ hero })));
         ctl.registerSpine('hero', hero as never);
 
         void ctl.playState('idle');
@@ -1455,14 +1452,14 @@ describe('AnimationsController – animation-triggered FX', () => {
 
         await ctl.stopState('idle');
 
-        expect(soundsMock.stopFX).toHaveBeenCalledWith('whoosh');
+        expect(soundsMock.stopFX).toHaveBeenCalledWith('whoosh', expect.anything());
         await vi.runAllTimersAsync();
     });
 
     it('stopAllForSpine stops that spine FX and leaves other spines untouched', async () => {
         const hero = makeSpineWithFX();
         const enemy = makeSpineWithFX();
-        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero, enemy }));
+        const ctl = withSounds(new AnimationsController(fakeEngine, asSpineMap({ hero, enemy })));
         ctl.registerSpine('hero', hero as never);
         ctl.registerSpine('enemy', enemy as never);
 
@@ -1473,15 +1470,15 @@ describe('AnimationsController – animation-triggered FX', () => {
 
         ctl.stopAllForSpine('hero');
 
-        expect(soundsMock.stopFX).toHaveBeenCalledWith('whoosh');
-        expect(soundsMock.stopFX).not.toHaveBeenCalledWith('growl');
+        expect(soundsMock.stopFX).toHaveBeenCalledWith('whoosh', expect.anything());
+        expect(soundsMock.stopFX).not.toHaveBeenCalledWith('growl', expect.anything());
         await vi.runAllTimersAsync();
     });
 
     it('stopAll stops the FX triggered on every spine', async () => {
         const hero = makeSpineWithFX();
         const enemy = makeSpineWithFX();
-        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero, enemy }));
+        const ctl = withSounds(new AnimationsController(fakeEngine, asSpineMap({ hero, enemy })));
         ctl.registerSpine('hero', hero as never);
         ctl.registerSpine('enemy', enemy as never);
 
@@ -1492,14 +1489,14 @@ describe('AnimationsController – animation-triggered FX', () => {
 
         ctl.stopAll();
 
-        expect(soundsMock.stopFX).toHaveBeenCalledWith('whoosh');
-        expect(soundsMock.stopFX).toHaveBeenCalledWith('growl');
+        expect(soundsMock.stopFX).toHaveBeenCalledWith('whoosh', expect.anything());
+        expect(soundsMock.stopFX).toHaveBeenCalledWith('growl', expect.anything());
         await vi.runAllTimersAsync();
     });
 
     it('clear stops the FX triggered by all animations', async () => {
         const hero = makeSpineWithFX();
-        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero }));
+        const ctl = withSounds(new AnimationsController(fakeEngine, asSpineMap({ hero })));
         ctl.registerSpine('hero', hero as never);
 
         void ctl.play('hero', 'a');
@@ -1507,13 +1504,13 @@ describe('AnimationsController – animation-triggered FX', () => {
 
         ctl.clear();
 
-        expect(soundsMock.stopFX).toHaveBeenCalledWith('whoosh');
+        expect(soundsMock.stopFX).toHaveBeenCalledWith('whoosh', expect.anything());
         await vi.runAllTimersAsync();
     });
 
     it('unregisterSpine stops the FX that spine triggered', async () => {
         const hero = makeSpineWithFX();
-        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero }));
+        const ctl = withSounds(new AnimationsController(fakeEngine, asSpineMap({ hero })));
         ctl.registerSpine('hero', hero as never);
 
         void ctl.play('hero', 'a');
@@ -1521,13 +1518,13 @@ describe('AnimationsController – animation-triggered FX', () => {
 
         ctl.unregisterSpine('hero');
 
-        expect(soundsMock.stopFX).toHaveBeenCalledWith('whoosh');
+        expect(soundsMock.stopFX).toHaveBeenCalledWith('whoosh', expect.anything());
         await vi.runAllTimersAsync();
     });
 
     it('re-triggers and re-stops the FX after the animation is replayed', async () => {
         const hero = makeSpineWithFX();
-        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero }));
+        const ctl = withSounds(new AnimationsController(fakeEngine, asSpineMap({ hero })));
         ctl.registerSpine('hero', hero as never);
 
         void ctl.play('hero', 'a');
@@ -1544,7 +1541,7 @@ describe('AnimationsController – animation-triggered FX', () => {
 
     it('does not throw when an event fires without a track entry', async () => {
         const hero = makeSpineWithFX();
-        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero }));
+        const ctl = withSounds(new AnimationsController(fakeEngine, asSpineMap({ hero })));
         ctl.registerSpine('hero', hero as never);
 
         void ctl.play('hero', 'a');
@@ -1562,7 +1559,7 @@ describe('AnimationsController – addEventListener / removeEventListener', () =
 
     it('registered listener is invoked when the matching event fires via playEvent', async () => {
         const hero = makeHero();
-        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero }));
+        const ctl = withSounds(new AnimationsController(fakeEngine, asSpineMap({ hero })));
         ctl.registerSpine('hero', hero as never);
 
         const cb = vi.fn();
@@ -1578,7 +1575,7 @@ describe('AnimationsController – addEventListener / removeEventListener', () =
 
     it('payload is merged into the listener event object', async () => {
         const hero = makeHero();
-        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero }));
+        const ctl = withSounds(new AnimationsController(fakeEngine, asSpineMap({ hero })));
         ctl.registerSpine('hero', hero as never);
 
         const cb = vi.fn();
@@ -1597,7 +1594,7 @@ describe('AnimationsController – addEventListener / removeEventListener', () =
 
     it('a payload cannot override eventName', async () => {
         const hero = makeHero();
-        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero }));
+        const ctl = withSounds(new AnimationsController(fakeEngine, asSpineMap({ hero })));
         ctl.registerSpine('hero', hero as never);
 
         const cb = vi.fn();
@@ -1611,7 +1608,7 @@ describe('AnimationsController – addEventListener / removeEventListener', () =
     });
 
     it('multiple listeners on the same event are all invoked', async () => {
-        const ctl = new AnimationsController(fakeEngine, new Map());
+        const ctl = withSounds(new AnimationsController(fakeEngine, new Map()));
 
         const a = vi.fn();
         const b = vi.fn();
@@ -1627,7 +1624,7 @@ describe('AnimationsController – addEventListener / removeEventListener', () =
 
     it('"*" wildcard listener receives every skeleton event', async () => {
         const hero = makeHero();
-        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero }));
+        const ctl = withSounds(new AnimationsController(fakeEngine, asSpineMap({ hero })));
         ctl.registerSpine('hero', hero as never);
 
         const wildcard = vi.fn();
@@ -1640,7 +1637,7 @@ describe('AnimationsController – addEventListener / removeEventListener', () =
     });
 
     it('removeEventListener stops the callback from being called', async () => {
-        const ctl = new AnimationsController(fakeEngine, new Map());
+        const ctl = withSounds(new AnimationsController(fakeEngine, new Map()));
 
         const cb = vi.fn();
         ctl.addEventListener('win', cb);
@@ -1653,7 +1650,7 @@ describe('AnimationsController – addEventListener / removeEventListener', () =
     });
 
     it('removeEventListener removes only the specified listener, leaving others intact', async () => {
-        const ctl = new AnimationsController(fakeEngine, new Map());
+        const ctl = withSounds(new AnimationsController(fakeEngine, new Map()));
 
         const keep = vi.fn();
         const remove = vi.fn();
@@ -1669,12 +1666,12 @@ describe('AnimationsController – addEventListener / removeEventListener', () =
     });
 
     it('removeEventListener is a no-op when no listeners exist for the event', () => {
-        const ctl = new AnimationsController(fakeEngine, new Map());
+        const ctl = withSounds(new AnimationsController(fakeEngine, new Map()));
         expect(() => ctl.removeEventListener('nonexistent', vi.fn())).not.toThrow();
     });
 
     it('removeEventListener is a no-op when the function was never registered', async () => {
-        const ctl = new AnimationsController(fakeEngine, new Map());
+        const ctl = withSounds(new AnimationsController(fakeEngine, new Map()));
 
         const registered = vi.fn();
         const unregistered = vi.fn();
@@ -1691,7 +1688,7 @@ describe('AnimationsController – addEventListener / removeEventListener', () =
 describe('AnimationsController – playLastFrame', () => {
     it('warns when spine is unknown', async () => {
         const err = vi.spyOn(console, 'error').mockImplementation(() => {});
-        const ctl = new AnimationsController(fakeEngine, new Map());
+        const ctl = withSounds(new AnimationsController(fakeEngine, new Map()));
         await ctl.playLastFrame('missing', 'anim');
         expect(err).toHaveBeenCalledWith('Track spine not found');
     });
@@ -1699,9 +1696,171 @@ describe('AnimationsController – playLastFrame', () => {
     it('seeks to the end of the animation via trackEntry.trackTime', async () => {
         const hero = createFakeSpine({ animations: [{ name: 'a', duration: 5 }] });
 
-        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero }));
+        const ctl = withSounds(new AnimationsController(fakeEngine, asSpineMap({ hero })));
         await ctl.playLastFrame('hero', 'a');
 
         expect(hero.state.tracks[0]?.trackTime).toBe(5);
+    });
+});
+
+describe('AnimationsController – onSound', () => {
+    function makeSpine(): FakeSpine {
+        return createFakeSpine({
+            animations: [
+                { name: 'a', duration: 1 },
+                { name: 'b', duration: 1 },
+            ],
+        });
+    }
+
+    beforeEach(() => {
+        soundsMock.playFX.mockClear();
+        soundsMock.stopFX.mockClear();
+        soundsMock.playMusic.mockClear();
+        vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+        vi.useRealTimers();
+    });
+
+    it('plays every sound through the adapter and reports it to the listeners', async () => {
+        const hero = makeSpine();
+        const ctl = withSounds(new AnimationsController(fakeEngine, asSpineMap({ hero })));
+        ctl.registerSpine('hero', hero as never);
+        const listener = vi.fn();
+        ctl.onSound(listener);
+
+        void ctl.play('hero', 'a');
+        hero.triggerEvent('music_loop', 'a');
+        hero.triggerEvent('spin_loop', 'a');
+        hero.triggerEvent('whoosh', 'a');
+        ctl.stop('hero', 'a');
+
+        expect(listener.mock.calls.map(([event]) => event)).toEqual([
+            { action: 'play', kind: 'music', name: 'music', loop: true, spineID: 'hero', animation: 'a' },
+            { action: 'play', kind: 'fx', name: 'spin', loop: true, spineID: 'hero', animation: 'a' },
+            { action: 'play', kind: 'fx', name: 'whoosh', loop: false, spineID: 'hero', animation: 'a' },
+            { action: 'stop', kind: 'fx', name: 'spin', loop: false, spineID: 'hero', animation: 'a' },
+            { action: 'stop', kind: 'fx', name: 'whoosh', loop: false, spineID: 'hero', animation: 'a' },
+        ]);
+        expect(soundsMock.playMusic).toHaveBeenCalledWith('music', expect.anything());
+        expect(soundsMock.playFX).toHaveBeenCalledTimes(2);
+        expect(soundsMock.stopFX).toHaveBeenCalledTimes(2);
+        await vi.runAllTimersAsync();
+    });
+
+    it('hands the adapter the whole event with each call', () => {
+        const hero = makeSpine();
+        const ctl = withSounds(new AnimationsController(fakeEngine, asSpineMap({ hero })));
+        ctl.registerSpine('hero', hero as never);
+
+        void ctl.play('hero', 'a');
+        hero.triggerEvent('spin_loop', 'a');
+
+        expect(soundsMock.playFX).toHaveBeenCalledWith('spin', true, {
+            action: 'play',
+            kind: 'fx',
+            name: 'spin',
+            loop: true,
+            spineID: 'hero',
+            animation: 'a',
+        });
+    });
+
+    it('with no adapter, plays nothing and only reports the sounds', async () => {
+        const hero = makeSpine();
+        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero }));
+        ctl.registerSpine('hero', hero as never);
+        const listener = vi.fn();
+        ctl.onSound(listener);
+
+        void ctl.play('hero', 'a');
+        hero.triggerEvent('music', 'a');
+        hero.triggerEvent('whoosh', 'a');
+        ctl.stop('hero', 'a');
+
+        expect(soundsMock.playMusic).not.toHaveBeenCalled();
+        expect(soundsMock.playFX).not.toHaveBeenCalled();
+        expect(soundsMock.stopFX).not.toHaveBeenCalled();
+        expect(listener).toHaveBeenCalledTimes(3);
+        await vi.runAllTimersAsync();
+    });
+
+    it('keeps reporting when the adapter throws', () => {
+        const hero = makeSpine();
+        const ctl = new AnimationsController(fakeEngine, asSpineMap({ hero }));
+        ctl.soundAdapter = {
+            playMusic: vi.fn(),
+            stopFX: vi.fn(),
+            playFX: () => {
+                throw new Error('boom');
+            },
+        };
+        ctl.registerSpine('hero', hero as never);
+        const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+        const listener = vi.fn();
+        ctl.onSound(listener);
+
+        hero.triggerEvent('whoosh');
+
+        expect(listener).toHaveBeenCalledTimes(1);
+        expect(error.mock.calls.filter(([message]) => message === '[spine-layout] sound adapter failed')).toHaveLength(1);
+        error.mockRestore();
+    });
+
+    it('reports no stop for an FX the stopped animation did not play', async () => {
+        const hero = makeSpine();
+        const ctl = withSounds(new AnimationsController(fakeEngine, asSpineMap({ hero })));
+        ctl.registerSpine('hero', hero as never);
+        const listener = vi.fn();
+        ctl.onSound(listener);
+
+        void ctl.play('hero', 'a');
+        void ctl.play('hero', 'b');
+        hero.triggerEvent('whoosh', 'a');
+        ctl.stop('hero', 'b');
+
+        expect(listener.mock.calls.filter(([event]) => event.action === 'stop')).toEqual([]);
+        await vi.runAllTimersAsync();
+    });
+
+    it('unsubscribes, and keeps going when a listener throws', () => {
+        const hero = makeSpine();
+        const ctl = withSounds(new AnimationsController(fakeEngine, asSpineMap({ hero })));
+        ctl.registerSpine('hero', hero as never);
+        const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+        const throwing = vi.fn(() => {
+            throw new Error('boom');
+        });
+        const listener = vi.fn();
+        ctl.onSound(throwing);
+        const off = ctl.onSound(listener);
+
+        hero.triggerEvent('whoosh');
+        off();
+        hero.triggerEvent('whoosh');
+
+        expect(throwing).toHaveBeenCalledTimes(2);
+        expect(listener).toHaveBeenCalledTimes(1);
+        expect(error.mock.calls.filter(([message]) => message === '[spine-layout] sound listener failed')).toHaveLength(2);
+        error.mockRestore();
+    });
+
+    it('forgets its listeners on clear unless keepListeners is set', () => {
+        const hero = makeSpine();
+        const ctl = withSounds(new AnimationsController(fakeEngine, asSpineMap({ hero })));
+        const listener = vi.fn();
+        ctl.onSound(listener);
+
+        ctl.clear({ keepListeners: true });
+        ctl.registerSpine('hero', hero as never);
+        hero.triggerEvent('whoosh');
+        expect(listener).toHaveBeenCalledTimes(1);
+
+        ctl.clear();
+        ctl.registerSpine('hero', hero as never);
+        hero.triggerEvent('whoosh');
+        expect(listener).toHaveBeenCalledTimes(1);
     });
 });

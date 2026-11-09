@@ -1,5 +1,32 @@
 # @pixijs-userland/spine-layout
 
+## 0.8.1
+
+### Patch Changes
+
+- ab7d554: On spine-core 4.3, bone world positions, slot attachments and alpha read the applied pose, so a
+  bone a constraint moves reports where it is drawn; `texts.json` is looked up without a cache-miss
+  warning, and settings already set are kept; the sounds singleton no longer needs a `window` to be
+  imported.
+
+## 0.8.0
+
+### Minor Changes
+
+- 59ba6ba: pixi4: a `SkeletonData` set under a skeleton alias (`engine.assets.set('spine/bg.json', data)`) is taken as read, with no atlas, so a game whose own loader reads its skeletons (unicore's binary Spine 3.8) hands them over as they are.
+
+## 0.7.0
+
+### Minor Changes
+
+- 770f044: Sound adapters (#6): the `sounds` option takes a `SoundAdapter` (`playMusic`, `playFX`, `stopFX`, optional `init` / `dispose`) that plays the sounds the skeletons ask for, so a game can play them through its own audio system; `animations.onSound` keeps reporting every play and stop. The pixi8 `SpineLayout` keeps the built-in Howler player by default (`sounds: false` turns it off; `builtInSounds: false` still works and is deprecated). `./core` and `./pixi4` no longer import Howler: `SpineLayoutCore` plays nothing unless given an adapter, and the Howler player (`sounds`, `Sounds`) moves to the new `./howler` entry — a PIXI 4 game that played sound through it passes `sounds` from there.
+
+## 0.6.0
+
+### Minor Changes
+
+- 59f0616: Add `builtInSounds: false` to turn the built-in Howler player off, and `animations.onSound` to receive every sound play and stop the skeletons ask for, so a game can play them through its own audio system.
+
 ## 0.5.2
 
 ### Patch Changes

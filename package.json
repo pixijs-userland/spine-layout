@@ -1,6 +1,6 @@
 {
     "name": "@pixijs-userland/spine-layout",
-    "version": "0.5.2",
+    "version": "0.8.1",
     "description": "Compose Pixi.js scenes from Spine skeletons with state/event-based animation",
     "license": "MIT",
     "repository": {
@@ -61,6 +61,11 @@
             "source": "./src/runtimes/index.ts",
             "import": "./dist/runtimes/index.js",
             "types": "./dist/runtimes/index.d.ts"
+        },
+        "./howler": {
+            "source": "./src/howler.ts",
+            "import": "./dist/howler.js",
+            "types": "./dist/howler.d.ts"
         }
     },
     "files": [

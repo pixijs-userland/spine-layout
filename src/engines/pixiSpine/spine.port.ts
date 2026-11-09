@@ -341,8 +341,14 @@ export function createPixiSpinePort<T extends PixiSpineTypes = PixiSpineTypes>({
                 return ready as SkeletonDataLike;
             }
 
-            const source = assets.get<SkeletonSource>(skeletonAlias);
+            const source = assets.get<SkeletonSource | SkeletonDataLike>(skeletonAlias);
             if (!source) throw new Error(`No skeleton loaded as "${skeletonAlias}"`);
+
+            // Already read by the game's own loader (unicore reads its binary spines into
+            // SkeletonData with their atlas), and handed over with `assets.set`.
+            if (runtimes.some((runtime) => source instanceof runtime.classes.SkeletonData)) {
+                return source as SkeletonDataLike;
+            }
 
             const atlasText = atlasAlias ? assets.get<string>(atlasAlias) : '';
             if (atlasText === undefined) throw new Error(`No atlas loaded as "${atlasAlias}"`);

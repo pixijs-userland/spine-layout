@@ -3,6 +3,7 @@ import type { Container } from 'pixi.js';
 import type { Engine } from '../../engine/Engine';
 import type { SpineLayoutOptions } from '../../core/config/types';
 import { SpineLayoutCore } from '../../core/SpineLayout';
+import { sounds } from '../../core/controllers/Sounds.controller';
 import { pixi8Engine } from './index';
 import type { Pixi8Spine, Pixi8Types } from './types';
 
@@ -17,9 +18,12 @@ export interface SpineLayout<S extends Pixi8Spine = Spine> extends Container {}
 // eslint-disable-next-line @typescript-eslint/no-unsafe-declaration-merging
 export class SpineLayout<S extends Pixi8Spine = Spine> extends SpineLayoutCore<Pixi8Types<S>> {
     constructor(options: SpineLayoutPixi8Options<S> = {}) {
+        // The built-in Howler player unless the game gives its own adapter (or `false`).
+        const adapter = options.sounds ?? (options.builtInSounds === false ? false : sounds);
         super(
             Object.assign(options, {
                 engine: options.engine ?? (pixi8Engine as unknown as Engine<Pixi8Types<S>>),
+                sounds: adapter,
             }),
         );
     }

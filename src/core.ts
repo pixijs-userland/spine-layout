@@ -5,7 +5,6 @@ export {
 } from './core/SpineLayout';
 export * from './core/config/types';
 export * from './core/types';
-export { Sounds, sounds, type SoundSettings } from './core/controllers/Sounds.controller';
 export { AnimationsController } from './core/controllers/Animations.controller';
 export { SkinsController } from './core/controllers/Skins.controller';
 export { TextsController } from './core/controllers/Texts.controller';

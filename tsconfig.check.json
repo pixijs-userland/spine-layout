@@ -16,6 +16,7 @@
         "src/pixi5.ts",
         "src/pixi6.ts",
         "src/pixi7.ts",
-        "src/pixi8.ts"
+        "src/pixi8.ts",
+        "src/howler.ts"
     ]
 }

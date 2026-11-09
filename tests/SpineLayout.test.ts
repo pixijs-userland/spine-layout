@@ -766,4 +766,49 @@ describe('SpineLayout — destroy', () => {
         expect(init).toHaveBeenCalledTimes(1);
         expect(dispose).toHaveBeenCalledTimes(1);
     });
+
+    it('leaves the sounds singleton alone with sounds: false', () => {
+        listeningWindow();
+        const init = vi.spyOn(sounds, 'init').mockImplementation(() => {});
+        const dispose = vi.spyOn(sounds, 'dispose').mockImplementation(() => {});
+
+        Assets.cache.set('spine/root.json', bonesOnly);
+        const layout = new SpineLayout({ sounds: false });
+        layout.createInstancesFromManifest(manifest(['spine/root.json']), 'spine');
+        layout.destroy();
+        Assets.cache.remove('spine/root.json');
+
+        expect(init).not.toHaveBeenCalled();
+        expect(dispose).not.toHaveBeenCalled();
+    });
+
+    it('still reads the deprecated builtInSounds: false as sounds: false', () => {
+        listeningWindow();
+        const init = vi.spyOn(sounds, 'init').mockImplementation(() => {});
+
+        Assets.cache.set('spine/root.json', bonesOnly);
+        const layout = new SpineLayout({ builtInSounds: false });
+        layout.createInstancesFromManifest(manifest(['spine/root.json']), 'spine');
+        layout.destroy();
+        Assets.cache.remove('spine/root.json');
+
+        expect(init).not.toHaveBeenCalled();
+    });
+
+    it('inits and disposes the adapter it is given instead of the singleton', () => {
+        listeningWindow();
+        const init = vi.spyOn(sounds, 'init').mockImplementation(() => {});
+        const adapter = { init: vi.fn(), dispose: vi.fn(), playMusic: vi.fn(), playFX: vi.fn(), stopFX: vi.fn() };
+
+        Assets.cache.set('spine/root.json', bonesOnly);
+        const layout = new SpineLayout({ sounds: adapter });
+        const assets = manifest(['spine/root.json']);
+        layout.createInstancesFromManifest(assets, 'spine');
+        layout.destroy();
+        Assets.cache.remove('spine/root.json');
+
+        expect(init).not.toHaveBeenCalled();
+        expect(adapter.init).toHaveBeenCalledWith(assets);
+        expect(adapter.dispose).toHaveBeenCalledTimes(1);
+    });
 });

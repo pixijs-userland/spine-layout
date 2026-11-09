@@ -107,6 +107,16 @@ describe('readSkeleton', () => {
         delete PIXI.loader!.resources.ready;
     });
 
+    it('takes a SkeletonData the game read itself, with no atlas alias', () => {
+        const data = engine.spine.readSkeleton(skeleton(), ATLAS, { 'contract.png': page });
+        engine.assets.set('spine/read.json', data);
+
+        expect(engine.spine.readSkeletonFromAssets('spine/read.json', 'spine/read.atlas')).toBe(data);
+        expect(engine.spine.readSkeletonFromAssets('spine/read.json')).toBe(data);
+
+        engine.assets.delete('spine/read.json');
+    });
+
     it('answers a skeleton added under a bare name by the extension the manifest lists it with', () => {
         const data = engine.spine.readSkeleton(skeleton(), ATLAS, { 'contract.png': page });
         PIXI.loader!.resources.hero = { url: 'assets/hero.json', spineData: data } as never;
