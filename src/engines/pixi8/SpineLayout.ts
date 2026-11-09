@@ -1,23 +1,31 @@
+import type { Spine } from '@esotericsoftware/spine-pixi-v8';
 import type { Container } from 'pixi.js';
 import type { Engine } from '../../engine/Engine';
 import type { SpineLayoutOptions } from '../../core/config/types';
 import { SpineLayoutCore } from '../../core/SpineLayout';
 import { sounds } from '../../core/controllers/Sounds.controller';
 import { pixi8Engine } from './index';
-import type { Pixi8Types } from './types';
+import type { Pixi8Spine, Pixi8Types } from './types';
 
-export type SpineLayoutPixi8Options = SpineLayoutOptions & { engine?: Engine<Pixi8Types> };
+export type SpineLayoutPixi8Options<S extends Pixi8Spine = Spine> = SpineLayoutOptions & {
+    engine?: Engine<Pixi8Types<S>>;
+};
 
 // The layout is a pixi `Container` at runtime (see `LayoutHost`); this says so to the compiler.
-// eslint-disable-next-line @typescript-eslint/no-empty-object-type, @typescript-eslint/no-unsafe-declaration-merging
-export interface SpineLayout extends Container {}
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type, @typescript-eslint/no-unused-vars
+export interface SpineLayout<S extends Pixi8Spine = Spine> extends Container {}
 
 // eslint-disable-next-line @typescript-eslint/no-unsafe-declaration-merging
-export class SpineLayout extends SpineLayoutCore<Pixi8Types> {
-    constructor(options: SpineLayoutPixi8Options = {}) {
+export class SpineLayout<S extends Pixi8Spine = Spine> extends SpineLayoutCore<Pixi8Types<S>> {
+    constructor(options: SpineLayoutPixi8Options<S> = {}) {
         // The built-in Howler player unless the game gives its own adapter (or `false`).
         const adapter = options.sounds ?? (options.builtInSounds === false ? false : sounds);
-        super(Object.assign(options, { engine: options.engine ?? pixi8Engine, sounds: adapter }));
+        super(
+            Object.assign(options, {
+                engine: options.engine ?? (pixi8Engine as unknown as Engine<Pixi8Types<S>>),
+                sounds: adapter,
+            }),
+        );
     }
 
     override destroy() {

@@ -1,0 +1,22 @@
+{
+    "popup": {
+        "title": {
+            "type": "text",
+            "fontFamily": "Arial",
+            "fontSize": 56,
+            "fontWeight": "bold",
+            "fill": "#ffffff",
+            "stroke": { "color": "#6b2d0c", "width": 6 },
+            "value": "Reward"
+        },
+        "coins": {
+            "type": "text",
+            "fontFamily": "Arial",
+            "fontSize": 96,
+            "fontWeight": "bold",
+            "fill": "#ffd23a",
+            "stroke": { "color": "#4a2a00", "width": 8 },
+            "value": "250"
+        }
+    }
+}

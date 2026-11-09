@@ -32,8 +32,13 @@ export interface SkinEntryLike {
 
 export interface SkinLike {
     name: string;
-    /** Fills `entries` with `SkinEntryLike`s; typed `never[]` so each runtime's own entry type fits. */
-    getAttachmentsForSlot(slotIndex: number, entries: never[]): void;
+    /** By slot index, that slot's attachments by name. */
+    attachments?: readonly (Readonly<Record<string, unknown>> | undefined)[];
+    /**
+     * Fills `entries` with `SkinEntryLike`s; typed `never[]` so each runtime's own entry type fits.
+     * 3.8 on: a 3.7 skin has only its `attachments`.
+     */
+    getAttachmentsForSlot?(slotIndex: number, entries: never[]): void;
 }
 
 export interface BoneDataLike {
@@ -121,8 +126,14 @@ export interface SkeletonLike {
     setSkin(skin: SkinLike | null): void;
 }
 
-/** What a skeleton is before a runtime read it: the parsed `.json`, or the bytes of a `.skel`. */
-export type SkeletonSource = { skins?: { name: string }[] } | ArrayBuffer | Uint8Array;
+/**
+ * What a skeleton is before a runtime read it: the parsed `.json`, or the bytes of a `.skel`. Its
+ * skins are an array from 3.8 on, an object by name before.
+ */
+export type SkeletonSource =
+    | { skins?: { name: string }[] | Record<string, unknown> }
+    | ArrayBuffer
+    | Uint8Array;
 
 export function isBinarySkeleton(skeleton: SkeletonSource): skeleton is ArrayBuffer | Uint8Array {
     return skeleton instanceof Uint8Array || skeleton instanceof ArrayBuffer;

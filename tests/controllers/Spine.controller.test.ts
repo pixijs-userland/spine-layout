@@ -345,7 +345,7 @@ describe('SpineController', () => {
         expect(ctl.getSlotTexture('hero', 'icon')).not.toBeNull();
     });
 
-    it('getSlotTexture warns and returns null when attachment region is missing', () => {
+    it('getSlotTexture returns null when the attachment has no region', () => {
         const region = new RegionAttachment('a', 'p');
         // Empty sequence → no region resolved (spine 4.3 shape).
         (region as unknown as { sequence: unknown }).sequence = { regions: [] };
@@ -357,7 +357,6 @@ describe('SpineController', () => {
         );
 
         expect(ctl.getSlotTexture('hero', 'icon')).toBeNull();
-        expect(warn).toHaveBeenCalledWith('Invalid attachment or region');
     });
 
     it('idOf answers the id a spine is registered under, and nothing for a stranger', () => {

@@ -1,0 +1,9 @@
+{
+    "extends": "./tsconfig.base.json",
+    "compilerOptions": {
+        "types": [],
+        "tsBuildInfoFile": "dist/.tsbuildinfo/esoteric.tsbuildinfo"
+    },
+    "include": ["src/engines/esoteric"],
+    "references": [{ "path": "./tsconfig.core.json" }]
+}
