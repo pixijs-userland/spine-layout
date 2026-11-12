@@ -37,6 +37,8 @@ export type SpineLayoutCoreOptions<T extends EngineTypes> = SpineLayoutOptions &
 /** The spine the scene is built from, unless the options name another. */
 const DEFAULT_ROOT = 'root';
 
+const spineIDOf = (skeletonFile: string): SpineID => skeletonFile.replace(/\.[^.]+$/, '');
+
 /**
  * How one loaded skeleton is turned into an instance — retained per id, so a spine the tree
  * never asked for can still be built later ({@link SpineLayout.createInstance}), and so a
@@ -207,21 +209,51 @@ export class SpineLayoutCore<T extends EngineTypes = EngineTypes> extends Layout
      */
     createInstancesFromManifest(manifest: ManifestLike, folderName?: string): void | Promise<void> {
         const assets = ManifestParser.getSpineAssets(manifest);
-        const skeletons = assets.map((asset) => {
+
+        return this.afterPrepare(this.loadedSkeletons(assets, folderName), () =>
+            this.buildFromManifest(manifest, assets, folderName),
+        );
+    }
+
+    private loadedSkeletons(assets: SpineAssetData[], folderName?: string) {
+        return assets.map((asset) => {
             const key = alias(asset.skel, folderName);
             return {
                 file: asset.skel,
                 skeleton: this.engine.assets.has(key) ? this.engine.assets.get(key) : undefined,
             };
         });
-
-        return this.afterPrepare(skeletons, () =>
-            this.buildFromManifest(manifest, assets, folderName),
-        );
     }
 
     async loadInstancesFromManifest(manifest: ManifestLike, folderName?: string): Promise<void> {
         await this.createInstancesFromManifest(manifest, folderName);
+    }
+
+    /**
+     * Builds skeletons loaded after the scene was: art a game fetches once it is playable rather
+     * than before. Building the tree passed over every `spine_<id>` slot whose skeleton had not
+     * been loaded, so each one arriving here goes into the slots naming it, with everything it
+     * embeds, wired like the rest of the scene and posed in its `init`. A skeleton the layout
+     * already holds is left alone, so the whole manifest may be passed.
+     */
+    addInstancesFromManifest(manifest: ManifestLike, folderName?: string): void | Promise<void> {
+        const assets = ManifestParser.getSpineAssets(manifest).filter(
+            (asset) => !this.#sources.has(spineIDOf(asset.skel)),
+        );
+
+        return this.afterPrepare(this.loadedSkeletons(assets, folderName), () =>
+            this.grow(this.manifestSources(assets, folderName)),
+        );
+    }
+
+    /** {@link addInstancesFromManifest}, from skeletons the caller read itself. */
+    addInstancesFromDataArray(data: SpineInstanceData<T>[]): void | Promise<void> {
+        const late = data.filter((item) => !this.#sources.has(item.name));
+
+        return this.afterPrepare(
+            late.map((item) => ({ file: item.name, skeleton: item.skeleton })),
+            () => this.grow(this.dataSources(late)),
+        );
     }
 
     /** {@link createInstancesFromManifest}, from skeletons the caller read itself. */
@@ -268,15 +300,7 @@ export class SpineLayoutCore<T extends EngineTypes = EngineTypes> extends Layout
     ) {
         this.openRegistryLogs();
 
-        const sources = new Map<SpineID, SpineSource<T>>();
-
-        assets.forEach((asset) => {
-            const spineID = asset.skel.replace(/\.[^.]+$/, '');
-
-            sources.set(spineID, { create: () => this.spineFromAsset(asset, folderName) });
-        });
-
-        const rootID = this.build(sources);
+        const rootID = this.build(this.manifestSources(assets, folderName));
 
         this.closeRegistryLogs();
 
@@ -293,9 +317,19 @@ export class SpineLayoutCore<T extends EngineTypes = EngineTypes> extends Layout
         this.#orientation.attach();
     }
 
-    private buildFromDataArray(data: SpineInstanceData<T>[]) {
-        this.openRegistryLogs();
+    private manifestSources(assets: SpineAssetData[], folderName?: string) {
+        const sources = new Map<SpineID, SpineSource<T>>();
 
+        assets.forEach((asset) => {
+            sources.set(spineIDOf(asset.skel), {
+                create: () => this.spineFromAsset(asset, folderName),
+            });
+        });
+
+        return sources;
+    }
+
+    private dataSources(data: SpineInstanceData<T>[]) {
         const sources = new Map<SpineID, SpineSource<T>>();
 
         data.forEach((item) => {
@@ -315,7 +349,13 @@ export class SpineLayoutCore<T extends EngineTypes = EngineTypes> extends Layout
             });
         });
 
-        const rootID = this.build(sources);
+        return sources;
+    }
+
+    private buildFromDataArray(data: SpineInstanceData<T>[]) {
+        this.openRegistryLogs();
+
+        const rootID = this.build(this.dataSources(data));
 
         this.closeRegistryLogs();
 
@@ -361,6 +401,69 @@ export class SpineLayoutCore<T extends EngineTypes = EngineTypes> extends Layout
 
         this.closeRegistryLogs();
 
+        this.#wire(built);
+
+        return this.#spines.get(spineID);
+    }
+
+    /** {@link addInstancesFromManifest}'s build: the new sources, into the slots waiting for them. */
+    private grow(sources: Map<SpineID, SpineSource<T>>) {
+        if (sources.size === 0) return;
+
+        const standing = [...this.#spines];
+
+        sources.forEach((source, spineID) => this.#sources.set(spineID, source));
+
+        this.openRegistryLogs();
+
+        const built = new Set<SpineID>();
+        const placements: { parentID: SpineID; slot: string; childID: SpineID }[] = [];
+
+        standing.forEach(([parentID, parent]) => {
+            parent.state.data.skeletonData.slots.forEach((slot) => {
+                spinePointerBases(slot.name, (id) => this.#sources.has(id))
+                    .filter((base) => sources.has(base))
+                    .forEach((base) => {
+                        const shared = this.#spines.has(base);
+                        const childID = shared ? `${base}_${parentID}` : base;
+
+                        if (this.#spines.has(childID)) return;
+                        if (shared) this.#multipleInstanceIDs.add(childID);
+
+                        this.buildTree(childID, base).forEach((id) => built.add(id));
+                        if (!this.skipsAttaching(slot.name)) {
+                            placements.push({ parentID, slot: slot.name, childID });
+                        }
+                    });
+            });
+        });
+
+        const ids = this.multiplyInstances(built);
+
+        this.closeRegistryLogs();
+
+        placements.forEach(({ parentID, slot, childID }) => {
+            const child = this.#spines.get(childID);
+
+            if (child) this.engine.spine.attachSlotObject(this.#spines.get(parentID)!, slot, child);
+        });
+
+        this.#wire(ids);
+        this.#scene.syncSlotObjectsWithDrawOrder(new Set(placements.map((p) => p.parentID)));
+
+        ids.forEach((spineID) => void this.#animations.playByName('init', false, spineID));
+    }
+
+    private skipsAttaching(slotName: string): boolean {
+        return (
+            this.options?.skipAttachingSpinesPatterns?.some((pattern) =>
+                slotName.startsWith(`spine_${pattern}`),
+            ) ?? false
+        );
+    }
+
+    /** Everything a freshly built set of spines needs from the scene: what {@link #mount} does for the tree. */
+    #wire(built: Set<SpineID>) {
         this.#texts.loadSettings();
         this.#particles.loadSettings();
         this.#scene.attachBones(built);
@@ -370,8 +473,6 @@ export class SpineLayoutCore<T extends EngineTypes = EngineTypes> extends Layout
         this.#scene.syncSlotObjectsWithDrawOrder(built);
         this.#pointer.attach();
         this.#orientation.attach();
-
-        return this.#spines.get(spineID);
     }
 
     /**
@@ -420,10 +521,10 @@ export class SpineLayoutCore<T extends EngineTypes = EngineTypes> extends Layout
      *
      * @returns the ids built, `rootID` included.
      */
-    private buildTree(rootID: SpineID): Set<SpineID> {
+    private buildTree(rootID: SpineID, rootBaseID: SpineID = rootID): Set<SpineID> {
         const built = new Set<SpineID>();
         const queue: { spineID: SpineID; baseID: SpineID }[] = [
-            { spineID: rootID, baseID: rootID },
+            { spineID: rootID, baseID: rootBaseID },
         ];
 
         while (queue.length) {

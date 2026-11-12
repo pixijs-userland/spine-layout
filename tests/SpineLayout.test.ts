@@ -299,6 +299,80 @@ describe('SpineLayout.createInstance — building what the tree does not reach',
     });
 });
 
+describe('SpineLayout.addInstancesFromDataArray — skeletons that arrive after the scene', () => {
+    afterEach(() => vi.restoreAllMocks());
+
+    /** A scene whose `bg` names a `popup` that has not been loaded yet. */
+    const waitingForPopup = (options?: ConstructorParameters<typeof SpineLayout>[0]) => {
+        const layout = new SpineLayout(options);
+
+        layout.createInstancesFromDataArray([
+            instance('root', ['spine_bg']),
+            instance('bg', ['spine_popup']),
+        ]);
+
+        return layout;
+    };
+
+    it('builds nothing into a slot whose skeleton has not arrived', () => {
+        const layout = waitingForPopup();
+
+        expect([...layout.spines.keys()]).toEqual(['root', 'bg']);
+        expect(layout.spines.get('bg')!.getSlotObject('spine_popup')).toBeFalsy();
+    });
+
+    it('puts the late skeleton, and what it embeds, into the slot waiting for it', () => {
+        const layout = waitingForPopup();
+
+        layout.addInstancesFromDataArray([
+            instance('popup', ['spine_okButton']),
+            instance('okButton'),
+        ]);
+
+        const popup = layout.spines.get('popup')!;
+
+        expect([...layout.spines.keys()]).toEqual(['root', 'bg', 'popup', 'okButton']);
+        expect(layout.spines.get('bg')!.getSlotObject('spine_popup')).toBe(popup);
+        expect(popup.getSlotObject('spine_okButton')).toBe(layout.spines.get('okButton'));
+    });
+
+    it('leaves what the layout already holds as it is', () => {
+        const layout = waitingForPopup();
+        const bg = layout.spines.get('bg');
+
+        layout.addInstancesFromDataArray([instance('bg', ['spine_popup']), instance('popup')]);
+
+        expect(layout.spines.get('bg')).toBe(bg);
+        expect([...layout.spines.keys()]).toEqual(['root', 'bg', 'popup']);
+    });
+
+    it('builds a slot the options skip, and leaves its placing to the game', () => {
+        const layout = waitingForPopup({ skipAttachingSpinesPatterns: ['popup'] });
+
+        layout.addInstancesFromDataArray([instance('popup')]);
+
+        expect(layout.spines.get('popup')!.parent).toBe(null);
+    });
+
+    it('poses the newcomer in its `init`', () => {
+        const layout = waitingForPopup();
+        const popup = instance('popup');
+
+        popup.skeleton.animations = { init: { bones: { root: { translate: [{}] } } } };
+        layout.addInstancesFromDataArray([popup]);
+
+        expect(playing(layout, 'popup')).toEqual(['init']);
+    });
+
+    it('builds nothing for a skeleton no slot names', () => {
+        const layout = waitingForPopup();
+
+        layout.addInstancesFromDataArray([instance('stray')]);
+
+        expect([...layout.spines.keys()]).toEqual(['root', 'bg']);
+    });
+});
+
 /** A skeleton posed differently for each shape of screen, plus the `init` every scene has. */
 const oriented = {
     skeleton: { hash: 'oriented', spine: '4.3.23' },
@@ -798,7 +872,13 @@ describe('SpineLayout — destroy', () => {
     it('inits and disposes the adapter it is given instead of the singleton', () => {
         listeningWindow();
         const init = vi.spyOn(sounds, 'init').mockImplementation(() => {});
-        const adapter = { init: vi.fn(), dispose: vi.fn(), playMusic: vi.fn(), playFX: vi.fn(), stopFX: vi.fn() };
+        const adapter = {
+            init: vi.fn(),
+            dispose: vi.fn(),
+            playMusic: vi.fn(),
+            playFX: vi.fn(),
+            stopFX: vi.fn(),
+        };
 
         Assets.cache.set('spine/root.json', bonesOnly);
         const layout = new SpineLayout({ sounds: adapter });
