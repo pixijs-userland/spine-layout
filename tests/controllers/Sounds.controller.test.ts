@@ -104,7 +104,9 @@ function tappableWindow(): () => void {
 describe('Sounds – construction', () => {
     it('listens for the first tap, but leaves visibility and Howler alone until it is initialized', () => {
         new Sounds();
-        expect(window.addEventListener).toHaveBeenCalledWith('pointerdown', expect.any(Function), { once: true });
+        expect(window.addEventListener).toHaveBeenCalledWith('pointerdown', expect.any(Function), {
+            once: true,
+        });
         expect(window.addEventListener).toHaveBeenCalledTimes(1);
         expect(Howler.mute).not.toHaveBeenCalled();
     });
@@ -115,7 +117,10 @@ describe('Sounds – construction', () => {
         s.init(makeManifest([]));
         s.init(makeManifest([]));
 
-        expect(window.addEventListener).toHaveBeenCalledWith('visibilitychange', expect.any(Function));
+        expect(window.addEventListener).toHaveBeenCalledWith(
+            'visibilitychange',
+            expect.any(Function),
+        );
         expect(window.addEventListener).toHaveBeenCalledTimes(1);
         expect(Howler.mute).toHaveBeenCalledWith(true);
         expect(Howler.mute).toHaveBeenCalledTimes(1);
@@ -139,7 +144,10 @@ describe('Sounds – dispose', () => {
         s.dispose();
 
         expect(fakeHowl.unload).toHaveBeenCalledTimes(2);
-        expect(window.removeEventListener).toHaveBeenCalledWith('visibilitychange', expect.any(Function));
+        expect(window.removeEventListener).toHaveBeenCalledWith(
+            'visibilitychange',
+            expect.any(Function),
+        );
 
         // nothing is cached or known any more: the same request creates nothing
         vi.mocked(Howl).mockClear();
@@ -156,7 +164,10 @@ describe('Sounds – dispose', () => {
         s.init(makeManifest(['coin']));
         s.playFX('coin');
 
-        expect(window.addEventListener).toHaveBeenCalledWith('visibilitychange', expect.any(Function));
+        expect(window.addEventListener).toHaveBeenCalledWith(
+            'visibilitychange',
+            expect.any(Function),
+        );
         expect(Howl).toHaveBeenCalledTimes(1);
     });
 
@@ -854,5 +865,38 @@ describe('Sounds – visibility change', () => {
         Object.defineProperty(globalThis.document, 'hidden', { value: false, configurable: true });
         visibilityHandler?.();
         expect(Howler.mute).not.toHaveBeenCalledWith(false);
+    });
+});
+
+describe('Sounds – preload and load', () => {
+    const fetched = () =>
+        vi
+            .mocked(Howl)
+            .mock.calls.map(
+                ([options]) =>
+                    (options as { src: string[] }).src[0].split('/').pop()!.split('.')[0],
+            );
+
+    beforeEach(() => {
+        Object.assign(fakeHowl, { once: vi.fn() });
+    });
+
+    it('fetches every sound but the ones it is told to leave', () => {
+        const s = new Sounds();
+        s.init(makeManifest(['music', 'fs_music', 'spin']));
+
+        void s.preload({ except: ['fs_music'] });
+
+        expect(fetched()).toEqual(['music', 'spin']);
+    });
+
+    it('fetches a sound it left out once it is asked to load it, and nothing twice', () => {
+        const s = new Sounds();
+        s.init(makeManifest(['music', 'fs_music']));
+
+        void s.preload({ except: ['fs_music'] });
+        void s.load(['fs_music', 'music']);
+
+        expect(fetched()).toEqual(['music', 'fs_music']);
     });
 });

@@ -135,13 +135,25 @@ export class Sounds {
      * not worth failing a game over. Anything asked for while its file is still coming is queued
      * by Howler and plays on arrival, so a preload that is still running changes nothing about
      * what the player hears.
+     *
+     * `except` names sounds to leave out, for {@link load} to fetch when they are about to be due.
      */
-    preload(): Promise<void> {
+    preload({ except = [] }: { except?: string[] } = {}): Promise<void> {
         const names = new Set<string>();
 
         this.soundNames.forEach((_source, alias) => names.add(bareName(alias)));
+        except.forEach((name) => names.delete(name));
 
-        const loading = [...names]
+        return this.load([...names]);
+    }
+
+    /**
+     * Fetches the named sounds now, the ones {@link preload} was told to leave — a feature's music,
+     * warmed once the feature is on its way rather than on every launch. Settles like `preload`:
+     * once every one has loaded or failed to.
+     */
+    load(names: string[]): Promise<void> {
+        const loading = names
             .filter((name) => !this.sounds.has(name))
             .map((name) => this.warm(name));
 
