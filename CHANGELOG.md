@@ -1,5 +1,11 @@
 # @pixijs-userland/spine-layout
 
+## 0.11.0
+
+### Minor Changes
+
+- 59c0edb: `sounds.preload({ except })` leaves the named sounds out, and `sounds.load(names)` fetches them when they are about to be due — a feature's music, rather than on every launch.
+
 ## 0.10.0
 
 ### Minor Changes
