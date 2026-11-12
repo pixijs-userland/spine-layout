@@ -1,5 +1,11 @@
 # @pixijs-userland/spine-layout
 
+## 0.10.0
+
+### Minor Changes
+
+- dd13c4f: `addInstancesFromManifest` and `addInstancesFromDataArray` build skeletons loaded after the scene into the `spine_<id>` slots that were waiting for them, so a game can fetch feature art once it is playable.
+
 ## 0.9.0
 
 ### Minor Changes
