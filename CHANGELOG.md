@@ -1,5 +1,11 @@
 # @pixijs-userland/spine-layout
 
+## 0.12.0
+
+### Minor Changes
+
+- 4d15ea7: A point attachment in a slot makes what hangs off it — a nested spine, a text — show only while the slot has an attachment, so an animation switches it on and off with attachment keys rather than alpha.
+
 ## 0.11.0
 
 ### Minor Changes
