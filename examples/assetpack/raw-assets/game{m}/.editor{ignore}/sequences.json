@@ -1,0 +1,17 @@
+{
+    "sequences": [
+        {
+            "name": "Jump",
+            "queue": [
+                {
+                    "kind": "animation",
+                    "name": "jump"
+                },
+                {
+                    "kind": "animation",
+                    "name": "jump"
+                }
+            ]
+        }
+    ]
+}

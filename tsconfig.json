@@ -8,6 +8,7 @@
         { "path": "./tsconfig.pixiSpine.json" },
         { "path": "./tsconfig.legacy.json" },
         { "path": "./tsconfig.runtimes.json" },
-        { "path": "./tsconfig.entries.json" }
+        { "path": "./tsconfig.entries.json" },
+        { "path": "./tsconfig.assetpack.json" }
     ]
 }

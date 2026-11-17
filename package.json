@@ -66,6 +66,11 @@
             "source": "./src/howler.ts",
             "import": "./dist/howler.js",
             "types": "./dist/howler.d.ts"
+        },
+        "./assetpack": {
+            "source": "./src/assetpack/index.ts",
+            "import": "./dist/assetpack/index.js",
+            "types": "./dist/assetpack/index.d.ts"
         }
     },
     "files": [
@@ -84,6 +89,8 @@
         "test:watch": "vitest",
         "test:coverage": "vitest run --coverage",
         "examples": "vite --config examples/vite.config.mjs",
+        "examples:assetpack": "tsc -b tsconfig.assetpack.json && vite --config examples/assetpack/vite.config.mjs",
+        "examples:assetpack:build": "tsc -b tsconfig.assetpack.json && vite build --config examples/assetpack/vite.config.mjs",
         "lint": "eslint src",
         "format": "prettier --write .",
         "check-types": "tsc -p tsconfig.core.json --noEmit && tsc -p tsconfig.check.json",
@@ -93,10 +100,15 @@
         "version-packages": "changeset version",
         "release": "pnpm build && changeset publish"
     },
+    "dependencies": {
+        "maxrects-packer": "2.7.3"
+    },
     "peerDependencies": {
         "howler": "^2.2.4",
         "@esotericsoftware/spine-pixi-v8": "^4.3.7",
-        "pixi.js": "^8.19.0"
+        "pixi.js": "^8.19.0",
+        "@assetpack/core": "^1.7.0",
+        "sharp": ">=0.33.0"
     },
     "peerDependenciesMeta": {
         "pixi.js": {
@@ -104,9 +116,16 @@
         },
         "@esotericsoftware/spine-pixi-v8": {
             "optional": true
+        },
+        "@assetpack/core": {
+            "optional": true
+        },
+        "sharp": {
+            "optional": true
         }
     },
     "devDependencies": {
+        "@assetpack/core": "^1.7.0",
         "@changesets/cli": "^2.27.10",
         "@esotericsoftware/spine-pixi-v8": "4.3.7",
         "@pixi-spine-v6/base": "npm:@pixi-spine/base@3.1.2",
@@ -121,6 +140,7 @@
         "@pixi-spine-v7/runtime-4.1": "npm:@pixi-spine/runtime-4.1@4.0.6",
         "@pixi/particle-emitter-v5": "npm:@pixi/particle-emitter@5.0.8",
         "@types/howler": "^2.2.12",
+        "@types/node": "^25.8.0",
         "@vitest/coverage-v8": "^4.1.6",
         "esbuild": "^0.28.1",
         "eslint": "^9.25.0",
@@ -135,6 +155,7 @@
         "pixi.js-v5": "npm:pixi.js@5.3.12",
         "pixi.js-v6": "npm:pixi.js@6.5.10",
         "pixi.js-v7": "npm:pixi.js@7.4.3",
+        "sharp": "~0.34.3",
         "spine-pixi-v7-42": "npm:@esotericsoftware/spine-pixi-v7@4.2.120",
         "spine-pixi-v7-43": "npm:@esotericsoftware/spine-pixi-v7@4.3.13",
         "spine-pixi-v8-42": "npm:@esotericsoftware/spine-pixi-v8@4.2.120",

@@ -38,6 +38,7 @@ be downloaded as a folder to start from.
 ## From the viewer to a game
 
 The folder you open in Spine View is the folder the game loads. See
-[Installation](./installation.md) for the code that builds it.
+[Installation](./installation.md) for the code that builds it, and
+[Packing atlases](./atlas-packing.md) for turning its loose images into atlases at build time.
 
 For bitmap fonts, GitHub sync and the per-spine draw-call report, see [Magic Editor](./magic-editor.md).
