@@ -10,6 +10,7 @@ import type {
     SpineRuntimeInfo,
 } from '../../engine/Engine';
 import {
+    followsAttachment,
     isBinarySkeleton,
     type BoneLike,
     type SkeletonDataLike,
@@ -332,7 +333,10 @@ export function createEsotericSpinePort<T extends EngineTypes = EsotericTypes>({
         shieldShapes: (spine) => display.shieldShapes(spine),
         exposeShapes: (spine) => display.exposeShapes(spine),
 
-        attachSlotObject: (spine, slotName, child) => spine.addSlotObject(slotName, child),
+        attachSlotObject: (spine, slotName, child) =>
+            spine.addSlotObject(slotName, child, {
+                followAttachmentTimeline: followsAttachment(spine.skeleton.data, slotName),
+            }),
         getSlotObject: (spine, slotName) => spine.getSlotObject(slotName),
         detachSlotObject: (spine, slotOrChild) => display.detach(spine, slotOrChild),
         syncSlotObjectsWithDrawOrder: (spine) =>

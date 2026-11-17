@@ -48,7 +48,11 @@ export interface EsotericSpine extends SpineLike {
     autoUpdate: boolean;
     beforeUpdateWorldTransforms: (spine: EsotericSpine) => void;
     update(dt: number): void;
-    addSlotObject(slot: string, container: ContainerLike): void;
+    addSlotObject(
+        slot: string,
+        container: ContainerLike,
+        options?: { followAttachmentTimeline?: boolean },
+    ): void;
     getSlotObject(slot: string | SlotLike): ContainerLike | undefined;
     removeSlotObject(
         slotOrContainer: string | SlotLike | ContainerLike,

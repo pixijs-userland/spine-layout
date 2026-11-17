@@ -257,7 +257,10 @@ export interface SpinePort<T extends EngineTypes> {
     /** Undoes {@link shieldShapes}. */
     exposeShapes(spine: T['Spine']): void;
 
-    /** Hangs `child` off the slot: it follows the bone, the slot's alpha and visibility. */
+    /**
+     * Hangs `child` off the slot: it follows the bone, the slot's alpha and visibility. Where the
+     * slot holds a point attachment, it also shows only while the slot has an attachment.
+     */
     attachSlotObject(spine: T['Spine'], slotName: string, child: T['Container']): void;
     getSlotObject(spine: T['Spine'], slotName: string): T['Container'] | undefined;
     detachSlotObject(spine: T['Spine'], slotOrChild: string | T['Container']): void;

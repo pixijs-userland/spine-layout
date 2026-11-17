@@ -138,3 +138,27 @@ export type SkeletonSource =
 export function isBinarySkeleton(skeleton: SkeletonSource): skeleton is ArrayBuffer | Uint8Array {
     return skeleton instanceof Uint8Array || skeleton instanceof ArrayBuffer;
 }
+
+export function skinAttachments(skin: SkinLike, slotIndex: number): unknown[] {
+    if (!skin.getAttachmentsForSlot) return Object.values(skin.attachments?.[slotIndex] ?? {});
+
+    const entries: SkinEntryLike[] = [];
+    skin.getAttachmentsForSlot(slotIndex, entries as never[]);
+    return entries.map((entry) => entry.attachment);
+}
+
+/** Every runtime's point attachment, and nothing else, can turn itself into a world rotation. */
+const isPoint = (attachment: unknown) =>
+    typeof (attachment as { computeWorldRotation?: unknown } | null)?.computeWorldRotation ===
+    'function';
+
+/**
+ * Whether an object hung off the slot shows only while the slot has an attachment: the
+ * slot holds a point attachment in some skin. A point draws nothing in any runtime, so it is
+ * the animator's switch for the object — keyed in, the object shows; keyed out, it hides.
+ */
+export function followsAttachment(data: SkeletonDataLike, slotName: string): boolean {
+    const index = data.slots.findIndex((slot) => slot.name === slotName);
+
+    return index >= 0 && data.skins.some((skin) => skinAttachments(skin, index).some(isPoint));
+}

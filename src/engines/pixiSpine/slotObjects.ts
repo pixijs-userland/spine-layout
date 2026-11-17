@@ -14,6 +14,8 @@ type SlotObject = {
     holder: PixiSpineContainer;
     /** pixi-spine's own sprites this module hid while the slot showed nothing. */
     hidden: Set<PixiSpineContainer>;
+    /** Shown only while the slot has an attachment, like spine-pixi's `followAttachmentTimeline`. */
+    followsAttachment: boolean;
 };
 
 function invert(m: PixiSpineMatrix, out: PixiSpineMatrix) {
@@ -35,7 +37,7 @@ function invert(m: PixiSpineMatrix, out: PixiSpineMatrix) {
 /**
  * Slot objects as spine-pixi-v8 drives them: each update the object takes its bone's world
  * transform (y axis flipped, so Pixi content stands upright), the slot's alpha, and is hidden
- * while that alpha is 0.
+ * while that alpha is 0 — or, following the attachment, while the slot has none.
  *
  * pixi-spine has no such thing. Its `slotContainers[i]` gives draw order and clipping for free,
  * but carries the bone transform only while a region shows, its alpha only while anything does,
@@ -61,7 +63,7 @@ export function createSlotObjects(
     function syncSlot(spine: PixiSpineView, index: number, entry: SlotObject) {
         const slot = spine.skeleton.slots[index];
         const container = spine.slotContainers[index];
-        const { holder, child, hidden } = entry;
+        const { holder, child, hidden, followsAttachment } = entry;
 
         if (!isDrawn(slot.attachment)) {
             container.children.forEach((view) => {
@@ -84,7 +86,11 @@ export function createSlotObjects(
         holder.alpha = container.alpha > 0 ? 1 / container.alpha : 1;
 
         const alpha = spine.skeleton.color.a * slot.color.a;
-        const renderable = slot.bone.active !== false && spine.alpha > 0 && alpha > 0;
+        const renderable =
+            slot.bone.active !== false &&
+            spine.alpha > 0 &&
+            alpha > 0 &&
+            (!followsAttachment || !!slot.attachment);
 
         child.visible = renderable;
         if (!renderable) return;
@@ -139,7 +145,12 @@ export function createSlotObjects(
     return {
         isHolder: (view: PixiSpineContainer) => holders.has(view),
 
-        attach(spine: PixiSpineView, slotName: string, child: PixiSpineContainer) {
+        attach(
+            spine: PixiSpineView,
+            slotName: string,
+            child: PixiSpineContainer,
+            followsAttachment = false,
+        ) {
             const index = slotIndex(spine, slotName);
             if (index < 0) throw new Error(`No slot named "${slotName}"`);
 
@@ -158,7 +169,7 @@ export function createSlotObjects(
             spine.slotContainers[index].addChild(holder);
             holder.addChild(child);
 
-            const entry: SlotObject = { child, holder, hidden: new Set() };
+            const entry: SlotObject = { child, holder, hidden: new Set(), followsAttachment };
             objects.set(index, entry);
             syncSlot(spine, index, entry);
         },
