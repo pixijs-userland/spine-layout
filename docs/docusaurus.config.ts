@@ -73,6 +73,16 @@ const config: Config = {
                     label: 'API',
                 },
                 {
+                    href: 'https://spineview.dev',
+                    label: 'Spine View',
+                    position: 'right',
+                },
+                {
+                    href: 'https://magic-editor.com',
+                    label: 'Magic Editor',
+                    position: 'right',
+                },
+                {
                     href: 'https://github.com/pixijs-userland/spine-layout',
                     label: 'GitHub',
                     position: 'right',

@@ -28,3 +28,9 @@ Sounds (singleton)        — FX + music playback via Howler.js                �
 All Spine instances are stored in a central `Map<SpineID, Spine>` registry and each controller operates against that registry.
 
 The core renders through an `Engine`, so the same scene runs on pixi.js v8 and on PIXI v4. See [Engines](./engines.md).
+
+## Where to start
+
+- [Installation](./installation.md) — add the package and build a first scene.
+- [Spine View](./spine-view.md) — a free viewer at [spineview.dev](https://spineview.dev): open a folder of Spine exports and see the scene this library builds from it.
+- [Magic Editor](./magic-editor.md) — the same viewer at [magic-editor.com](https://magic-editor.com), with bitmap fonts and GitHub sync.

@@ -6,6 +6,33 @@ Full documentation: [userland.pixijs.io/spine-layout](https://userland.pixijs.io
 
 ---
 
+## Install
+
+Published to GitHub Packages. Name the registry in `.npmrc`, with a token that has
+`read:packages`:
+
+```ini
+@pixijs-userland:registry=https://npm.pkg.github.com
+//npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}
+```
+
+```sh
+pnpm add @pixijs-userland/spine-layout pixi.js @esotericsoftware/spine-pixi-v8 howler
+```
+
+Installing from the repository and a first scene are in the
+[Installation guide](https://userland.pixijs.io/spine-layout/installation).
+
+## Tools
+
+- [Spine View](https://spineview.dev) — a free viewer in the browser: open a folder of Spine
+  exports and see the scene this library builds from it. No account.
+  [About](https://userland.pixijs.io/spine-layout/spine-view)
+- [Magic Editor](https://magic-editor.com) — the same viewer, plus bitmap fonts, GitHub sync and a
+  draw-call report after sign-in. [About](https://userland.pixijs.io/spine-layout/magic-editor)
+
+---
+
 ## Architecture
 
 `SpineLayout` is a Pixi.js `Container` that acts as a facade over seven specialized controllers:
