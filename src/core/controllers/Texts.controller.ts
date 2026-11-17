@@ -9,6 +9,7 @@ import type {
     TextsJsonEntry,
 } from '../config/types';
 import { parcePointers } from '../config/parcePointers';
+import { findNumber, formatNumber } from '../utils/numberText';
 import type { AnimationsController } from './Animations.controller';
 
 /**
@@ -42,10 +43,8 @@ export class TextsController<T extends EngineTypes = EngineTypes> {
     /** Maps each registration key back to the spine + slot text key it was created from. */
     #meta: Map<string, { spineID?: string; textKey: string }> = new Map();
     #textSettings: TextsJson | undefined;
-    #textRunners: Map<
-        string,
-        { interval: ReturnType<typeof setInterval>; resolve: () => void }
-    > = new Map();
+    #textRunners: Map<string, { interval: ReturnType<typeof setInterval>; resolve: () => void }> =
+        new Map();
     /**
      * Where each node sits relative to its bone before centring, keyed by registration key —
      * the entry's `offset`, or whatever {@link setOffset} last wrote.
@@ -81,7 +80,7 @@ export class TextsController<T extends EngineTypes = EngineTypes> {
         private multipleInstanceIDs: Set<string> = new Set(),
         private animations?: AnimationsController<T>,
         private sourceOf: (spineID: SpineID) => SpineID | undefined = () => undefined,
-    ) { }
+    ) {}
 
     /** Returns all active text instances (both `Text` and `BitmapText`) keyed by bone name. */
     getInstances(): Map<SpineID, AnyText<T>> {
@@ -168,7 +167,8 @@ export class TextsController<T extends EngineTypes = EngineTypes> {
         if (this.multipleInstanceIDs.has(spineID)) {
             const bases = new Set([this.sourceOf(spineID), spineID.replace(/_\d+$/, '')]);
             bases.forEach((base) => {
-                const baseEntry = base && base !== spineID ? this.#textSettings?.[base]?.[textKey] : undefined;
+                const baseEntry =
+                    base && base !== spineID ? this.#textSettings?.[base]?.[textKey] : undefined;
                 if (baseEntry) entries.push(baseEntry);
             });
         }
@@ -273,25 +273,20 @@ export class TextsController<T extends EngineTypes = EngineTypes> {
         }
 
         if (!skipAnimation && (animate || (settings?.animateNumber ?? false))) {
-            const nextMatch = text.match(/^([\s\S]*?)(\d+(?:\.\d+)?)([\s\S]*)$/);
+            const next = findNumber(text);
 
-            if (nextMatch) {
-                const prefix = nextMatch[1];
-                const suffix = nextMatch[3];
+            if (next) {
+                const { prefix, suffix, format } = next;
                 // The decimal places in the *target* value decide how this counts: none
                 // (a plain integer count, e.g. a free-spin tally) keeps the old whole-step
                 // cadence below; carrying its own decimals (a currency amount) switches to
                 // fractional stepping, so a long `duration` is still honoured when the
                 // range it has to cover is small — a handful of currency units can't
                 // otherwise be spread over more than a handful of animation frames.
-                const decimals = nextMatch[2].includes('.') ? nextMatch[2].split('.')[1].length : 0;
-                const end = decimals ? Number(nextMatch[2]) : Math.trunc(Number(nextMatch[2]));
-                const currentMatch = target.text.match(/^([\s\S]*?)(\d+(?:\.\d+)?)([\s\S]*)$/);
-                let value = currentMatch
-                    ? decimals
-                        ? Number(currentMatch[2])
-                        : Math.trunc(Number(currentMatch[2]))
-                    : 0;
+                const { decimals } = format;
+                const end = next.value;
+                const current = findNumber(target.text, format)?.value ?? 0;
+                let value = decimals ? current : Math.trunc(current);
                 const diff = Math.abs(end - value);
 
                 if (diff === 0) {
@@ -320,7 +315,7 @@ export class TextsController<T extends EngineTypes = EngineTypes> {
                         if (direction > 0 && value >= end) value = end;
                         if (direction < 0 && value <= end) value = end;
 
-                        target.text = `${prefix}${decimals ? value.toFixed(decimals) : value}${suffix}`;
+                        target.text = `${prefix}${formatNumber(value, format)}${suffix}`;
                         this.fit(key, target);
 
                         if (value === end) {
