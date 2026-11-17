@@ -90,7 +90,9 @@ describe('TextsController – multiple instances', () => {
     function setup() {
         const c1 = createFakeSpine({ slots: [{ name: 'text_reward' }] });
         const c2 = createFakeSpine({ slots: [{ name: 'text_reward' }] });
-        const ctl = new TextsController(fakeEngine, asSpineMap({ counter_1: c1, counter_2: c2 }),
+        const ctl = new TextsController(
+            fakeEngine,
+            asSpineMap({ counter_1: c1, counter_2: c2 }),
             new Set(['counter_1', 'counter_2']),
         );
         ctl.settings = {
@@ -135,8 +137,12 @@ describe('TextsController – multiple instances', () => {
         const a = createFakeSpine({ slots: [{ name: 'text_multiplier' }] });
         const b = createFakeSpine({ slots: [{ name: 'text_multiplier' }] });
         const ids = ['symbol_0_reel_1', 'symbol_1_reel_2'];
-        const ctl = new TextsController(fakeEngine, asSpineMap({ [ids[0]]: a, [ids[1]]: b }),
-            new Set(ids), undefined, () => 'symbol',
+        const ctl = new TextsController(
+            fakeEngine,
+            asSpineMap({ [ids[0]]: a, [ids[1]]: b }),
+            new Set(ids),
+            undefined,
+            () => 'symbol',
         );
         ctl.settings = {
             // one section for every symbol, whichever reel and row it was built for
@@ -148,7 +154,9 @@ describe('TextsController – multiple instances', () => {
 
         expect(ctl.getVal('symbol_0_reel_1_multiplier')).toBe('x2');
         expect(ctl.getVal('symbol_1_reel_2_multiplier')).toBe('x5');
-        expect(ctl.getInstances().get('symbol_1_reel_2_multiplier')?.style).toMatchObject({ fontSize: 26 });
+        expect(ctl.getInstances().get('symbol_1_reel_2_multiplier')?.style).toMatchObject({
+            fontSize: 26,
+        });
     });
 });
 
@@ -270,6 +278,30 @@ describe('TextsController – animated numbers', () => {
         expect(ctl.getVal('score')).toBe('10');
     });
 
+    it.each([
+        ['1.000.000', '2.500.000'],
+        ['1,234.50', '9,876.25'],
+        ['12,50 €', '99,99 €'],
+    ])('counts %s up to %s keeping its separators', async (from, to) => {
+        const slot = { name: 'text_score' } as FakeSlot;
+        const spine = createFakeSpine({ slots: [slot] });
+        const ctl = new TextsController(fakeEngine, asSpineMap({ hero: spine }));
+        ctl.settings = { hero: { score: { type: 'text', value: from } } };
+        ctl.add(slot as never, spine as never, 'score', 'hero');
+
+        const promise = ctl.set('score', to, true, 320);
+        await vi.advanceTimersByTimeAsync(160);
+        const midway = ctl.getVal('score');
+        await vi.runAllTimersAsync();
+        await promise;
+
+        const shape = (text: string) => text.replace(/\d/g, '0');
+        expect(midway).not.toBe(from);
+        expect(midway).not.toBe(to);
+        expect(shape(midway)).toBe(shape(to));
+        expect(ctl.getVal('score')).toBe(to);
+    });
+
     it('snaps to target without animation when diff is zero', async () => {
         const slot = { name: 'text_score' } as FakeSlot;
         const spine = createFakeSpine({ slots: [slot] });
@@ -367,7 +399,9 @@ describe('TextsController – change events', () => {
         const slot = { name: `text_${textKey}` } as FakeSlot;
         const spine = createFakeSpine({ slots: [slot] });
         const playEvent = vi.fn();
-        const ctl = new TextsController(fakeEngine, asSpineMap({ [spineID]: spine }),
+        const ctl = new TextsController(
+            fakeEngine,
+            asSpineMap({ [spineID]: spine }),
             opts.multi ?? new Set(),
             { playEvent } as never,
         );
@@ -575,10 +609,7 @@ describe('TextsController – attach / settings / clear', () => {
         const spine = createFakeSpine({ slots: [{ name: 'text_a' }] });
         const ctl = new TextsController(fakeEngine, asSpineMap({ hero: spine }));
         ctl.addTextToSlot('hero', 'text_missing', new Text());
-        expect(err).toHaveBeenCalledWith(
-            'Slot "text_missing" not found',
-            expect.anything(),
-        );
+        expect(err).toHaveBeenCalledWith('Slot "text_missing" not found', expect.anything());
     });
 
     it('setMaxWidth records the value on the settings entry for bitmap text', () => {
@@ -593,9 +624,7 @@ describe('TextsController – attach / settings / clear', () => {
         Object.defineProperty(ctl.getInstances().get('a'), 'width', { get: () => 0 });
 
         ctl.setMaxWidth('a', 100);
-        expect(
-            (ctl.settings?.hero?.a as { type: string; maxWidth?: number }).maxWidth,
-        ).toBe(100);
+        expect((ctl.settings?.hero?.a as { type: string; maxWidth?: number }).maxWidth).toBe(100);
     });
 
     it('scales bitmap text down to maxHeight, and lets the tighter bound decide', () => {
