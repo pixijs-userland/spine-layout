@@ -8,7 +8,11 @@ export type Pixi8Spine = Container &
         autoUpdate: boolean;
         readonly renderPipeId: string;
         update(dt: number): void;
-        addSlotObject(slot: string, container: Container): void;
+        addSlotObject(
+            slot: string,
+            container: Container,
+            options?: { followAttachmentTimeline?: boolean },
+        ): void;
         getSlotObject(slot: string): Container | undefined;
         removeSlotObject(slotOrContainer: string | Container): void;
     };

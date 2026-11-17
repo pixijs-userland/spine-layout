@@ -74,3 +74,18 @@ In `texts.json` a multiple-instance spine's text is styled by up to three sectio
 this order: the skeleton the instance was built from (`symbol` for `symbol_0_reel_1`), the id
 without its number (`counter` for `counter_1`), then the instance's own section. One `symbol`
 section therefore styles every symbol on every reel, and an instance section overrides it.
+
+## Switching a nested spine on and off
+
+What hangs off a slot — a nested spine, a text, particles — follows the slot's alpha: at 0 it is
+hidden. For an on/off switch instead of a fade, give the slot a **point attachment** in any
+skin. From then on the object shows only while the slot has an attachment, so the animator keys
+the point in to show it and keys the attachment off to hide it, like any image.
+
+```
+spine_coin        ← slot: the nested spine `coin` hangs here
+  switch          ← point attachment: keyed in, `coin` shows; keyed off, it hides
+```
+
+A point draws nothing, so the slot shows no art of its own either way. A slot with no point
+keeps showing its object when its attachment goes.

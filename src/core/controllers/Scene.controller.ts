@@ -1,5 +1,5 @@
 import type { Engine, EngineTypes, PointerEventLike } from '../../engine/Engine';
-import type { BoneLike, SkinEntryLike, SkinLike, SlotLike } from '../../engine/runtime';
+import { skinAttachments, type BoneLike, type SlotLike } from '../../engine/runtime';
 import type { ReleasedSlotChild, SpineID, SpineLayoutOptions } from '../config/types';
 import { parcePointers } from '../config/parcePointers';
 import { LOG } from '../config/logs';
@@ -53,8 +53,10 @@ export class SceneController<T extends EngineTypes = EngineTypes> {
     /** Every wired button, by key — what lets {@link press} fire one without a pointer. */
     private buttonGroups: Map<string, ButtonGroup<T['Container']>[]> = new Map();
     /** What {@link addSlotChild} hung where — the caller's objects, handed back on clear with their place. */
-    private slotChildren: Map<T['Container'], ReleasedSlotChild<T['Container']> & { spine: T['Spine'] }> =
-        new Map();
+    private slotChildren: Map<
+        T['Container'],
+        ReleasedSlotChild<T['Container']> & { spine: T['Spine'] }
+    > = new Map();
 
     constructor(
         private engine: Engine<T>,
@@ -63,7 +65,7 @@ export class SceneController<T extends EngineTypes = EngineTypes> {
         private animations: AnimationsController<T>,
         private spine: SpineController<T>,
         private options?: SpineLayoutOptions,
-    ) { }
+    ) {}
 
     /**
      * Nests child spines into the slot that names them, via the `spine_<id>` convention.
@@ -275,7 +277,7 @@ export class SceneController<T extends EngineTypes = EngineTypes> {
 
     private skinAttachmentOf(spine: T['Spine'], slot: SlotLike): unknown {
         const skin = spine.skeleton.skin ?? spine.skeleton.data.defaultSkin;
-        const attachments = skin ? attachmentsOf(skin, slot.data.index) : [];
+        const attachments = skin ? skinAttachments(skin, slot.data.index) : [];
 
         return attachments.length === 1 ? attachments[0] : undefined;
     }
@@ -522,7 +524,10 @@ export class SceneController<T extends EngineTypes = EngineTypes> {
 
     private forgetSlotChildren(spine: T['Spine'], slotOrChild: string | T['Container']) {
         this.slotChildren.forEach((entry, child) => {
-            if (entry.spine === spine && (child === slotOrChild || entry.slotName === slotOrChild)) {
+            if (
+                entry.spine === spine &&
+                (child === slotOrChild || entry.slotName === slotOrChild)
+            ) {
                 this.slotChildren.delete(child);
             }
         });
@@ -566,12 +571,4 @@ export class SceneController<T extends EngineTypes = EngineTypes> {
         this.buttons.clear();
         this.buttonGroups.clear();
     }
-}
-
-function attachmentsOf(skin: SkinLike, slotIndex: number): unknown[] {
-    if (!skin.getAttachmentsForSlot) return Object.values(skin.attachments?.[slotIndex] ?? {});
-
-    const entries: SkinEntryLike[] = [];
-    skin.getAttachmentsForSlot(slotIndex, entries as never[]);
-    return entries.map((entry) => entry.attachment);
 }

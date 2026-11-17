@@ -9,7 +9,12 @@ import type {
     SpinePort,
     SpineRuntimeInfo,
 } from '../../engine/Engine';
-import { isBinarySkeleton, type SkeletonDataLike, type SkeletonSource } from '../../engine/runtime';
+import {
+    followsAttachment,
+    isBinarySkeleton,
+    type SkeletonDataLike,
+    type SkeletonSource,
+} from '../../engine/runtime';
 import { createHookSet } from '../shared/hookSet';
 import { framesHold, listHold } from '../shared/poseHold';
 import { claimTimeline, constraintToSetup } from './cores';
@@ -532,7 +537,13 @@ export function createPixiSpinePort<T extends PixiSpineTypes = PixiSpineTypes>({
             });
         },
 
-        attachSlotObject: (spine, slotName, child) => slotObjects.attach(spine, slotName, child),
+        attachSlotObject: (spine, slotName, child) =>
+            slotObjects.attach(
+                spine,
+                slotName,
+                child,
+                followsAttachment(spine.skeleton.data, slotName),
+            ),
         getSlotObject: (spine, slotName) =>
             slotObjects.get(spine, slotName) as T['Container'] | undefined,
         detachSlotObject: (spine, slotOrChild) => slotObjects.detach(spine, slotOrChild),

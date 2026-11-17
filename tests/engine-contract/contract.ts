@@ -458,6 +458,64 @@ export function engineContract(name: string, load: () => Promise<Engine>, minor?
             expect(engine.spine.getSlotObject(spine, 'slot_b')).toBeUndefined();
         });
 
+        describe('a slot object under a point attachment', () => {
+            type Marked = {
+                slots: object[];
+                skins: { attachments: Record<string, object> }[] | Record<string, object>;
+                animations: Record<string, object>;
+            };
+
+            const createSwitched = () => {
+                const marked = structuredClone(skeleton) as Marked;
+                const point = { switch: { type: 'point' } };
+
+                marked.slots.push({ name: 'slot_c', bone: 'bone_a', attachment: 'switch' });
+                if (Array.isArray(marked.skins)) marked.skins[0].attachments.slot_c = point;
+                else Object.assign(marked.skins.default, { slot_c: point });
+                marked.animations.hide = {
+                    slots: {
+                        slot_c: {
+                            attachment: [
+                                { time: 0, name: 'switch' },
+                                { time: 0.5, name: null },
+                            ],
+                        },
+                    },
+                };
+
+                const spine = engine.spine.create(
+                    engine.spine.readSkeleton(marked, atlasText, pages()),
+                );
+                spines.push(spine);
+                return spine;
+            };
+
+            it('shows while the point is keyed in, and hides once it is keyed out', async () => {
+                await setUp();
+                const spine = createSwitched();
+                const child = engine.display.container({ label: 'child' });
+
+                engine.spine.attachSlotObject(spine, 'slot_c', child);
+                engine.spine.update(spine, 0);
+                expect(child.visible).toBe(true);
+
+                spine.state.setAnimation(0, 'hide', false);
+                engine.spine.update(spine, 0.6);
+                expect(child.visible).toBe(false);
+            });
+
+            it('leaves an object under a slot with no point showing when the slot empties', async () => {
+                await setUp();
+                const spine = createSwitched();
+                const child = engine.display.container({ label: 'child' });
+
+                engine.spine.attachSlotObject(spine, 'slot_b', child);
+                spine.state.setAnimation(0, 'move', false);
+                engine.spine.update(spine, 0.6);
+                expect(child.visible).toBe(true);
+            });
+        });
+
         describe('texts', () => {
             it('styles a text node from a texts.json entry', async () => {
                 await setUp();
