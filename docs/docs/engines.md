@@ -9,13 +9,13 @@ skeletons with the Spine runtime their export version picks, among the runtimes 
 Pixi. All the skeletons of one layout must be of one Spine version (see
 [One Spine version per layout](#one-spine-version-per-layout)):
 
-| Engine  | Pixi         | Spine runtimes                                                                              | Entry                                                                  |
-| ------- | ------------ | ------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| `pixi8` | pixi.js v8   | spine-pixi-v8 4.2 and 4.3; the default entry bundles 4.3                                    | `@pixijs-userland/spine-layout`, `@pixijs-userland/spine-layout/pixi8` |
-| `pixi7` | 7.2 or later | `@pixi-spine/*` 4.0.6 runtime-3.7, 3.8 and 4.1 (4.0 through 4.1); spine-pixi-v7 4.2 and 4.3 | `@pixijs-userland/spine-layout/pixi7`                                  |
-| `pixi6` | 6            | `@pixi-spine/*` 3.1.2 runtime-3.7, 3.8, 4.0 and 4.1                                         | `@pixijs-userland/spine-layout/pixi6`                                  |
-| `pixi5` | 5            | pixi-spine 2.1.14 (3.8) or 2.0.5 (3.7), one per page                                        | `@pixijs-userland/spine-layout/pixi5`                                  |
-| `pixi4` | 4.8.9        | pixi-spine 1.6.2 (3.8) or 1.5.23 (3.7), one per page                                        | `@pixijs-userland/spine-layout/pixi4`                                  |
+| Engine  | Pixi         | Spine runtimes                                                                              | Entry                                            |
+| ------- | ------------ | ------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| `pixi8` | pixi.js v8   | spine-pixi-v8 4.2 and 4.3; the default entry bundles 4.3                                    | `@pixi/spine-layout`, `@pixi/spine-layout/pixi8` |
+| `pixi7` | 7.2 or later | `@pixi-spine/*` 4.0.6 runtime-3.7, 3.8 and 4.1 (4.0 through 4.1); spine-pixi-v7 4.2 and 4.3 | `@pixi/spine-layout/pixi7`                       |
+| `pixi6` | 6            | `@pixi-spine/*` 3.1.2 runtime-3.7, 3.8, 4.0 and 4.1                                         | `@pixi/spine-layout/pixi6`                       |
+| `pixi5` | 5            | pixi-spine 2.1.14 (3.8) or 2.0.5 (3.7), one per page                                        | `@pixi/spine-layout/pixi5`                       |
+| `pixi4` | 4.8.9        | pixi-spine 1.6.2 (3.8) or 1.5.23 (3.7), one per page                                        | `@pixi/spine-layout/pixi4`                       |
 
 `SpineLayout` and its controllers never import `pixi.js` or a Spine runtime; they call the
 engine they are given. A game on any stack gets the same slot naming, state/event animation,
@@ -28,16 +28,16 @@ build installs neither.
 
 ## Entry points
 
-| Import                                   | Exports                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `@pixijs-userland/spine-layout`          | The Pixi 8 build with spine-pixi-v8 4.3: `SpineLayout`, `pixi8Engine`, `createPixi8Engine`, `SpineLayoutCore`, `ParticlesController`, `Sounds`/`sounds`, `skeletonVersion`, `isBinarySkeleton`, the version helpers of `/core`, `UnsupportedSpineVersionError`, `Pixi8EngineOptions`, `Pixi8Runtime`, `LazyEsotericRuntime`, `Pixi8Spine`, `Pixi8Types`, the config types and the `Engine` types                                                                                                          |
-| `@pixijs-userland/spine-layout/core`     | Engine-free: `SpineLayoutCore`, every controller, `ManifestParser`, `Sounds`/`sounds`, `skeletonVersion`, `isBinarySkeleton`, `UnsupportedSpineVersionError`, the config and `Engine` types, and the version helpers `RUNTIME_MATRIX`, `runtimesOf`, `PIXI_MAJORS`, `DEFAULT_PIXI`, `ONE_RUNTIME_PER_PAGE`, `JSON_ONLY_MINORS`, `choosePixi`, `pickRuntime`, `pixiMajorsFor`, `minorOf`, `compareMinors`, `UNVERSIONED`, `PRE_PASSES`, `applyPrePasses` and `constraintLists`. Imports no rendering stack |
-| `@pixijs-userland/spine-layout/pixi8`    | Everything in `/core`, plus `createPixi8Engine`, `Pixi8EngineOptions`, `Pixi8Runtime`, `LazyEsotericRuntime`, `Pixi8Spine` and `Pixi8Types`. Imports `pixi.js` and no Spine runtime                                                                                                                                                                                                                                                                                                                       |
-| `@pixijs-userland/spine-layout/pixi7`    | Everything in `/core`, plus `createPixi7Engine`, `Pixi7Engine`, `Pixi7EngineOptions`, `Pixi7Runtime`, `Pixi7LazyRuntime`, `Pixi7Namespace`, `Pixi7Types`, `LegacyAssetsPort` and the `Legacy*` types                                                                                                                                                                                                                                                                                                      |
-| `@pixijs-userland/spine-layout/pixi6`    | Everything in `/core`, plus `createPixi6Engine`, `Pixi6Engine`, `Pixi6EngineOptions`, `Pixi6Runtime`, `Pixi6LazyRuntime`, `Pixi6AssetsPort` and the `Pixi6*` types                                                                                                                                                                                                                                                                                                                                        |
-| `@pixijs-userland/spine-layout/pixi5`    | Everything in `/core`, plus `createPixi5Engine`, `Pixi5Engine`, `Pixi5EngineOptions`, `Pixi5Namespace`, `Pixi5Spine`, `Pixi5Types` and `LegacyAssetsPort`                                                                                                                                                                                                                                                                                                                                                 |
-| `@pixijs-userland/spine-layout/pixi4`    | Everything in `/core`, plus `createPixi4Engine`, `Pixi4Engine`, `Pixi4EngineOptions`, `Pixi4AssetsPort` and the `Pixi4*` / `Spine38*` types                                                                                                                                                                                                                                                                                                                                                               |
-| `@pixijs-userland/spine-layout/runtimes` | `esotericRuntime`, `pixiSpineLegacy`, `pixiSpineModular` and `minorOfRuntime`, which wrap a runtime's namespace; `esotericAdapter`, `pixiSpineAdapters`, `runtimeAdapters` and `lazyRuntime`, which bind runtimes to a Pixi; `discoverGlobalRuntimes`; and their types (`SpineRuntime`, `EsotericRuntime`, `PixiSpineRuntime`, `SpineRuntimeAdapter`, `LazySpineRuntimeAdapter`, …). Imports no rendering stack                                                                                           |
+| Import                        | Exports                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@pixi/spine-layout`          | The Pixi 8 build with spine-pixi-v8 4.3: `SpineLayout`, `pixi8Engine`, `createPixi8Engine`, `SpineLayoutCore`, `ParticlesController`, `Sounds`/`sounds`, `skeletonVersion`, `isBinarySkeleton`, the version helpers of `/core`, `UnsupportedSpineVersionError`, `Pixi8EngineOptions`, `Pixi8Runtime`, `LazyEsotericRuntime`, `Pixi8Spine`, `Pixi8Types`, the config types and the `Engine` types                                                                                                          |
+| `@pixi/spine-layout/core`     | Engine-free: `SpineLayoutCore`, every controller, `ManifestParser`, `Sounds`/`sounds`, `skeletonVersion`, `isBinarySkeleton`, `UnsupportedSpineVersionError`, the config and `Engine` types, and the version helpers `RUNTIME_MATRIX`, `runtimesOf`, `PIXI_MAJORS`, `DEFAULT_PIXI`, `ONE_RUNTIME_PER_PAGE`, `JSON_ONLY_MINORS`, `choosePixi`, `pickRuntime`, `pixiMajorsFor`, `minorOf`, `compareMinors`, `UNVERSIONED`, `PRE_PASSES`, `applyPrePasses` and `constraintLists`. Imports no rendering stack |
+| `@pixi/spine-layout/pixi8`    | Everything in `/core`, plus `createPixi8Engine`, `Pixi8EngineOptions`, `Pixi8Runtime`, `LazyEsotericRuntime`, `Pixi8Spine` and `Pixi8Types`. Imports `pixi.js` and no Spine runtime                                                                                                                                                                                                                                                                                                                       |
+| `@pixi/spine-layout/pixi7`    | Everything in `/core`, plus `createPixi7Engine`, `Pixi7Engine`, `Pixi7EngineOptions`, `Pixi7Runtime`, `Pixi7LazyRuntime`, `Pixi7Namespace`, `Pixi7Types`, `LegacyAssetsPort` and the `Legacy*` types                                                                                                                                                                                                                                                                                                      |
+| `@pixi/spine-layout/pixi6`    | Everything in `/core`, plus `createPixi6Engine`, `Pixi6Engine`, `Pixi6EngineOptions`, `Pixi6Runtime`, `Pixi6LazyRuntime`, `Pixi6AssetsPort` and the `Pixi6*` types                                                                                                                                                                                                                                                                                                                                        |
+| `@pixi/spine-layout/pixi5`    | Everything in `/core`, plus `createPixi5Engine`, `Pixi5Engine`, `Pixi5EngineOptions`, `Pixi5Namespace`, `Pixi5Spine`, `Pixi5Types` and `LegacyAssetsPort`                                                                                                                                                                                                                                                                                                                                                 |
+| `@pixi/spine-layout/pixi4`    | Everything in `/core`, plus `createPixi4Engine`, `Pixi4Engine`, `Pixi4EngineOptions`, `Pixi4AssetsPort` and the `Pixi4*` / `Spine38*` types                                                                                                                                                                                                                                                                                                                                                               |
+| `@pixi/spine-layout/runtimes` | `esotericRuntime`, `pixiSpineLegacy`, `pixiSpineModular` and `minorOfRuntime`, which wrap a runtime's namespace; `esotericAdapter`, `pixiSpineAdapters`, `runtimeAdapters` and `lazyRuntime`, which bind runtimes to a Pixi; `discoverGlobalRuntimes`; and their types (`SpineRuntime`, `EsotericRuntime`, `PixiSpineRuntime`, `SpineRuntimeAdapter`, `LazySpineRuntimeAdapter`, …). Imports no rendering stack                                                                                           |
 
 Every engine is handed to the layout the same way: `new SpineLayoutCore({ engine })`, or
 `new SpineLayout({ engine })` from the default entry. A game that wraps the layout in a class of
@@ -49,7 +49,7 @@ The default entry is unchanged. `new SpineLayout(options)` builds on `pixi8Engin
 spine-pixi-v8 4.3 reads every export, whatever its version or none, and warns about nothing:
 
 ```ts
-import { SpineLayout } from '@pixijs-userland/spine-layout';
+import { SpineLayout } from '@pixi/spine-layout';
 
 const layout = new SpineLayout();
 await layout.createInstancesFromManifest(manifest, 'spines');
@@ -57,10 +57,10 @@ await layout.createInstancesFromManifest(manifest, 'spines');
 
 `createPixi8Engine` builds an engine that reads each export with the runtime its version picks:
 
-| Call                                           | `@pixijs-userland/spine-layout`                                   | `@pixijs-userland/spine-layout/pixi8` |
-| ---------------------------------------------- | ----------------------------------------------------------------- | ------------------------------------- |
-| `createPixi8Engine()`                          | The default engine, as `pixi8Engine` is                           | Not available                         |
-| `createPixi8Engine({ runtimes, pin?, warn? })` | `runtimes`, and the bundled 4.3 unless `runtimes` holds a 4.3 too | `runtimes` alone                      |
+| Call                                           | `@pixi/spine-layout`                                              | `@pixi/spine-layout/pixi8` |
+| ---------------------------------------------- | ----------------------------------------------------------------- | -------------------------- |
+| `createPixi8Engine()`                          | The default engine, as `pixi8Engine` is                           | Not available              |
+| `createPixi8Engine({ runtimes, pin?, warn? })` | `runtimes`, and the bundled 4.3 unless `runtimes` holds a 4.3 too | `runtimes` alone           |
 
 | Option     | Value                                                                                                                                                                                                                                    |
 | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -70,7 +70,7 @@ await layout.createInstancesFromManifest(manifest, 'spines');
 
 ```ts
 import { Application } from 'pixi.js';
-import { createPixi8Engine, SpineLayout } from '@pixijs-userland/spine-layout';
+import { createPixi8Engine, SpineLayout } from '@pixi/spine-layout';
 
 const engine = createPixi8Engine({
     runtimes: [{ minor: '4.2', load: () => import('spine-pixi-v8-42') }],
@@ -115,7 +115,7 @@ or `import * as PIXI from 'pixi.js'` in a bundled game. Another major, or no Spi
 A script-tag game, its runtimes found on the page:
 
 ```ts
-import { createPixi7Engine, SpineLayoutCore } from '@pixijs-userland/spine-layout/pixi7';
+import { createPixi7Engine, SpineLayoutCore } from '@pixi/spine-layout/pixi7';
 
 const app = new PIXI.Application({ width: 1280, height: 720 });
 const engine = createPixi7Engine(PIXI);
@@ -133,8 +133,8 @@ import * as base from '@pixi-spine/base';
 import * as runtime38 from '@pixi-spine/runtime-3.8';
 import * as runtime41 from '@pixi-spine/runtime-4.1';
 import * as spine43 from '@esotericsoftware/spine-pixi-v7';
-import { createPixi7Engine } from '@pixijs-userland/spine-layout/pixi7';
-import { esotericRuntime, pixiSpineModular } from '@pixijs-userland/spine-layout/runtimes';
+import { createPixi7Engine } from '@pixi/spine-layout/pixi7';
+import { esotericRuntime, pixiSpineModular } from '@pixi/spine-layout/runtimes';
 
 const pixiSpine = pixiSpineModular(
     base,
@@ -172,7 +172,7 @@ runtime, throws.
 | `warn`      | Where a skeleton read by a runtime other than its own, or a runtime the page loaded twice, is reported; `console.warn` by default                                                                                                           |
 
 ```ts
-import { createPixi6Engine, SpineLayoutCore } from '@pixijs-userland/spine-layout/pixi6';
+import { createPixi6Engine, SpineLayoutCore } from '@pixi/spine-layout/pixi6';
 
 const app = new PIXI.Application({ width: 1280, height: 720 });
 const engine = createPixi6Engine(PIXI, { renderer: app.renderer });
@@ -198,7 +198,7 @@ pixi-particles 4 on `PIXI.particles` for particles. Another major, or no pixi-sp
 | `warn`     | Where such a cross-read is reported; `console.warn` by default                                                                                                                                                                                                      |
 
 ```ts
-import { createPixi5Engine, SpineLayoutCore } from '@pixijs-userland/spine-layout/pixi5';
+import { createPixi5Engine, SpineLayoutCore } from '@pixi/spine-layout/pixi5';
 
 const app = new PIXI.Application({ width: 1280, height: 720 });
 const engine = createPixi5Engine(PIXI, { renderer: app.renderer });
@@ -232,7 +232,7 @@ resolves `pixi.js` itself.
 | `warn`     | Where a skeleton read by a runtime other than its own is reported; `console.warn` by default                                                                                                                                                                 |
 
 ```ts
-import { createPixi4Engine, SpineLayoutCore } from '@pixijs-userland/spine-layout/pixi4';
+import { createPixi4Engine, SpineLayoutCore } from '@pixi/spine-layout/pixi4';
 
 const app = new PIXI.Application({ width: 1280, height: 720 });
 const engine = createPixi4Engine(PIXI, { renderer: app.renderer });
@@ -254,7 +254,7 @@ from a skeleton `.json` and its sibling `.atlas`, if one of the engine's runtime
 otherwise reads the skeleton from its source, atlas text and page textures:
 
 ```ts
-import { ManifestParser } from '@pixijs-userland/spine-layout/pixi4';
+import { ManifestParser } from '@pixi/spine-layout/pixi4';
 
 PIXI.loader
     .add('spines/root.json')
@@ -292,7 +292,7 @@ version, so another minor's export throws deep in the reader or loads with data 
 `skeletonVersion` tells you which a file is:
 
 ```ts
-import { skeletonVersion } from '@pixijs-userland/spine-layout/core';
+import { skeletonVersion } from '@pixi/spine-layout/core';
 
 skeletonVersion(json); // "3.8.99"
 skeletonVersion(skelBytes); // "4.3.23"

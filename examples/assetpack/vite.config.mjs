@@ -39,11 +39,11 @@ function assetpack() {
 export default defineConfig({
     root: EXAMPLE,
     plugins: [assetpack()],
-    // In a game this is `pnpm add @pixijs-userland/spine-layout`; here it is the package's own source.
+    // In a game this is `pnpm add @pixi/spine-layout`; here it is the package's own source.
     resolve: {
         alias: [
             {
-                find: /^@pixijs-userland\/spine-layout$/,
+                find: /^@pixi\/spine-layout$/,
                 replacement: resolve(EXAMPLE, '../../src/index.ts'),
             },
         ],

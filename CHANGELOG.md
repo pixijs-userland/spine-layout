@@ -1,4 +1,4 @@
-# @pixijs-userland/spine-layout
+# @pixi/spine-layout
 
 ## 0.13.0
 

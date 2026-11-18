@@ -1,5 +1,5 @@
 {
-    "name": "@pixijs-userland/spine-layout",
+    "name": "@pixi/spine-layout",
     "version": "0.13.0",
     "description": "Compose Pixi.js scenes from Spine skeletons with state/event-based animation",
     "license": "MIT",
@@ -80,8 +80,7 @@
         "LICENSE"
     ],
     "publishConfig": {
-        "access": "public",
-        "registry": "https://npm.pkg.github.com"
+        "access": "public"
     },
     "scripts": {
         "build": "tsc -b",
@@ -97,8 +96,7 @@
         "clean": "rm -rf dist",
         "prepublishOnly": "pnpm clean && pnpm build",
         "changeset": "changeset",
-        "version-packages": "changeset version",
-        "release": "pnpm build && changeset publish"
+        "version-packages": "changeset version"
     },
     "dependencies": {
         "maxrects-packer": "2.7.3"

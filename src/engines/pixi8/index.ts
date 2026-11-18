@@ -24,7 +24,7 @@ type Collect = (
 const SHARED_PIPE_TAKEN =
     "[SpineLayout] A spine-pixi-v8 4.3 Spine made outside the engine draws nothing: pixi's " +
     'shared "spine" render pipe is another runtime\'s, as a spine-pixi-v8 4.2 imported before ' +
-    '@pixijs-userland/spine-layout takes it. Import spine-layout first, or load 4.2 with import() ' +
+    '@pixi/spine-layout takes it. Import spine-layout first, or load 4.2 with import() ' +
     "or as a lazy runtime: { minor: '4.2', load: () => import(…) }.";
 
 /**
