@@ -29,11 +29,32 @@ The viewer reads the Spine version of each export and loads the Pixi that render
 with Spine 3.7 up to Pixi 8 with Spine 4.3, through the same [engines](./engines.md) a game
 uses. A `settings/project.json` in the folder pins the Pixi your game ships with.
 
-## Examples
+## Guide and examples
 
-Its documentation has a runnable example for each convention: slot embedding, states and events,
-skins, buttons, looping, texts, sequences, sounds and particles. Each opens in the viewer and can
-be downloaded as a folder to start from.
+:::tip[The full guide lives in the viewer]
+
+**[Open the guide in Spine View →](https://spineview.dev/#docs)**
+
+It is the panel behind the **ⓘ** button: every convention explained step by step, each with an
+example that opens in the viewer and downloads as a folder to start from.
+
+:::
+
+Each chapter has its own link:
+
+| Chapter                 | Opens                                                                                              |
+| ----------------------- | -------------------------------------------------------------------------------------------------- |
+| Slot embedding          | [spineview.dev/#docs/slot-embedding](https://spineview.dev/#docs/slot-embedding)                   |
+| Animation control       | [spineview.dev/#docs/animation-control](https://spineview.dev/#docs/animation-control)             |
+| States and events       | [spineview.dev/#docs/states-and-events](https://spineview.dev/#docs/states-and-events)             |
+| Skins                   | [spineview.dev/#docs/skins](https://spineview.dev/#docs/skins)                                     |
+| Buttons                 | [spineview.dev/#docs/buttons](https://spineview.dev/#docs/buttons)                                 |
+| Animation looping       | [spineview.dev/#docs/animation-looping](https://spineview.dev/#docs/animation-looping)             |
+| Texts                   | [spineview.dev/#docs/texts](https://spineview.dev/#docs/texts)                                     |
+| Animation sequences     | [spineview.dev/#docs/animation-sequences](https://spineview.dev/#docs/animation-sequences)         |
+| Sounds                  | [spineview.dev/#docs/sounds](https://spineview.dev/#docs/sounds)                                   |
+| Pixi and Spine versions | [spineview.dev/#docs/pixi-and-spine-versions](https://spineview.dev/#docs/pixi-and-spine-versions) |
+| Particles               | [spineview.dev/#docs/particles](https://spineview.dev/#docs/particles)                             |
 
 ## From the viewer to a game
 

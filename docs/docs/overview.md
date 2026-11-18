@@ -10,6 +10,16 @@ sidebar_position: 1
 - **@pixi/layout** — responsive CSS-like layout engine for Pixi.js containers: https://layout.pixijs.io/ ⚠️ WIP
 - **@pixi/ui** — pre-built interactive UI components for Pixi.js: https://pixijs.io/ui/ ⚠️ WIP
 
+:::tip[Step-by-step guide with runnable examples]
+
+Spine View carries a longer guide to the same conventions, with a live example for each one:
+slot embedding, states and events, skins, buttons, texts, sequences, sounds and particles. Every
+example opens in the viewer and downloads as a folder to start from.
+
+**[Open the guide in Spine View →](https://spineview.dev/#docs)**
+
+:::
+
 ```
 SpineLayout (Container)
 ├── AnimationsController  — playback, states, events, track management       ✓ stable

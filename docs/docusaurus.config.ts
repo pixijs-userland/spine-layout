@@ -73,6 +73,11 @@ const config: Config = {
                     label: 'API',
                 },
                 {
+                    href: 'https://spineview.dev/#docs',
+                    label: 'Examples',
+                    position: 'left',
+                },
+                {
                     href: 'https://spineview.dev',
                     label: 'Spine View',
                     position: 'right',

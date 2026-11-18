@@ -27,6 +27,7 @@ Installing from the repository and a first scene are in the
 
 - [Spine View](https://spineview.dev) — a free viewer in the browser: open a folder of Spine
   exports and see the scene this library builds from it. No account.
+  [Guide with runnable examples](https://spineview.dev/#docs) ·
   [About](https://userland.pixijs.io/spine-layout/spine-view)
 - [Magic Editor](https://magic-editor.com) — the same viewer, plus bitmap fonts, GitHub sync and a
   draw-call report after sign-in. [About](https://userland.pixijs.io/spine-layout/magic-editor)
