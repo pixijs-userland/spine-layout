@@ -14,6 +14,10 @@ Pick the bump type (patch / minor / major), describe the change in plain languag
 
 ## How releases happen
 
-1. PRs are merged to `main` with changeset files attached.
-2. The release workflow opens (or updates) a "Version Packages" PR that bumps the version and consumes the changeset files.
-3. Merging that PR publishes `@pixi/spine-layout` to npm and creates a GitHub release with the changelog.
+1. PRs are merged to `main` with their changeset files. Merging releases nothing.
+2. When it is time to release, run the **Release** workflow by hand from `main` (Actions → Release →
+   Run workflow, or `gh workflow run release.yml --ref main`).
+3. It consumes the pending changesets, bumps the version and writes `CHANGELOG.md`, publishes
+   `@pixi/spine-layout` to npm, pushes the release commit and its `v<version>` tag to `main`, and
+   creates the GitHub release, then deploys the docs site from the release tag. With no changesets
+   pending, it stops before changing anything.

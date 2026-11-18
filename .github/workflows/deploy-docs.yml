@@ -1,11 +1,14 @@
 name: Deploy docs to GitHub Pages
 
+# The site follows the npm package: Release calls this once it has published, so the docs never
+# describe what is not on npm yet. Run it by hand to redeploy without releasing.
 on:
-    push:
-        branches: [main]
-        paths:
-            - 'docs/**'
-            - '.github/workflows/deploy-docs.yml'
+    workflow_call:
+        inputs:
+            ref:
+                description: The release tag to build the docs from
+                required: true
+                type: string
     workflow_dispatch:
 
 permissions:
@@ -25,6 +28,8 @@ jobs:
                 working-directory: docs
         steps:
             - uses: actions/checkout@v4
+              with:
+                  ref: ${{ inputs.ref || github.ref }}
 
             - uses: pnpm/action-setup@v4
               with:

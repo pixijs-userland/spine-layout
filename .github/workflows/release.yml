@@ -1,10 +1,11 @@
 name: Release
 
+# Run by hand from the Actions tab: it releases whatever changesets have landed on main since the
+# last release. A push to main releases nothing.
 on:
-    push:
-        branches: [main]
+    workflow_dispatch:
 
-concurrency: ${{ github.workflow }}-${{ github.ref }}
+concurrency: ${{ github.workflow }}
 
 permissions:
     contents: write
@@ -16,7 +17,17 @@ jobs:
     release:
         # Trusted publishing only accepts GitHub-hosted runners.
         runs-on: ubuntu-latest
+        outputs:
+            version: ${{ steps.version.outputs.version }}
         steps:
+            # The bump is pushed back to main, so a run dispatched from any other branch would put
+            # that branch's tree on main.
+            - name: Check the branch
+              if: github.ref != 'refs/heads/main'
+              run: |
+                  echo "::error::Run the release from main, not ${GITHUB_REF#refs/heads/}."
+                  exit 1
+
             - uses: actions/checkout@v4
               with:
                   fetch-depth: 0
@@ -48,8 +59,8 @@ jobs:
                   pnpm version-packages
 
                   if git diff --quiet; then
-                      echo "No changesets pending; nothing to release."
-                      exit 0
+                      echo "::error::No changesets on main since the last release: add one with pnpm changeset."
+                      exit 1
                   fi
 
                   VERSION=$(node -p "require('./package.json').version")
@@ -63,22 +74,18 @@ jobs:
 
                   echo "version=${VERSION}" >>"$GITHUB_OUTPUT"
 
-            # Skipped below when the step above found no pending changesets and left `version` unset.
             - name: Publish to npm
-              if: steps.version.outputs.version != ''
               run: npm publish
 
             # --follow-tags, or the tag stays in the runner and dies with it: a plain
             # push carries commits only.
             - name: Push the release commit and tag
-              if: steps.version.outputs.version != ''
               run: git push --follow-tags origin HEAD:main
 
             # The CHANGELOG section changesets just wrote, then GitHub's list of the PRs merged
             # since the previous tag, grouped by label as .github/release.yml says, and the
             # compare link. gh puts --notes-file above the generated notes.
             - name: Publish the GitHub release
-              if: steps.version.outputs.version != ''
               run: |
                   awk '/^## /{ n++; next } n == 1' CHANGELOG.md \
                       | sed -E 's/^- [0-9a-f]{7,}: /- /' >notes.md
@@ -91,3 +98,13 @@ jobs:
               env:
                   VERSION: ${{ steps.version.outputs.version }}
                   GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    docs:
+        needs: release
+        permissions:
+            contents: read
+            pages: write
+            id-token: write
+        uses: ./.github/workflows/deploy-docs.yml
+        with:
+            ref: v${{ needs.release.outputs.version }}
