@@ -17,6 +17,8 @@ jobs:
     release:
         # Trusted publishing only accepts GitHub-hosted runners.
         runs-on: ubuntu-latest
+        outputs:
+            version: ${{ steps.version.outputs.version }}
         steps:
             # The bump is pushed back to main, so a run dispatched from any other branch would put
             # that branch's tree on main.
@@ -96,3 +98,13 @@ jobs:
               env:
                   VERSION: ${{ steps.version.outputs.version }}
                   GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    docs:
+        needs: release
+        permissions:
+            contents: read
+            pages: write
+            id-token: write
+        uses: ./.github/workflows/deploy-docs.yml
+        with:
+            ref: v${{ needs.release.outputs.version }}

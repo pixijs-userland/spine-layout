@@ -19,4 +19,5 @@ Pick the bump type (patch / minor / major), describe the change in plain languag
    Run workflow, or `gh workflow run release.yml --ref main`).
 3. It consumes the pending changesets, bumps the version and writes `CHANGELOG.md`, publishes
    `@pixi/spine-layout` to npm, pushes the release commit and its `v<version>` tag to `main`, and
-   creates the GitHub release. With no changesets pending, it stops before changing anything.
+   creates the GitHub release, then deploys the docs site from the release tag. With no changesets
+   pending, it stops before changing anything.
