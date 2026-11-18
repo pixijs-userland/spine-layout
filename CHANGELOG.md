@@ -1,5 +1,11 @@
 # @pixi/spine-layout
 
+## 1.0.0
+
+### Major Changes
+
+- The package is `@pixi/spine-layout` on npm. It was `@pixijs-userland/spine-layout` on GitHub Packages: change the imports, and drop the `@pixijs-userland` registry line and its token from `.npmrc`. The API is the same as in 0.13.0.
+
 ## 0.13.0
 
 ### Minor Changes
