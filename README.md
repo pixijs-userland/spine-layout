@@ -8,16 +8,8 @@ Full documentation: [userland.pixijs.io/spine-layout](https://userland.pixijs.io
 
 ## Install
 
-Published to GitHub Packages. Name the registry in `.npmrc`, with a token that has
-`read:packages`:
-
-```ini
-@pixijs-userland:registry=https://npm.pkg.github.com
-//npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}
-```
-
 ```sh
-pnpm add @pixijs-userland/spine-layout pixi.js @esotericsoftware/spine-pixi-v8 howler
+pnpm add @pixi/spine-layout pixi.js @esotericsoftware/spine-pixi-v8 howler
 ```
 
 Installing from the repository and a first scene are in the
@@ -60,24 +52,24 @@ Pixi when it creates the engine; the Spine runtime is then picked from the expor
 the runtimes registered for that Pixi. The exports of one layout must all be of one Spine version:
 a layout that mixes them throws `MixedSpineVersionsError` and builds nothing.
 
-| Entry                                 | Pixi                        | Spine runtimes                                                                  |
-| ------------------------------------- | --------------------------- | ------------------------------------------------------------------------------- |
-| `@pixijs-userland/spine-layout`       | pixi.js v8                  | spine-pixi-v8 4.3 (unchanged default entry)                                     |
-| `@pixijs-userland/spine-layout/pixi8` | pixi.js v8                  | spine-pixi-v8 4.2 and 4.3                                                       |
-| `@pixijs-userland/spine-layout/pixi7` | Pixi 7 (`window.PIXI`)      | `@pixi-spine/*` 4.0 (3.7, 3.8, 4.1; 4.0 through 4.1), spine-pixi-v7 4.2 and 4.3 |
-| `@pixijs-userland/spine-layout/pixi6` | Pixi 6 (`window.PIXI`)      | `@pixi-spine/*` 3.1 (3.7, 3.8, 4.0, 4.1)                                        |
-| `@pixijs-userland/spine-layout/pixi5` | Pixi 5 (`window.PIXI`)      | pixi-spine 2.1 (3.8) or 2.0 (3.7), one per page                                 |
-| `@pixijs-userland/spine-layout/pixi4` | PIXI v4.8.9 (`window.PIXI`) | pixi-spine 1.6 (3.8) or 1.5 (3.7), one per page                                 |
-| `@pixijs-userland/spine-layout/core`  | none                        | `SpineLayoutCore`, the runtime matrix, `choosePixi`, `pickRuntime`              |
+| Entry                      | Pixi                        | Spine runtimes                                                                  |
+| -------------------------- | --------------------------- | ------------------------------------------------------------------------------- |
+| `@pixi/spine-layout`       | pixi.js v8                  | spine-pixi-v8 4.3 (unchanged default entry)                                     |
+| `@pixi/spine-layout/pixi8` | pixi.js v8                  | spine-pixi-v8 4.2 and 4.3                                                       |
+| `@pixi/spine-layout/pixi7` | Pixi 7 (`window.PIXI`)      | `@pixi-spine/*` 4.0 (3.7, 3.8, 4.1; 4.0 through 4.1), spine-pixi-v7 4.2 and 4.3 |
+| `@pixi/spine-layout/pixi6` | Pixi 6 (`window.PIXI`)      | `@pixi-spine/*` 3.1 (3.7, 3.8, 4.0, 4.1)                                        |
+| `@pixi/spine-layout/pixi5` | Pixi 5 (`window.PIXI`)      | pixi-spine 2.1 (3.8) or 2.0 (3.7), one per page                                 |
+| `@pixi/spine-layout/pixi4` | PIXI v4.8.9 (`window.PIXI`) | pixi-spine 1.6 (3.8) or 1.5 (3.7), one per page                                 |
+| `@pixi/spine-layout/core`  | none                        | `SpineLayoutCore`, the runtime matrix, `choosePixi`, `pickRuntime`              |
 
-`@pixijs-userland/spine-layout/runtimes` binds runtime packages to an engine and discovers the ones
+`@pixi/spine-layout/runtimes` binds runtime packages to an engine and discovers the ones
 a page loaded as globals. A Spine export is read by the runtime of its own editor major.minor; a
 project pin can name another, and 4.0 and 4.1 exports reach the next runtime through a JSON
 pre-pass. On Pixi 4–7 the stack is loaded as `<script>` tags and the engine is handed
 `window.PIXI`:
 
 ```typescript
-import { createPixi4Engine, SpineLayoutCore } from '@pixijs-userland/spine-layout/pixi4';
+import { createPixi4Engine, SpineLayoutCore } from '@pixi/spine-layout/pixi4';
 
 const engine = createPixi4Engine(PIXI, { renderer: app.renderer });
 const layout = new SpineLayoutCore({ engine });
@@ -114,12 +106,12 @@ stacks load as `<script>` globals, and the runtimes with no browser script of th
 ## Packing atlases
 
 Spine View opens a raw export, a skeleton JSON beside a folder of loose images. A game keeps that
-folder in its sources and lets the build pack it: `@pixijs-userland/spine-layout/assetpack` is a
+folder in its sources and lets the build pack it: `@pixi/spine-layout/assetpack` is a
 pair of [AssetPack](https://pixijs.io/assetpack/) pipes that write a real Spine atlas per
 skeleton, which AssetPack then scales, compresses and cache-busts.
 
 ```ts
-import { spinePacker, spinePackerManifestMod } from '@pixijs-userland/spine-layout/assetpack';
+import { spinePacker, spinePackerManifestMod } from '@pixi/spine-layout/assetpack';
 
 pipes: [
     spinePacker({ spineAtlas: { maximumTextureSize: 2048, padding: 4 } }), // before json, mipmap, compress
@@ -382,7 +374,7 @@ interface SoundAdapter {
 const layout = new SpineLayoutCore({ engine, sounds: new MyAudioAdapter() });
 
 // the built-in Howler player, on PIXI 4
-import { sounds } from '@pixijs-userland/spine-layout/howler';
+import { sounds } from '@pixi/spine-layout/howler';
 const layout = new SpineLayoutCore({ engine, sounds });
 ```
 

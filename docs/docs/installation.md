@@ -2,27 +2,14 @@
 title: Installation
 ---
 
-The package is `@pixijs-userland/spine-layout`. It is published to GitHub Packages, not to
-npmjs.com, so the registry has to be named once per project.
+The package is [`@pixi/spine-layout`](https://www.npmjs.com/package/@pixi/spine-layout) on npm.
 
-## From GitHub Packages
+## From npm
 
-Add an `.npmrc` beside your `package.json`:
-
-```ini
-@pixijs-userland:registry=https://npm.pkg.github.com
-//npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}
-```
-
-GitHub Packages asks for a token even for a public package. Create a
-[personal access token (classic)](https://github.com/settings/tokens) with the `read:packages`
-scope and export it as `GITHUB_TOKEN`, in your shell and in CI. Keep the token itself out of the
-committed file.
-
-Then install the layout with the Pixi stack it renders on:
+Install the layout with the Pixi stack it renders on:
 
 ```bash
-pnpm add @pixijs-userland/spine-layout pixi.js @esotericsoftware/spine-pixi-v8 howler
+pnpm add @pixi/spine-layout pixi.js @esotericsoftware/spine-pixi-v8 howler
 ```
 
 `npm install` and `yarn add` take the same package names.
@@ -66,7 +53,7 @@ pnpm --dir packages/spine-layout build
 
 ```ts
 import { Application, Assets } from 'pixi.js';
-import { SpineLayout } from '@pixijs-userland/spine-layout';
+import { SpineLayout } from '@pixi/spine-layout';
 
 const manifest = {
     bundles: [

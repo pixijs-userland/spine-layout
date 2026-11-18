@@ -23,7 +23,7 @@ export interface Pixi4EngineOptions {
     renderer?: Pixi4Renderer;
     /**
      * The pixi-spine 1.x runtime to render with, on a page without `PIXI.spine`: from
-     * `pixiSpineLegacy` or `discoverGlobalRuntimes` (`@pixijs-userland/spine-layout/runtimes`).
+     * `pixiSpineLegacy` or `discoverGlobalRuntimes` (`@pixi/spine-layout/runtimes`).
      * Where `PIXI.spine` is loaded too, `PIXI.loader` reads every skeleton with it, and
      * `readSkeletonFromAssets` refuses the `spineData` it leaves.
      */

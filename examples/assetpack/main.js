@@ -1,4 +1,4 @@
-import { SpineLayout } from '@pixijs-userland/spine-layout';
+import { SpineLayout } from '@pixi/spine-layout';
 import { Application, Assets } from 'pixi.js';
 
 const BUNDLE = 'game';

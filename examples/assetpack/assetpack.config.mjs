@@ -4,7 +4,7 @@ import { compress, mipmap } from '@assetpack/core/image';
 import { json } from '@assetpack/core/json';
 import { pixiManifest } from '@assetpack/core/manifest';
 import { spineAtlasCacheBuster, spineAtlasCompress } from '@assetpack/core/spine';
-import { spinePacker, spinePackerManifestMod } from '@pixijs-userland/spine-layout/assetpack';
+import { spinePacker, spinePackerManifestMod } from '@pixi/spine-layout/assetpack';
 
 export const RESOLUTIONS = { default: 1, low: 0.5 };
 

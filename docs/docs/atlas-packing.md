@@ -9,7 +9,7 @@ the wrong format to ship. A browser would fetch every image on its own, the GPU 
 texture per attachment, and there would be no smaller copy for a phone and no AVIF or WebP.
 
 So a game keeps the raw export in its sources and lets the build pack it. The
-`@pixijs-userland/spine-layout/assetpack` entry is a pair of [AssetPack](https://pixijs.io/assetpack/)
+`@pixi/spine-layout/assetpack` entry is a pair of [AssetPack](https://pixijs.io/assetpack/)
 pipes that turn each skeleton's loose images into a real Spine atlas, the same `.atlas` and page
 that Spine's own packer writes. The rest of AssetPack then compresses, scales and cache-busts it
 like any other texture.
@@ -44,7 +44,7 @@ skeletons in Spine and leave others to the build while it migrates.
 pnpm add -D @assetpack/core sharp
 ```
 
-`@pixijs-userland/spine-layout` is already a dependency of the game. Its `assetpack` entry runs in
+`@pixi/spine-layout` is already a dependency of the game. Its `assetpack` entry runs in
 Node at build time and never reaches the browser bundle. `@assetpack/core` (1.7 or later) and
 `sharp` are optional peer dependencies, needed only by a project that imports this entry.
 
@@ -56,7 +56,7 @@ import { compress, mipmap } from '@assetpack/core/image';
 import { json } from '@assetpack/core/json';
 import { pixiManifest } from '@assetpack/core/manifest';
 import { spineAtlasCacheBuster, spineAtlasCompress } from '@assetpack/core/spine';
-import { spinePacker, spinePackerManifestMod } from '@pixijs-userland/spine-layout/assetpack';
+import { spinePacker, spinePackerManifestMod } from '@pixi/spine-layout/assetpack';
 
 const RESOLUTIONS = { default: 1, low: 0.5 };
 const MANIFEST = 'manifest.json';
@@ -157,7 +157,7 @@ Add `public/assets/` and `.assetpack/` to `.gitignore`. Both are build output.
 ## Loading it in the game
 
 ```js
-import { SpineLayout } from '@pixijs-userland/spine-layout';
+import { SpineLayout } from '@pixi/spine-layout';
 import { Application, Assets } from 'pixi.js';
 
 const app = new Application();
@@ -292,4 +292,4 @@ pnpm examples:assetpack:build
 The first command starts the dev server with AssetPack watching `raw-assets/`. The second writes
 a production build to `examples/assetpack/dist`, with AVIF, WebP and PNG at 1x and 0.5x, all
 cache-busted. To start a game from it, copy the folder and replace the `resolve.alias` in its
-`vite.config.mjs` with an installed `@pixijs-userland/spine-layout`.
+`vite.config.mjs` with an installed `@pixi/spine-layout`.

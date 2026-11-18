@@ -8,10 +8,13 @@ concurrency: ${{ github.workflow }}-${{ github.ref }}
 
 permissions:
     contents: write
-    packages: write
+    # npm trusted publishing: npm exchanges this job's OIDC token for a one-off publish
+    # token, so the repository holds no NPM_TOKEN.
+    id-token: write
 
 jobs:
     release:
+        # Trusted publishing only accepts GitHub-hosted runners.
         runs-on: ubuntu-latest
         steps:
             - uses: actions/checkout@v4
@@ -24,25 +27,18 @@ jobs:
 
             - uses: actions/setup-node@v4
               with:
-                  node-version: 20
-                  registry-url: 'https://npm.pkg.github.com'
-                  scope: '@pixijs-userland'
+                  node-version: 24
+                  registry-url: 'https://registry.npmjs.org'
+
+            # Trusted publishing needs npm 11.5.1 or later.
+            - run: npm install -g npm@latest
 
             - run: pnpm install
 
-            - run: pnpm build
-
-            # pnpm ignores auth tokens in a committed project .npmrc, so set it
-            # in pnpm's user-level config where it will be used for publishing.
-            - name: Authenticate to GitHub Packages
-              run: pnpm config set '//npm.pkg.github.com/:_authToken' "${NODE_AUTH_TOKEN}"
-              env:
-                  NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
             # The org forbids Actions from opening PRs, so we release directly:
             # consume pending changesets, publish, and push the bump back to main.
-            - name: Version, publish, and push
-              id: release
+            - name: Version
+              id: version
               run: |
                   git config user.name "github-actions[bot]"
                   git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -56,38 +52,42 @@ jobs:
                       exit 0
                   fi
 
-                  # Committed before publishing, because `changeset publish` tags whatever
-                  # HEAD is when it runs. Published first, the tag named the commit *before*
-                  # the bump — pointing at a tree whose package.json still said the old
-                  # version. `dist/` is gitignored, so there is nothing here the build adds.
+                  VERSION=$(node -p "require('./package.json').version")
+
+                  # The tag has to name the bump commit: tagged before it, the tag points at a
+                  # tree whose package.json still says the old version. Annotated, because
+                  # --follow-tags below pushes annotated tags only.
                   git add -A
-                  git commit -m "chore: release [skip ci]"
+                  git commit -m "chore: release v${VERSION} [skip ci]"
+                  git tag -a "v${VERSION}" -m "v${VERSION}"
 
-                  # build + changeset publish to GitHub Packages, and tag `vX.Y.Z`
-                  pnpm release
+                  echo "version=${VERSION}" >>"$GITHUB_OUTPUT"
 
-                  # --follow-tags, or the tag stays in the runner and dies with it: a plain
-                  # push carries commits only. It is what `#semver:` ranges resolve against,
-                  # so a release without it is a release nobody can name.
-                  git push --follow-tags origin HEAD:main
+            # Skipped below when the step above found no pending changesets and left `version` unset.
+            - name: Publish to npm
+              if: steps.version.outputs.version != ''
+              run: npm publish
 
-                  echo "version=$(node -p "require('./package.json').version")" >>"$GITHUB_OUTPUT"
-              env:
-                  NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+            # --follow-tags, or the tag stays in the runner and dies with it: a plain
+            # push carries commits only.
+            - name: Push the release commit and tag
+              if: steps.version.outputs.version != ''
+              run: git push --follow-tags origin HEAD:main
 
-            # Skipped when the step above found no pending changesets and left `version` unset.
+            # The CHANGELOG section changesets just wrote, then GitHub's list of the PRs merged
+            # since the previous tag, grouped by label as .github/release.yml says, and the
+            # compare link. gh puts --notes-file above the generated notes.
             - name: Publish the GitHub release
-              if: steps.release.outputs.version != ''
+              if: steps.version.outputs.version != ''
               run: |
-                  # The CHANGELOG section changesets just wrote: everything from the first
-                  # `## ` heading down to the next one.
-                  awk '/^## /{ n++ } n == 1' CHANGELOG.md >notes.md
+                  awk '/^## /{ n++; next } n == 1' CHANGELOG.md \
+                      | sed -E 's/^- [0-9a-f]{7,}: /- /' >notes.md
 
                   gh release create "v${VERSION}" \
                       --title "v${VERSION}" \
                       --notes-file notes.md \
+                      --generate-notes \
                       --verify-tag
               env:
-                  VERSION: ${{ steps.release.outputs.version }}
+                  VERSION: ${{ steps.version.outputs.version }}
                   GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

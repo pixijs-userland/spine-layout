@@ -79,7 +79,7 @@ export type SpineLayoutOptions = {
      *   given; `false` plays nothing.
      * - `SpineLayoutCore` (`./core`, `./pixi4`): nothing unless an adapter is given. These entries
      *   never import Howler, so a game with an audio system of its own does not ship it; the
-     *   Howler player is `import { sounds } from '@pixijs-userland/spine-layout/howler'`.
+     *   Howler player is `import { sounds } from '@pixi/spine-layout/howler'`.
      *
      * `animations.onSound` reports the same events either way.
      */
