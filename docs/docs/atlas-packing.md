@@ -110,6 +110,50 @@ The order matters in three places:
 In development the config above skips compression and hashing, so a save rebuilds quickly and the
 files keep readable names.
 
+### Alongside spritesheets
+
+A game that also packs spritesheets runs AssetPack's `texturePacker` next to `spinePacker`. Both
+packers go ahead of `json` and `mipmap`, both compressors go ahead of the cache busters, and the
+two can share one resolutions object so a phone gets the same rung of every texture:
+
+```js title="assetpack.config.mjs"
+import {
+    texturePacker,
+    texturePackerCacheBuster,
+    texturePackerCompress,
+} from '@assetpack/core/texture-packer';
+
+const RESOLUTIONS = { resolutions: { default: 1, low: 0.5 }, fixedResolution: 'default' };
+
+pipes: [
+    spinePacker({
+        spineAtlas: { maximumTextureSize: 2048, padding: 8 },
+        resolutionOptions: RESOLUTIONS,
+    }),
+    texturePacker({
+        texturePacker: { width: 2048, height: 2048, padding: 8, allowRotation: true },
+        resolutionOptions: { ...RESOLUTIONS, maximumTextureSize: 2048 },
+    }),
+    json(),
+    mipmap(RESOLUTIONS),
+    compress({ /* … */ }),
+    ...(production
+        ? [
+              spineAtlasCompress({ png: true, webp: true, avif: true }),
+              texturePackerCompress({ png: true, webp: true, avif: true }),
+              cacheBuster(),
+              texturePackerCacheBuster(),
+              spineAtlasCacheBuster(),
+          ]
+        : []),
+    pixiManifest({ output: MANIFEST, createShortcuts: true }),
+    spinePackerManifestMod({ output: MANIFEST }),
+],
+```
+
+`spinePackerManifestMod` only rewrites the entries `spinePacker` produced, so spritesheets stay in
+the manifest exactly as `pixiManifest` wrote them.
+
 ### Running it from Vite
 
 AssetPack writes into Vite's `public/` folder. The dev server watches the sources, and a build
@@ -278,6 +322,31 @@ The packer reports through AssetPack's logger, and `strict` builds stop on its e
 AssetPack normally rebuilds only the files that changed. When an image changes, the packer also
 marks its skeleton as changed, so the atlas is repacked on the next save. In the example, saving
 a PNG under `raw-assets/game{m}/hero/` rebuilds `hero.atlas` and `hero.png`.
+
+## The atlas it writes
+
+The output is Spine 4's text atlas format, with `bounds`, `offsets` and `rotate` lines and no
+indentation, and it is read by the same `TextureAtlas` code as an atlas Spine exported. Two of its
+conventions are easy to get backwards:
+
+- **`rotate:90` is counter-clockwise.** A rotated region is stored on the page turned 90°
+  counter-clockwise, and turning it 90° clockwise recovers the image. AssetPack's own
+  `texturePacker` rotates the other way for Pixi spritesheets, which is why this packer composites
+  its pages itself instead of reusing that one.
+- **`offsets` measures Y from the bottom.** Spine's local space is Y-up, so a trimmed region has
+  `offsetY = originalHeight - trimTop - trimmedHeight`.
+
+The width and height in `bounds` are in the region's own orientation. A `rotate:90` region takes
+up `height × width` on the page.
+
+### Checking a change to the packer
+
+After changing how regions are trimmed, rotated or placed, rebuild every region from a packed page
+using nothing but its atlas, and compare it with the source image. Crop `bounds` out of the page,
+turn it 90° clockwise if it has `rotate:90`, and draw it at
+`(offsetX, originalHeight - offsetY - height)` on an empty `originalWidth × originalHeight`
+canvas. It should match the source, apart from a difference of up to 2 in one colour channel on
+semi-transparent pixels, which is `sharp` rounding premultiplied alpha while it composites.
 
 ## The example
 
