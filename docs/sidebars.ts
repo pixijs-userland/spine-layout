@@ -5,6 +5,7 @@ const sidebars: SidebarsConfig = {
         'overview',
         'installation',
         'initialization',
+        'atlas-packing',
         'engines',
         'slot-naming',
         'animation-system',

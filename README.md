@@ -111,6 +111,32 @@ stacks load as `<script>` globals, and the runtimes with no browser script of th
 
 ---
 
+## Packing atlases
+
+Spine View opens a raw export, a skeleton JSON beside a folder of loose images. A game keeps that
+folder in its sources and lets the build pack it: `@pixijs-userland/spine-layout/assetpack` is a
+pair of [AssetPack](https://pixijs.io/assetpack/) pipes that write a real Spine atlas per
+skeleton, which AssetPack then scales, compresses and cache-busts.
+
+```ts
+import { spinePacker, spinePackerManifestMod } from '@pixijs-userland/spine-layout/assetpack';
+
+pipes: [
+    spinePacker({ spineAtlas: { maximumTextureSize: 2048, padding: 4 } }), // before json, mipmap, compress
+    json(),
+    mipmap(),
+    compress(),
+    pixiManifest({ output: 'manifest.json' }),
+    spinePackerManifestMod({ output: 'manifest.json' }), // after pixiManifest
+];
+```
+
+`examples/assetpack` is a full Vite project set up this way (`pnpm examples:assetpack`). The
+[Packing atlases guide](https://userland.pixijs.io/spine-layout/atlas-packing) covers the folder
+rules, options and loading.
+
+---
+
 ## Initialization
 
 ### From a Pixi.js manifest (recommended)

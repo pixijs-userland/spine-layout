@@ -1,0 +1,11 @@
+{
+    "root": {
+        "title": {
+            "type": "text",
+            "fontFamily": "Arial",
+            "fontSize": 96,
+            "fill": "#ffffff",
+            "value": "Magic Layout"
+        }
+    }
+}
