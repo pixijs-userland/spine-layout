@@ -14,6 +14,11 @@ pnpm add @pixi/spine-layout pixi.js @esotericsoftware/spine-pixi-v8 howler
 
 `npm install` and `yarn add` take the same package names.
 
+The Pixi and the Spine runtime are yours to pick, so they are not bundled with the layout: install
+the versions that read your Spine exports. The line above is Pixi 8 with spine-pixi-v8 4.3, for
+4.3 exports. Exports from 4.0 to 4.2 need spine-pixi-v8 4.2, and 3.x exports need Pixi 7 or
+older; the [Spine version](./engines.md#spine-version) table lists every pair.
+
 | Peer dependency                   | Version | Needed for                                          |
 | --------------------------------- | ------- | --------------------------------------------------- |
 | `pixi.js`                         | ^8.19   | The default entry and `/pixi8`                      |

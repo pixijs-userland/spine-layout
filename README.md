@@ -12,6 +12,10 @@ Full documentation: [userland.pixijs.io/spine-layout](https://userland.pixijs.io
 pnpm add @pixi/spine-layout pixi.js @esotericsoftware/spine-pixi-v8 howler
 ```
 
+Pixi and the Spine runtime are not bundled: install the versions that match your Spine exports.
+The line above is Pixi 8 with spine-pixi-v8 4.3, for 4.3 exports; the
+[Spine version](https://userland.pixijs.io/spine-layout/engines#spine-version) table lists the rest.
+
 Installing from the repository and a first scene are in the
 [Installation guide](https://userland.pixijs.io/spine-layout/installation).
 
