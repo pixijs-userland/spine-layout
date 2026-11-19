@@ -19,6 +19,10 @@ the versions that read your Spine exports. The line above is Pixi 8 with spine-p
 4.3 exports. Exports from 4.0 to 4.2 need spine-pixi-v8 4.2, and 3.x exports need Pixi 7 or
 older; the [Spine version](./engines.md#spine-version) table lists every pair.
 
+`howler` is only for the built-in sound player. `/core` and the Pixi 4–7 entries never import it,
+so leave it out there unless you pass that player in. The default entry and `/pixi8` import it
+whether the player is on or not, so with them it stays in the install line.
+
 | Peer dependency                   | Version | Needed for                                          |
 | --------------------------------- | ------- | --------------------------------------------------- |
 | `pixi.js`                         | ^8.19   | The default entry and `/pixi8`                      |
