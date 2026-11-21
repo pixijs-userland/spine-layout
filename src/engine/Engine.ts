@@ -236,9 +236,10 @@ export interface SpinePort<T extends EngineTypes> {
     onUpdate(spine: T['Spine'], hook: (dt: number) => void): () => void;
 
     /**
-     * `attachment`'s outline as the slot shows it, in the space of an object hung off that slot,
-     * as flat `x, y` pairs — a region's four corners, an unweighted mesh's hull. `undefined` for
-     * anything without one.
+     * `attachment`'s outline as the slot shows it now, in the space of an object hung off that
+     * slot, as flat `x, y` pairs — a region's four corners (a sequence's current frame), a mesh's
+     * hull, a bounding box's polygon. A weighted mesh or box is read in its bones' current pose.
+     * `undefined` for anything without one.
      */
     hitPolygon(slot: SlotLike, attachment: unknown): number[] | undefined;
     /**
@@ -269,6 +270,11 @@ export interface SpinePort<T extends EngineTypes> {
 }
 
 export type InteractiveMode = 'static' | 'none';
+
+/** What Pixi asks for a hit test, in the view's own space. */
+export interface HitArea {
+    contains(x: number, y: number): boolean;
+}
 export type PointerEventName =
     | 'pointerover'
     | 'pointerout'
@@ -290,7 +296,7 @@ export interface DisplayPort<T extends EngineTypes> {
     setLabel(view: T['Container'], label: string): void;
     setInteractive(view: T['Container'], mode: InteractiveMode): void;
     setCursor(view: T['Container'], cursor: string): void;
-    setHitArea(view: T['Container'], polygon: number[] | undefined): void;
+    setHitArea(view: T['Container'], hitArea: HitArea | undefined): void;
     on(view: T['Container'], event: PointerEventName, fn: (event: PointerEventLike) => void): void;
     off(view: T['Container'], event: PointerEventName, fn: (event: PointerEventLike) => void): void;
     /** Every pointer move on the stage, hit or not. Returns the unsubscribe. */

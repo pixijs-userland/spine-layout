@@ -64,7 +64,14 @@ export type FakeSkeletonBone = {
     /** Puts just this bone back to setup — what a scoped revert calls, one bone at a time. */
     setupPose: () => void;
 };
-export type FakeSkeletonSlot = { data: { name: string }; bone: FakeSkeletonBone; setupPose: () => void };
+export type FakeSlotPose = { attachment: unknown; sequenceIndex: number };
+export type FakeSkeletonSlot = {
+    data: { name: string };
+    bone: FakeSkeletonBone;
+    pose: FakeSlotPose;
+    appliedPose: FakeSlotPose;
+    setupPose: () => void;
+};
 export type FakeSkin = { name: string };
 
 export type FakeSpineOptions = {
@@ -186,10 +193,15 @@ export function createFakeSpine(options: FakeSpineOptions = {}): FakeSpine {
 
     const findSkin = (name: string) => skins.find((s) => s.name === name);
     const findAnimation = (name: string) => animations.find((a) => a.name === name);
+    // one pose per slot, as the runtime keeps it: what an animation keys into it shows up
+    // wherever the slot is read from
+    const slotPoses = new Map(
+        slots.map((slot) => [slot, { attachment: slot.attachment, sequenceIndex: -1 }]),
+    );
     const findSlot = (name: string) => {
         const slot = slots.find((s) => s.name === name);
         if (!slot) return undefined;
-        const pose = { attachment: slot.attachment, sequenceIndex: -1 };
+        const pose = slotPoses.get(slot)!;
         return {
             data: { index: slots.indexOf(slot) },
             bone: { pose: { worldX: 1, worldY: 2 } },
@@ -318,6 +330,8 @@ export function createFakeSpine(options: FakeSpineOptions = {}): FakeSpine {
         slots: slots.map((s) => ({
             data: { name: s.name },
             bone: skeletonSlotBone(s),
+            pose: slotPoses.get(s)!,
+            appliedPose: slotPoses.get(s)!,
             setupPose: () => spine.__slotSetupPoseCalls.push(s.name),
         })),
         bones: [...skeletonBones.values()],

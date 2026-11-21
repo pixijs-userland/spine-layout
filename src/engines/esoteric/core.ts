@@ -100,6 +100,17 @@ interface Attachment42 {
     sequence: (Sequence & { apply(slot: SlotLike, attachment: object): void }) | null;
 }
 
+interface VertexAttachment42 {
+    computeWorldVertices(
+        slot: SlotLike,
+        start: number,
+        count: number,
+        worldVertices: number[],
+        offset: number,
+        stride: number,
+    ): void;
+}
+
 const NO_INDEX = -1;
 
 const indexOf = (value: number) => (Number.isInteger(value) && value >= 0 ? value : NO_INDEX);
@@ -213,6 +224,12 @@ export function createCore42(SP: EsotericModule): CoreShim {
             return sequence.regions[frame];
         },
 
+        worldVertices(slot, attachment, count) {
+            const world = new Array<number>(count);
+            (attachment as VertexAttachment42).computeWorldVertices(slot, 0, count, world, 0, 2);
+            return world;
+        },
+
         attachmentLoader: (atlas) => new AtlasAttachmentLoader(atlas),
     };
 }
@@ -227,6 +244,7 @@ interface Bone43 extends BoneLike {
 }
 
 interface Slot43 extends SlotLike {
+    skeleton: SkeletonLike;
     appliedPose: SlotPoseLike & { sequenceIndex: number };
     setupPose(): void;
 }
@@ -242,6 +260,18 @@ interface Skeleton43 extends SkeletonLike {
 interface Attachment43 {
     sequence: Sequence & { resolveIndex(pose: object): number };
     getOffsets?(pose: object): ArrayLike<number>;
+}
+
+interface VertexAttachment43 {
+    computeWorldVertices(
+        skeleton: SkeletonLike,
+        slot: SlotLike,
+        start: number,
+        count: number,
+        worldVertices: number[],
+        offset: number,
+        stride: number,
+    ): void;
 }
 
 export function createCore43(SP: EsotericModule): CoreShim {
@@ -283,6 +313,20 @@ export function createCore43(SP: EsotericModule): CoreShim {
             const frame = slot ? sequence.resolveIndex((slot as Slot43).appliedPose) : 0;
 
             return sequence.regions[frame] ?? sequence.regions[0];
+        },
+
+        worldVertices(slot, attachment, count) {
+            const world = new Array<number>(count);
+            (attachment as VertexAttachment43).computeWorldVertices(
+                (slot as Slot43).skeleton,
+                slot,
+                0,
+                count,
+                world,
+                0,
+                2,
+            );
+            return world;
         },
 
         attachmentLoader: (atlas) => new AtlasAttachmentLoader(atlas),

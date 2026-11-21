@@ -7,7 +7,13 @@ import type {
     Pixi4Texture,
     Spine38Slot,
 } from '../../../src/engines/pixi4/pixi4.types';
-import { ATLAS, clippedSkeleton, contractSkeleton } from '../pixiSpine/fixtures';
+import {
+    ATLAS,
+    clippedSkeleton,
+    contractSkeleton,
+    switchingButtonSkeleton,
+} from '../pixiSpine/fixtures';
+import { buildLayout } from './layoutCases';
 import { canvasTexture, updateTransforms, type LoadedPixi4 } from './loadPixi4';
 
 /** Hit-testing through the engine's display port, against v4's own interaction manager. */
@@ -32,12 +38,18 @@ export function hitTestingSuite(
             return spine;
         }
 
-        /** The name of what a click at `x, y` under `root` lands on. */
-        function hitTest(root: Pixi4Container, x: number, y: number): string | null {
+        /** What a click at `x, y` under `root` lands on. */
+        function hitAt(root: Pixi4Container, x: number, y: number): Pixi4Container | null {
             const view = document.createElement('canvas');
             const manager = new PIXI.interaction.InteractionManager({ view, resolution: 1 });
             const hit = manager.hitTest(new PIXI.Point(x, y), root);
             manager.destroy();
+            return hit;
+        }
+
+        /** The name of what a click at `x, y` under `root` lands on. */
+        function hitTest(root: Pixi4Container, x: number, y: number): string | null {
+            const hit = hitAt(root, x, y);
             return hit && hit.name;
         }
 
@@ -125,6 +137,78 @@ export function hitTestingSuite(
             expect(Object.hasOwn(mask, 'containsPoint')).toBe(false);
             expect(mask.hitArea ?? null).toBeNull();
             expect(hitTest(stage, 2, -12)).toBe('layer');
+        });
+
+        describe('a button whose art changes', () => {
+            // `body` covers x 30 to 70, y -40 to -20 on the stage; `tall` and the portrait skin's
+            // `body` x 40 to 60, y -50 to -10
+            const WIDE_ONLY = [65, -30] as const;
+            const TALL_ONLY = [50, -45] as const;
+            const BOTH = [50, -30] as const;
+
+            function buttonLayout() {
+                const { layout, errors } = buildLayout(PIXI, engine, {
+                    root: switchingButtonSkeleton(minor),
+                });
+                const spine = layout.spines.get('root')!;
+                const button = engine.spine.getSlotObject(spine, 'button_go')!;
+                spine.autoUpdate = false;
+
+                const pose = (animation?: string) => {
+                    if (animation) spine.state.setAnimation(0, animation, false);
+                    engine.spine.update(spine, 0);
+                    updateTransforms(PIXI, spine);
+                };
+                const hits = ([x, y]: readonly [number, number]) => hitAt(spine, x, y) === button;
+
+                expect(errors).toEqual([]);
+                pose();
+
+                return { layout, pose, hits };
+            }
+
+            it('hits where the art is, not around its bone', () => {
+                const { hits } = buttonLayout();
+
+                expect([hits(WIDE_ONLY), hits(BOTH), hits(TALL_ONLY)]).toEqual([true, true, false]);
+            });
+
+            it('follows the attachment an animation keys in', () => {
+                const { pose, hits } = buttonLayout();
+
+                pose('tall');
+
+                expect([hits(WIDE_ONLY), hits(BOTH), hits(TALL_ONLY)]).toEqual([false, true, true]);
+            });
+
+            it('follows the attachment a skin change swaps in', () => {
+                const { layout, pose, hits } = buttonLayout();
+
+                layout.skins.apply('portrait');
+                pose();
+
+                expect([hits(WIDE_ONLY), hits(BOTH), hits(TALL_ONLY)]).toEqual([false, true, true]);
+            });
+
+            it('follows its bone', () => {
+                const { pose, hits } = buttonLayout();
+
+                pose('away');
+
+                expect([hits(BOTH), hits([150, -30])]).toEqual([false, true]);
+            });
+
+            it('hits nothing while its slot is empty', () => {
+                const { pose, hits } = buttonLayout();
+
+                pose('hide');
+
+                expect([hits(WIDE_ONLY), hits(BOTH), hits(TALL_ONLY)]).toEqual([
+                    false,
+                    false,
+                    false,
+                ]);
+            });
         });
     });
 }

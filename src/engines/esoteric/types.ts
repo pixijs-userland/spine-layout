@@ -197,6 +197,8 @@ export interface CoreShim {
     classify(propertyId: string, data: SkeletonDataLike): PoseClaimEntry;
     regionOffsets(slot: SlotLike, attachment: object): ArrayLike<number> | undefined;
     region(attachment: object, slot?: SlotLike): AtlasRegionLike | null | undefined;
+    /** A vertex attachment's first `count` world coordinates, as the slot shows it now. */
+    worldVertices(slot: SlotLike, attachment: object, count: number): number[];
     attachmentLoader(atlas: AtlasLike): object;
 }
 

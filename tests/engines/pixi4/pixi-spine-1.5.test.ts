@@ -6,7 +6,13 @@ import { engineContract } from '../../engine-contract/contract';
 import { ATLAS, contractSkeleton } from '../pixiSpine/fixtures';
 import fixture37 from '../../fixtures/contract-3.7.json';
 import { hitTestingSuite } from './hitTesting';
-import { buildLayout, SQUARE_HIT_AREA, withEmptyButton, withSpineSlot } from './layoutCases';
+import {
+    buildLayout,
+    SQUARE_HITS,
+    squareHits,
+    withEmptyButton,
+    withSpineSlot,
+} from './layoutCases';
 import { canvasTexture, loadPixi4 } from './loadPixi4';
 
 // Left in the node environment, with a happy-dom page installed by hand, as the contract suite
@@ -86,12 +92,14 @@ describe('a 3.7 export in the core', () => {
         expect(engine.spine.getSlotObject(root, 'spine_child')).toBe(layout.spines.get('child'));
     });
 
-    it('takes the hit area of a button slot empty at setup from its skin', () => {
+    it('hits a button slot empty at setup nowhere, then where its skin attachment shows', () => {
         const { PIXI, engine } = load();
         const { layout, errors } = buildLayout(PIXI, engine, { root: withEmptyButton('3.7') });
-        const button = engine.spine.getSlotObject(layout.spines.get('root')!, 'button_go');
+        const root = layout.spines.get('root')!;
+        const { empty, shown } = squareHits(root, engine.spine.getSlotObject(root, 'button_go'));
 
         expect(errors).toEqual([]);
-        expect((button?.hitArea as { points: number[] }).points).toEqual(SQUARE_HIT_AREA);
+        expect(empty).toEqual(SQUARE_HITS.map(() => false));
+        expect(shown).toEqual(SQUARE_HITS);
     });
 });

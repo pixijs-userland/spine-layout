@@ -29,8 +29,33 @@ export const withSpineSlot = (minor: Minor) =>
 export const withEmptyButton = (minor: Minor) =>
     withSlot(minor, { name: 'button_go', bone: 'bone_a' }, { square: { width: 40, height: 20 } });
 
-/** The hit area of `withEmptyButton`'s button: `square`, 40 by 20, around its bone. */
-export const SQUARE_HIT_AREA = [-20, 10, -20, -10, 20, -10, 20, 10];
+type HitTarget = { hitArea?: unknown };
+type Attachable = { skeleton: { setAttachment(slot: string, attachment: string | null): void } };
+
+const SQUARE_PROBES = [
+    [0, 0],
+    [19, 9],
+    [-19, -9],
+    [25, 0],
+    [0, 15],
+];
+
+/** Which of the probes `square` — 40 by 20, around its bone — covers. */
+export const SQUARE_HITS = [true, true, true, false, false];
+
+/**
+ * Where `withEmptyButton`'s button answers the pointer while its slot is empty, then once
+ * something keys `square` in, as an animation would.
+ */
+export function squareHits(spine: Attachable, button: HitTarget | undefined) {
+    const hitArea = button?.hitArea as { contains(x: number, y: number): boolean };
+    const probe = () => SQUARE_PROBES.map(([x, y]) => hitArea.contains(x, y));
+    const empty = probe();
+
+    spine.skeleton.setAttachment('button_go', 'square');
+
+    return { empty, shown: probe() };
+}
 
 /** A layout of `skeletons` by name, and each `console.error` its build logged, joined. */
 export function buildLayout(

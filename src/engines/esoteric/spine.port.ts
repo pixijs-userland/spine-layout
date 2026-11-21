@@ -15,6 +15,7 @@ import {
     type BoneLike,
     type SkeletonDataLike,
     type SkeletonSource,
+    type SlotLike,
 } from '../../engine/runtime';
 import { createHookSet } from '../shared/hookSet';
 import { framesHold, listHold } from '../shared/poseHold';
@@ -179,6 +180,23 @@ export function createEsotericSpinePort<T extends EngineTypes = EsotericTypes>({
         return value;
     }
 
+    /** A weighted attachment's first `count` coordinates, brought from its bones into its slot's. */
+    function weightedInBone(slot: SlotLike, attachment: object, count: number): number[] {
+        const world = core.worldVertices(slot, attachment, count);
+        const bone = core.world(slot.bone);
+        const point = { x: 0, y: 0 };
+
+        for (let i = 0; i < count; i += 2) {
+            point.x = world[i];
+            point.y = world[i + 1];
+            bone.worldToLocal(point);
+            world[i] = point.x;
+            world[i + 1] = point.y;
+        }
+
+        return world;
+    }
+
     /**
      * World values come off the pose a bone was drawn with. A root bone is posed in skeleton
      * space: offset and scaled by the skeleton, yDown flip included.
@@ -287,13 +305,16 @@ export function createEsotericSpinePort<T extends EngineTypes = EsotericTypes>({
                 vertices = core.regionOffsets(slot, attachment);
             } else if (attachment instanceof classes.MeshAttachment) {
                 const mesh = attachment as MeshAttachment;
-                if (!mesh.bones) vertices = Array.from(mesh.vertices).slice(0, mesh.hullLength);
+                vertices = mesh.bones
+                    ? weightedInBone(slot, mesh, mesh.hullLength)
+                    : Array.from(mesh.vertices).slice(0, mesh.hullLength);
             } else if (attachment instanceof classes.BoundingBoxAttachment) {
                 // a bounding box is a polygon and nothing else: the shape of a button on a skeleton
                 // that draws no image, whose atlas the attachment loader never consults for one
                 const box = attachment as BoundingBoxAttachment;
-                if (!box.bones)
-                    vertices = Array.from(box.vertices).slice(0, box.worldVerticesLength);
+                vertices = box.bones
+                    ? weightedInBone(slot, box, box.worldVerticesLength)
+                    : Array.from(box.vertices).slice(0, box.worldVerticesLength);
             }
             if (!vertices?.length) return undefined;
 

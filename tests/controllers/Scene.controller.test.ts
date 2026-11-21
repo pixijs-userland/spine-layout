@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { Container, Polygon, Sprite, Texture } from 'pixi.js';
+import { Container, Sprite, Texture } from 'pixi.js';
 import {
     BoundingBoxAttachment,
     RegionAttachment,
@@ -37,7 +37,7 @@ async function unhover(target: Container) {
 }
 
 /** A 40×30 image placed 10 right of and 20 above its bone, the way an artist offsets a button's art. */
-function makeRegion(): RegionAttachment {
+function makeRegion(width = 40, height = 30): RegionAttachment {
     // spine 4.3+: attachments hold their region(s) in a Sequence — static
     // images are single-frame sequences.
     const sequence = new Sequence(1, false);
@@ -57,8 +57,8 @@ function makeRegion(): RegionAttachment {
     const region = new RegionAttachment('a', sequence);
     region.x = 10;
     region.y = 20;
-    region.width = 40;
-    region.height = 30;
+    region.width = width;
+    region.height = height;
     region.updateSequence();
     return region;
 }
@@ -69,6 +69,16 @@ function makeBox(): BoundingBoxAttachment {
     box.worldVerticesLength = 8;
     box.vertices = [10, 20, 110, 20, 110, 80, 10, 80];
     return box;
+}
+
+/** Whether the view's hit area takes `x, y`, in the view's own space. */
+function takes(view: Container, x: number, y: number): boolean {
+    return (view.hitArea as { contains(x: number, y: number): boolean }).contains(x, y);
+}
+
+/** The pose a fake slot is drawn with, where an animation or a skin change writes its attachment. */
+function poseOf(spine: FakeSpine, slotName: string): { attachment: unknown } {
+    return spine.skeleton.slots.find((slot) => slot.data.name === slotName)!.pose;
 }
 
 /** What a view answers a hit-test with — `undefined` for a plain container, which has no answer. */
@@ -213,25 +223,47 @@ describe('SceneController – activateButtonBones', () => {
 
     it('shapes the hit area to the attachment, in the overlay’s own space', () => {
         const sprite = spine.__slotChildren.get('button_play')?.[0] as Sprite;
-        const hitArea = sprite.hitArea as Polygon;
 
-        expect(hitArea).toBeInstanceOf(Polygon);
         // Spine measures y up from the bone and a slot object runs it down, so the art's
         // centre, 20 above the bone, is 20 below it here — where the raw texture never was.
-        expect(hitArea.contains(10, -20)).toBe(true);
-        expect(hitArea.contains(29, -34)).toBe(true);
-        expect(hitArea.contains(10, 20)).toBe(false);
-        expect(hitArea.contains(-11, -20)).toBe(false);
+        expect(takes(sprite, 10, -20)).toBe(true);
+        expect(takes(sprite, 29, -34)).toBe(true);
+        expect(takes(sprite, 10, 20)).toBe(false);
+        expect(takes(sprite, -11, -20)).toBe(false);
     });
 
-    it('reads a slot empty in the setup pose from its skin, so a button an animation attaches keeps its art as hit area', () => {
+    it('reads the attachment the slot holds when the pointer tests it, not when the button was built', () => {
+        const sprite = spine.__slotChildren.get('button_play')?.[0] as Sprite;
+
+        expect(takes(sprite, 25, -20)).toBe(true);
+        expect(takes(sprite, 10, -40)).toBe(false);
+
+        // a portrait body keyed in by `state_portrait/`: narrower, taller
+        poseOf(spine, 'button_play').attachment = makeRegion(10, 60);
+
+        expect(takes(sprite, 25, -20)).toBe(false);
+        expect(takes(sprite, 10, -40)).toBe(true);
+    });
+
+    it('hits nothing while the slot is empty', () => {
+        const sprite = spine.__slotChildren.get('button_play')?.[0] as Sprite;
+
+        poseOf(spine, 'button_play').attachment = null;
+
+        expect(takes(sprite, 10, -20)).toBe(false);
+        expect(sprite.texture).toBe(Texture.EMPTY);
+    });
+
+    it('wires a slot empty in the setup pose, which hits once an animation attaches its art', () => {
         const banner = createFakeSpine({
             slots: [{ name: 'button_skip', skinAttachment: makeRegion() }],
             bones: [{ name: 'button_skip' }],
         });
         const spines = asSpineMap({ banner });
         const bannerAnimations = new AnimationsController(fakeEngine, spines);
-        const scene = new SceneController(fakeEngine, spines,
+        const scene = new SceneController(
+            fakeEngine,
+            spines,
             new TextsController(fakeEngine, spines),
             bannerAnimations,
             new SpineController(fakeEngine, spines, bannerAnimations),
@@ -239,11 +271,14 @@ describe('SceneController – activateButtonBones', () => {
         scene.activateButtonBones();
 
         const sprite = banner.__slotChildren.get('button_skip')?.[0] as Sprite;
-        const hitArea = sprite.hitArea as Polygon;
 
-        expect(hitArea).toBeInstanceOf(Polygon);
-        expect(hitArea.contains(10, -20)).toBe(true);
-        expect(hitArea.contains(10, 20)).toBe(false);
+        expect(sprite.eventMode).toBe('static');
+        expect(takes(sprite, 10, -20)).toBe(false);
+
+        poseOf(banner, 'button_skip').attachment = makeRegion();
+
+        expect(takes(sprite, 10, -20)).toBe(true);
+        expect(takes(sprite, 10, 20)).toBe(false);
     });
 
     it('takes a bounding box as the hit area, so a button on a skeleton with no image answers over its polygon', () => {
@@ -253,7 +288,9 @@ describe('SceneController – activateButtonBones', () => {
         });
         const spines = asSpineMap({ root });
         const rootAnimations = new AnimationsController(fakeEngine, spines);
-        const scene = new SceneController(fakeEngine, spines,
+        const scene = new SceneController(
+            fakeEngine,
+            spines,
             new TextsController(fakeEngine, spines),
             rootAnimations,
             new SpineController(fakeEngine, spines, rootAnimations),
@@ -261,14 +298,12 @@ describe('SceneController – activateButtonBones', () => {
         scene.activateButtonBones();
 
         const sprite = root.__slotChildren.get('button_anywhere')?.[0] as Sprite;
-        const hitArea = sprite.hitArea as Polygon;
 
-        expect(hitArea).toBeInstanceOf(Polygon);
-        expect(hitArea.contains(50, -50)).toBe(true);
-        expect(hitArea.contains(109, -79)).toBe(true);
-        expect(hitArea.contains(50, 50)).toBe(false);
-        expect(hitArea.contains(50, -10)).toBe(false);
-        expect(hitArea.contains(5, -50)).toBe(false);
+        expect(takes(sprite, 50, -50)).toBe(true);
+        expect(takes(sprite, 109, -79)).toBe(true);
+        expect(takes(sprite, 50, 50)).toBe(false);
+        expect(takes(sprite, 50, -10)).toBe(false);
+        expect(takes(sprite, 5, -50)).toBe(false);
     });
 
     it('keeps the overlay invisible whatever alpha the runtime writes, and takes its mask', () => {

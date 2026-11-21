@@ -242,7 +242,6 @@ export interface LegacyNamespace {
     Rectangle: new (x?: number, y?: number, width?: number, height?: number) => LegacyRectangle;
     Point: { new (x?: number, y?: number): LegacyObservablePoint; prototype: object };
     ObservablePoint: { prototype: object };
-    Polygon: new (points: number[]) => object;
     Transform?: new () => LegacyTransform;
     /** v4; on v5 a getter that warns. */
     TransformBase?: new () => LegacyTransform;

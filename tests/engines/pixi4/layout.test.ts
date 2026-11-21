@@ -3,7 +3,13 @@ import { describe, expect, it } from 'vitest';
 import fixture from '../../fixtures/contract-3.8.json';
 import { createPixi4Engine, SpineLayoutCore, type Pixi4Types } from '../../../src/pixi4';
 import { contractSkeleton } from '../pixiSpine/fixtures';
-import { buildLayout, SQUARE_HIT_AREA, withEmptyButton, withSpineSlot } from './layoutCases';
+import {
+    buildLayout,
+    SQUARE_HITS,
+    squareHits,
+    withEmptyButton,
+    withSpineSlot,
+} from './layoutCases';
 import { canvasTexture, loadPixi4 } from './loadPixi4';
 
 const ATLAS = `
@@ -67,14 +73,15 @@ describe('SpineLayoutCore on the pixi4 engine', () => {
         expect(engine.spine.getSlotObject(root, 'spine_child')).toBe(layout.spines.get('child'));
     });
 
-    it('takes the hit area of a button slot empty at setup from its skin', () => {
+    it('hits a button slot empty at setup nowhere, then where its skin attachment shows', () => {
         const PIXI = loadPixi4();
         const engine = createPixi4Engine(PIXI);
         const { layout, errors } = buildLayout(PIXI, engine, { root: withEmptyButton('3.8') });
-        const button = engine.spine.getSlotObject(layout.spines.get('root')!, 'button_go');
+        const root = layout.spines.get('root')!;
+        const { empty, shown } = squareHits(root, engine.spine.getSlotObject(root, 'button_go'));
 
         expect(errors).toEqual([]);
-        expect(button?.hitArea).toBeInstanceOf(PIXI.Polygon);
-        expect((button?.hitArea as { points: number[] }).points).toEqual(SQUARE_HIT_AREA);
+        expect(empty).toEqual(SQUARE_HITS.map(() => false));
+        expect(shown).toEqual(SQUARE_HITS);
     });
 });

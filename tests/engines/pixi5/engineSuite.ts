@@ -475,7 +475,7 @@ export function describePixi5Engine(minor: Pixi5Minor) {
                 ]);
             });
 
-            it('hits a button empty at setup where its skin draws it', () => {
+            it('hits a button empty at setup nowhere, then where its skin draws it', () => {
                 const skeleton = contractSkeleton(minor);
                 const skins = skeleton.skins as Loaded;
                 (skeleton.slots as object[]).push({ name: 'button_go', bone: 'bone_a' });
@@ -484,13 +484,27 @@ export function describePixi5Engine(minor: Pixi5Minor) {
                 };
 
                 const { engine, layout, logged } = layoutOf([{ name: 'root', skeleton }]);
-                const button = engine.spine.getSlotObject(layout.spines.get('root')!, 'button_go');
+                const root = layout.spines.get('root')!;
+                const hitArea = engine.spine.getSlotObject(root, 'button_go')?.hitArea as {
+                    contains(x: number, y: number): boolean;
+                };
+                const probes = [
+                    [0, 0],
+                    [19, 9],
+                    [25, 0],
+                    [0, 15],
+                ].map(
+                    ([x, y]) =>
+                        () =>
+                            hitArea.contains(x, y),
+                );
 
                 expect(logged).toEqual([]);
-                expect(button?.hitArea).toBeInstanceOf(PIXI.Polygon);
-                expect((button?.hitArea as Loaded).points).toEqual([
-                    -20, 10, -20, -10, 20, -10, 20, 10,
-                ]);
+                expect(probes.map((hit) => hit())).toEqual([false, false, false, false]);
+
+                root.skeleton.setAttachment('button_go', 'square');
+
+                expect(probes.map((hit) => hit())).toEqual([true, true, false, false]);
             });
         });
     });

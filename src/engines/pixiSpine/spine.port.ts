@@ -40,6 +40,7 @@ import {
     type PixiSpineTypes,
     type PixiSpineView,
     type PixiSpineBoundingBoxAttachment,
+    type PixiSpineVertexAttachment,
     type PixiSpineTimeline,
 } from './types';
 import { onSpineUpdate } from './updateHooks';
@@ -124,6 +125,28 @@ function shield(view: PixiSpineContainer, isMask = !!view.isMask) {
 const skeletonOf = (skeleton: unknown) => skeleton as PixiSpineSkeleton;
 const boneOf = (bone: unknown) => bone as PixiSpineBone;
 const slotOf = (slot: unknown) => slot as PixiSpineSlot;
+
+/** A weighted attachment's first `count` coordinates, brought from its bones into its slot's. */
+function weightedInBone(
+    slot: PixiSpineSlot,
+    attachment: PixiSpineVertexAttachment,
+    count: number,
+): number[] {
+    const world = new Array<number>(count);
+    const point = { x: 0, y: 0 };
+
+    attachment.computeWorldVertices(slot, 0, count, world, 0, 2);
+
+    for (let i = 0; i < count; i += 2) {
+        point.x = world[i];
+        point.y = world[i + 1];
+        slot.bone.worldToLocal(point);
+        world[i] = point.x;
+        world[i + 1] = point.y;
+    }
+
+    return world;
+}
 
 /**
  * `RegionAttachment.updateOffset` (3.x) / `updateRegion` (4.1): pixi-spine leaves `offset` empty
@@ -460,13 +483,16 @@ export function createPixiSpinePort<T extends PixiSpineTypes = PixiSpineTypes>({
                 vertices = regionCorners(region, sequenceRegion(region, slot && slotOf(slot)));
             } else if (kind === 'mesh') {
                 const mesh = attachment as PixiSpineMeshAttachment;
-                if (!mesh.bones) vertices = Array.from(mesh.vertices).slice(0, mesh.hullLength);
+                vertices = mesh.bones
+                    ? weightedInBone(slotOf(slot), mesh, mesh.hullLength)
+                    : Array.from(mesh.vertices).slice(0, mesh.hullLength);
             } else if (runtimes.some((runtime) => runtime.isBoundingBox(attachment))) {
                 // a bounding box is a polygon and nothing else: the shape of a button on a
                 // skeleton that draws no image
                 const box = attachment as PixiSpineBoundingBoxAttachment;
-                if (!box.bones)
-                    vertices = Array.from(box.vertices).slice(0, box.worldVerticesLength);
+                vertices = box.bones
+                    ? weightedInBone(slotOf(slot), box, box.worldVerticesLength)
+                    : Array.from(box.vertices).slice(0, box.worldVerticesLength);
             }
             if (!vertices?.length) return undefined;
 

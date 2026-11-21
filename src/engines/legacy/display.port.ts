@@ -97,8 +97,8 @@ export function createDisplayPort<S extends LegacySpine>(
         setCursor: (view, cursor) => {
             view.cursor = cursor;
         },
-        setHitArea: (view, polygon) => {
-            view.hitArea = polygon ? new PIXI.Polygon(polygon) : null;
+        setHitArea: (view, hitArea) => {
+            view.hitArea = hitArea ?? null;
         },
 
         on: (view, event, fn) => void view.on(event, listenerOf(fn)),
