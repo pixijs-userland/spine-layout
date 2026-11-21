@@ -105,6 +105,32 @@ export function clippedSkeleton(minor: Minor): Json {
     return exportedAs(skeleton, minor);
 }
 
+/**
+ * The contract skeleton with a button whose art changes: `button_go` on `bone_btn` at 50, 30
+ * shows `body`, 40 wide and 20 high, or 20 by 40 in the `portrait` skin; the animation `tall`
+ * keys in `tall`, also 20 by 40, `away` moves the bone 100 to the right, and `hide` empties the
+ * slot.
+ */
+export function switchingButtonSkeleton(minor: Minor): Json {
+    const skeleton = contract() as {
+        bones: Json[];
+        slots: Json[];
+        skins: { name: string; attachments: Record<string, Json> }[];
+        animations: Record<string, Json>;
+    };
+    const image = (width: number, height: number) => ({ path: 'square', width, height });
+
+    skeleton.bones.push({ name: 'bone_btn', parent: 'root', x: 50, y: 30 });
+    skeleton.slots.push({ name: 'button_go', bone: 'bone_btn', attachment: 'body' });
+    skeleton.skins[0].attachments.button_go = { body: image(40, 20), tall: image(20, 40) };
+    skeleton.skins.push({ name: 'portrait', attachments: { button_go: { body: image(20, 40) } } });
+    skeleton.animations.tall = { slots: { button_go: { attachment: [{ name: 'tall' }] } } };
+    skeleton.animations.away = { bones: { bone_btn: { translate: [{ x: 100, y: 0 }] } } };
+    skeleton.animations.hide = { slots: { button_go: { attachment: [{ name: null }] } } };
+
+    return exportedAs(skeleton, minor);
+}
+
 /** Bones rotated, sheared, scaled unevenly and flipped, and one keyed through all of it. */
 export function skewedSkeleton(minor: Minor): Json {
     const angle = minor.startsWith('3.') ? 'angle' : 'value';

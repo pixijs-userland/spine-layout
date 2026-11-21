@@ -178,6 +178,12 @@ The scene is assembled by scanning slot names. No code changes are needed when t
 | `button_<key>`    | Create an invisible interactive sprite; fires `<key>_click/hover/...` events |
 | `particles_<key>` | Hang a particle emitter here (configured via `settings/particles.json`)      |
 
+A `button_<key>` slot answers the pointer over the art it shows at that moment: a region's quad
+(with its offset, rotation and scale), a mesh's hull or a bounding box's polygon, weighted ones
+where their bones put them. When an animation, a state or a skin swaps the attachment — a landscape
+body and a portrait one keyed by `state_landscape/` / `state_portrait/` — the clickable area swaps
+with it, and while the slot is empty the button takes no clicks. No game code is needed.
+
 Names also carry modifiers — suffixes that change what a bone or slot does:
 
 | Suffix           | Effect                                                                  |

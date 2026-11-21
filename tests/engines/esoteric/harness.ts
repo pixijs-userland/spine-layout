@@ -390,6 +390,31 @@ export function esotericPortSuite(name: string, load: () => Loaded) {
                 ]);
             });
 
+            it("outlines a weighted mesh by its hull where its bones put it, in its slot's bone", () => {
+                setUp();
+                const skeleton = rig() as {
+                    slots: { name: string; bone: string }[];
+                    skins: {
+                        attachments: Record<string, Record<string, { vertices: number[] }>>;
+                    }[];
+                };
+                // the quad on `target`, 100 above the root the slot is moved onto
+                skeleton.slots.find((slot) => slot.name === 'mesh')!.bone = 'root';
+                skeleton.skins[0].attachments.mesh.quad.vertices = [
+                    1, 3, -10, -10, 1, 1, 3, -10, 10, 1, 1, 3, 10, 10, 1, 1, 3, 10, -10, 1,
+                ];
+                const spine = create(read(skeleton));
+                const mesh = spine.skeleton.findSlot('mesh')!;
+
+                loaded.port.updateWorldTransform(spine.skeleton);
+
+                loaded.port
+                    .hitPolygon(mesh, loaded.port.slotAttachment(mesh))!
+                    .forEach((value, i) =>
+                        expect(value).toBeCloseTo([-10, -90, -10, -110, 10, -110, 10, -90][i], 4),
+                    );
+            });
+
             it('finds the image of a region, a turned region and a mesh on its page', () => {
                 setUp();
                 const page = loaded.page(64, 64);

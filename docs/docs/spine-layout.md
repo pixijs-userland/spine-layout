@@ -65,6 +65,8 @@ Prefix a slot name with `button_` to turn it into a clickable button. Clicking i
 
 Additional events fired automatically: `event_{button_name}_down`, `event_{button_name}_up`, `event_{button_name}_hover`, `event_{button_name}_unhover`.
 
+The button is clickable over the art its slot shows at the moment of the click. If an animation, a state or a skin puts another attachment in the slot — a portrait body in `state_portrait/`, say — the clickable area becomes that attachment's shape; while the slot is empty, the button cannot be clicked.
+
 ### Example
 
 A slot named `button_start` and a folder `event_start_click` — all animations in that folder play when the button is clicked.

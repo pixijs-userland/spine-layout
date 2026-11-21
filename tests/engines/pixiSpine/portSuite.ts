@@ -335,6 +335,28 @@ export function pixiSpinePortSuite(load: () => Stack, minor: Minor) {
                 ]);
             });
 
+            it("outlines a weighted mesh by its hull where its bones put it, in its slot's bone", () => {
+                const rig = rigSkeleton(minor) as {
+                    skins: unknown;
+                };
+                const skins = rig.skins as
+                    | { attachments: Record<string, Record<string, { vertices: number[] }>> }[]
+                    | Record<string, Record<string, { vertices: number[] }>>;
+                const meshes = Array.isArray(skins) ? skins[0].attachments : skins.default;
+                // every corner of the quad on `target`, 80 right of and 20 above the slot's root
+                meshes.slot_mesh.quad.vertices = [
+                    1, 3, -10, -10, 1, 1, 3, 10, -10, 1, 1, 3, 10, 10, 1, 1, 3, -10, 10, 1,
+                ];
+                const spine = spineOf(rig as SkeletonSource);
+                const slot = spine.skeleton.findSlot('slot_mesh')!;
+
+                port.updateWorldTransform(spine.skeleton);
+
+                port.hitPolygon(slot, port.slotAttachment(slot))!.forEach((value, i) =>
+                    expect(value).toBeCloseTo([70, -10, 90, -10, 90, -30, 70, -30][i], 4),
+                );
+            });
+
             it('finds the image of a region or mesh on its page, upright or turned', () => {
                 const spine = spineOf();
                 const slot = spine.skeleton.findSlot('slot_a')!;

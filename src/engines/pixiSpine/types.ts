@@ -102,19 +102,28 @@ export interface PixiSpineRegionAttachment {
     height: number;
 }
 
-export interface PixiSpineMeshAttachment {
-    region: PixiSpineTextureRegion | null;
-    sequence?: PixiSpineSequence | null;
-    vertices: ArrayLike<number>;
-    hullLength: number;
-    bones: number[] | null;
-}
-
-export interface PixiSpineBoundingBoxAttachment {
+/** A mesh, bounding box, path or clipping attachment: vertices in its bone, or weighted to several. */
+export interface PixiSpineVertexAttachment {
     vertices: ArrayLike<number>;
     worldVerticesLength: number;
     bones: number[] | null;
+    computeWorldVertices(
+        slot: PixiSpineSlot,
+        start: number,
+        count: number,
+        worldVertices: number[],
+        offset: number,
+        stride: number,
+    ): void;
 }
+
+export interface PixiSpineMeshAttachment extends PixiSpineVertexAttachment {
+    region: PixiSpineTextureRegion | null;
+    sequence?: PixiSpineSequence | null;
+    hullLength: number;
+}
+
+export type PixiSpineBoundingBoxAttachment = PixiSpineVertexAttachment;
 
 export interface PixiSpineSlot extends SlotLike {
     bone: PixiSpineBone;

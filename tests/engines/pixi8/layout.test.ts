@@ -211,6 +211,79 @@ describe('SpineLayout over the "." engine with 4.2 added', () => {
         stage.removeChildren();
     });
 
+    it.each([
+        ['4.3', 'okButton-4.3', 'root', 'button_ok', 'Button/Button', 357, 163],
+        [
+            '4.2',
+            'settingsButton-4.2',
+            'settings',
+            'button_settings',
+            'Button/SmallButton',
+            155,
+            163,
+        ],
+    ] as const)(
+        'hit-tests a %s button by the attachment its slot holds at the time, wherever its bone is',
+        async (_minor, name, id, slotName, image, width, height) => {
+            // a portrait body twice the height and a third of the width of the landscape one,
+            // keyed in by an animation or swapped in by a skin
+            const tall = { path: image, width: width / 3, height: height * 2 };
+            const { skeleton, atlasText } = spineExport(name);
+            const skins = skeleton.skins as { name: string; attachments: Record<string, object> }[];
+            const bone = skeleton.slots.find((slot) => slot.name === slotName)!.bone as string;
+            const attachments = skins[0].attachments[slotName] as Record<string, object>;
+            attachments.tall = tall;
+            skins.push({ name: 'portrait', attachments: { [slotName]: { [image]: tall } } });
+            Object.assign(skeleton.animations as object, {
+                tall: { slots: { [slotName]: { attachment: [{ name: 'tall' }] } } },
+                away: { bones: { [bone]: { translate: [{ x: 1000, y: 0 }] } } },
+                hide: { slots: { [slotName]: { attachment: [{ name: null }] } } },
+            });
+
+            const layout = new SpineLayout({ engine, root: id });
+            layouts.push(layout);
+            await layout.loadInstancesFromDataArray([
+                { name: id, skeleton, atlasText, textures: pagesOf(atlasText) },
+            ]);
+            const spine = layout.getSpineByID(id)!;
+            const button = engine.spine.getSlotObject(spine, slotName);
+            const stage = new Container({ isRenderGroup: true, eventMode: 'static' });
+            stage.addChild(layout as unknown as Container);
+            const boundary = new EventBoundary(stage);
+
+            const pose = (animation?: string) => {
+                if (animation) spine.state.setAnimation(0, animation, false);
+                engine.spine.update(spine, 0);
+                updateRenderGroupTransforms(stage.renderGroup, true);
+            };
+            const hits = (x: number, y: number) => {
+                const origin = spine.toGlobal(new Point(0, 0));
+                return boundary.hitTest(origin.x + x, origin.y + y) === button;
+            };
+            const probes = () => [hits(0, 0), hits(width / 2 - 5, 0), hits(0, height / 2 + 20)];
+
+            pose();
+            expect(probes()).toEqual([true, true, false]);
+
+            pose('tall');
+            expect(probes()).toEqual([true, false, true]);
+
+            pose('away');
+            expect([hits(0, 0), hits(1000, 0)]).toEqual([false, true]);
+
+            spine.state.clearTracks();
+            engine.spine.setupPose(spine.skeleton, 'all');
+            layout.skins.apply('portrait');
+            pose();
+            expect(probes()).toEqual([true, false, true]);
+
+            pose('hide');
+            expect(probes()).toEqual([false, false, false]);
+
+            stage.removeChildren();
+        },
+    );
+
     it('clones a 4.2 spine with its runtime, and destroys every spine with its layout', async () => {
         const { layouts: built, root, settings } = await build();
         const [ok, other] = built;

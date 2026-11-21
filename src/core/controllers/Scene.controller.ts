@@ -1,5 +1,5 @@
-import type { Engine, EngineTypes, PointerEventLike } from '../../engine/Engine';
-import { skinAttachments, type BoneLike, type SlotLike } from '../../engine/runtime';
+import type { Engine, EngineTypes, HitArea, PointerEventLike } from '../../engine/Engine';
+import type { BoneLike, SlotLike } from '../../engine/runtime';
 import type { ReleasedSlotChild, SpineID, SpineLayoutOptions } from '../config/types';
 import { parcePointers } from '../config/parcePointers';
 import { LOG } from '../config/logs';
@@ -47,6 +47,22 @@ type ButtonGroup<Target> = {
     /** Set while a hover sync is already queued, so one pointer move triggers at most once. */
     hoverSyncQueued: boolean;
 };
+
+/** Even-odd rule over flat `x, y` pairs, as Pixi's own `Polygon.contains`. */
+function polygonContains(points: number[], x: number, y: number): boolean {
+    let inside = false;
+
+    for (let i = 0, j = points.length - 2; i < points.length; j = i, i += 2) {
+        const xi = points[i];
+        const yi = points[i + 1];
+        const xj = points[j];
+        const yj = points[j + 1];
+
+        if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+    }
+
+    return inside;
+}
 
 export class SceneController<T extends EngineTypes = EngineTypes> {
     private buttons: Map<string, T['Container']> = new Map();
@@ -138,9 +154,10 @@ export class SceneController<T extends EngineTypes = EngineTypes> {
      * `up`, `up_out`) on every spine nested inside the button — nested spines of nested
      * spines included, since a composite button animates as a whole.
      *
-     * A slot button's hit area is the shape of the slot's attachment, clipped where the
-     * skeleton clips the art, and nothing drawn over it takes its clicks: no skeleton answers
-     * a hit-test with its own art — only the hit areas do (see `DisplayPort.shieldFromHitTesting`).
+     * A slot button's hit area is the shape of the attachment the slot holds at the moment of
+     * the pointer test ({@link liveHitArea}), clipped where the skeleton clips the art, and
+     * nothing drawn over it takes its clicks: no skeleton answers a hit-test with its own art —
+     * only the hit areas do (see `DisplayPort.shieldFromHitTesting`).
      */
     activateButtonBones(only?: Set<SpineID>) {
         log.open(LOG.BUTTONS);
@@ -160,15 +177,11 @@ export class SceneController<T extends EngineTypes = EngineTypes> {
                 const slotName = slot.data.name;
 
                 if (slotName.startsWith(parcePointers.slot.button)) {
-                    const hitArea = this.hitAreaOf(spine, slotName);
-                    // with a hit area the sprite has nothing to draw or to measure; without one
-                    // its texture is the hit area, as it always was
-                    const texture = hitArea
-                        ? this.engine.display.emptyTexture
-                        : this.spine.getSlotTexture(spineID, slotName) ||
-                          this.engine.display.whiteTexture;
                     const bonePos = this.spine.getBoneGlobalPos(spine, slotName);
-                    const button = this.engine.display.sprite(texture, 0.5);
+                    const button = this.engine.display.sprite(
+                        this.engine.display.emptyTexture,
+                        0.5,
+                    );
 
                     // This sprite only ever serves as a hit area — the skeleton's own attachment
                     // draws the art — but `updateSlotObject` writes the slot's pose alpha over
@@ -176,7 +189,7 @@ export class SceneController<T extends EngineTypes = EngineTypes> {
                     // hands it is kept: Pixi prunes a masked container from hit-testing where
                     // the mask does not reach, which is what clips the art too.
                     this.engine.display.pin(button, 'alpha', 0);
-                    if (hitArea) this.engine.display.setHitArea(button, hitArea);
+                    this.engine.display.setHitArea(button, this.liveHitArea(slot));
 
                     if (bonePos) {
                         button.x = bonePos.x;
@@ -252,34 +265,26 @@ export class SceneController<T extends EngineTypes = EngineTypes> {
     }
 
     /**
-     * The button's art as its hit area, in the overlay's own space.
+     * The button's art as its hit area, in the overlay's own space, read from the slot on every
+     * pointer test: whatever the slot holds then — another image keyed by an orientation state,
+     * a skin's, a sequence's frame — is what the pointer hits, and an empty slot hits nothing.
      *
-     * The overlay is a sprite of the slot's texture standing at the bone, but the attachment is
-     * not drawn that way: a region carries its own offset, rotation and scale from the bone, a
-     * mesh a hull. Both are read in bone space, where a slot object lives with its y axis the
-     * other way up (see `Spine.updateSlotObject`). A weighted mesh has no bone-space shape, so
-     * that stays on the sprite's own texture.
-     *
-     * A slot empty in the setup pose is read from its skin instead, when the skin holds one
-     * attachment for it: a button that an animation attaches for as long as a state runs — a
-     * "tap to skip" over a celebration — is otherwise wired to nothing but the sprite's own
-     * texture, and the overlay it gets is a few pixels of hit area where the art is a screen.
+     * The overlay stands at the bone, but the attachment is not drawn there: a region carries its
+     * own offset, rotation and scale from the bone, a mesh a hull, a bounding box its polygon,
+     * and a weighted one follows its bones. `SpinePort.hitPolygon` reads each in bone space,
+     * where a slot object lives with its y axis the other way up (see `Spine.updateSlotObject`).
      */
-    private hitAreaOf(spine: T['Spine'], slotName: string): number[] | undefined {
-        const slot = spine.skeleton.findSlot(slotName);
-        if (!slot) return;
+    private liveHitArea(slot: SlotLike): HitArea {
+        const { spine } = this.engine;
 
-        const attachment =
-            this.engine.spine.slotAttachment(slot) ?? this.skinAttachmentOf(spine, slot);
+        return {
+            contains: (x, y) => {
+                const attachment = spine.slotAttachment(slot);
+                const polygon = attachment ? spine.hitPolygon(slot, attachment) : undefined;
 
-        return this.engine.spine.hitPolygon(slot, attachment);
-    }
-
-    private skinAttachmentOf(spine: T['Spine'], slot: SlotLike): unknown {
-        const skin = spine.skeleton.skin ?? spine.skeleton.data.defaultSkin;
-        const attachments = skin ? skinAttachments(skin, slot.data.index) : [];
-
-        return attachments.length === 1 ? attachments[0] : undefined;
+                return !!polygon && polygonContains(polygon, x, y);
+            },
+        };
     }
 
     /** Walks the registry, narrowed to the given ids when the caller passes a set. */

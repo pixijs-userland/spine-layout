@@ -1,7 +1,6 @@
 import {
     Container,
     Point,
-    Polygon,
     Rectangle,
     Sprite,
     Texture,
@@ -44,8 +43,8 @@ export const createDisplayPort = (spine: Shapes): DisplayPort<Pixi8Types> => ({
     setCursor: (view, cursor) => {
         view.cursor = cursor;
     },
-    setHitArea: (view, polygon) => {
-        view.hitArea = polygon ? new Polygon(polygon) : null;
+    setHitArea: (view, hitArea) => {
+        view.hitArea = hitArea ?? null;
     },
 
     on: (view, event, fn) => view.on(event, fn as (event: FederatedPointerEvent) => void),
